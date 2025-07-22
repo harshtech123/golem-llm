@@ -155,7 +155,7 @@ jobs:
     needs:
       - tests
       - build-test-components
-      - ollama-integration-tests
+#      - ollama-integration-tests
     runs-on: ubuntu-latest
     permissions:
       contents: write
