@@ -6,10 +6,12 @@ on:
       - "v*.*.*"
     branches:
       - main
+      - dev
   pull_request:
 
 env:
   CARGO_TERM_COLOR: always
+  ENVIRONMENT: ${{ github.event_name == 'push' && github.ref_type == 'tag' && (!contains(github.ref, '-dev.')) && 'prod' || 'dev' }}
 
 jobs:
   tests:

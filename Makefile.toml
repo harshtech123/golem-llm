@@ -108,11 +108,14 @@ script_runner = "@duckscript"
 script = '''
 mkdir components/debug
 
+cm_run_task clean
 cm_run_task build
 cm_run_task copy-debug-artifacts
 
+cm_run_task clean
 cm_run_task build-portable
-cm_run_task copy-debug-artifacts --portable
+set_env "PORTABLE" "yes"
+cm_run_task copy-debug-artifacts
 '''
 
 [tasks.release-build-all]
@@ -128,21 +131,33 @@ cm_run_task copy-release-artifacts
 
 cm_run_task clean
 cm_run_task release-build-portable
-cm_run_task copy-release-artifacts --portable
+set_env "PORTABLE" "yes"
+cm_run_task copy-release-artifacts
 '''
 
 [tasks.copy-debug-artifacts]
 script_runner = "@duckscript"
 script = '''
 
-is_portable = eq ${1} "--portable"
+portable = get_env "PORTABLE"
+is_portable = eq ${portable} "yes"
+environment = get_env "ENVIRONMENT"
+is_dev = eq ${environment} "dev"
 
-targets = array llm_openai llm_anthropic llm_grok llm_openrouter llm_ollama  llm_bedrock search_algolia search_elasticsearch search_meilisearch search_opensearch search_typesense
+targets = array llm_openai llm_anthropic llm_grok llm_openrouter llm_ollama llm_bedrock search_algolia search_elasticsearch search_meilisearch search_opensearch search_typesense
 for target in ${targets}
-    if is_portable
-        cp target/wasm32-wasip1/debug/golem_${target}.wasm components/debug/golem_${target}-portable.wasm
+    if ${is_portable}
+        if ${is_dev}
+            cp target/wasm32-wasip1/debug/golem_${target}.wasm components/debug/golem_${target}-portable-dev.wasm
+        else
+            cp target/wasm32-wasip1/debug/golem_${target}.wasm components/debug/golem_${target}-portable.wasm
+        end
     else
-        cp target/wasm32-wasip1/debug/golem_${target}.wasm components/debug/golem_${target}.wasm
+        if ${is_dev}
+            cp target/wasm32-wasip1/debug/golem_${target}.wasm components/debug/golem_${target}-dev.wasm
+        else
+            cp target/wasm32-wasip1/debug/golem_${target}.wasm components/debug/golem_${target}.wasm
+        end
     end
 end
 '''
@@ -151,14 +166,25 @@ end
 script_runner = "@duckscript"
 script = '''
 
-is_portable = eq ${1} "--portable"
+portable = get_env "PORTABLE"
+is_portable = eq ${portable} "yes"
+environment = get_env "ENVIRONMENT"
+is_dev = eq ${environment} "dev"
 
 targets = array llm_openai llm_anthropic llm_grok llm_openrouter llm_ollama llm_bedrock search_algolia search_elasticsearch search_meilisearch search_opensearch search_typesense
 for target in ${targets}
-    if is_portable
-        cp target/wasm32-wasip1/release/golem_${target}.wasm components/release/golem_${target}-portable.wasm
+    if ${is_portable}
+        if ${is_dev}
+            cp target/wasm32-wasip1/release/golem_${target}.wasm components/release/golem_${target}-portable-dev.wasm
+        else
+            cp target/wasm32-wasip1/release/golem_${target}.wasm components/release/golem_${target}-portable.wasm
+        end
     else
-        cp target/wasm32-wasip1/release/golem_${target}.wasm components/release/golem_${target}.wasm
+        if ${is_dev}
+            cp target/wasm32-wasip1/release/golem_${target}.wasm components/release/golem_${target}-dev.wasm
+        else
+            cp target/wasm32-wasip1/release/golem_${target}.wasm components/release/golem_${target}.wasm
+        end
     end
 end
 '''
