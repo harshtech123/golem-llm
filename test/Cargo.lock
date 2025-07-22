@@ -332,9 +332,9 @@ dependencies = [
 
 [[package]]
 name = "golem-rust"
-version = "1.6.0"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46aaf34adda9057718d79e808fb323b3247cb34ec9c38ff88e74824d703980dd"
+checksum = "eda2b4ebd7944190d26a4bcfb608d1f15b7fcee4774e2b08513131da79774206"
 dependencies = [
  "golem-rust-macro",
  "golem-wasm-rpc",
@@ -346,9 +346,9 @@ dependencies = [
 
 [[package]]
 name = "golem-rust-macro"
-version = "1.6.0"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ab4174ebe45b8a1961eedeebc215bbc475aea4bdf4f2baa80cc6222fb0058da"
+checksum = "b0d5f1ac94fb33f8900824298f9f599ab93fa12bd08883a79c5879a8d21718dc"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -358,9 +358,9 @@ dependencies = [
 
 [[package]]
 name = "golem-wasm-rpc"
-version = "1.3.0-dev.12"
+version = "1.3.0-dev.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e80ad91fcaed123f283edb451862fb960f5f7a390c22a37186ca24770597d8ec"
+checksum = "3e15b4d46f438e5ab37160d212cdd82786653d0f44a7dae7d258c0628234adb2"
 dependencies = [
  "cargo_metadata",
  "chrono",
@@ -871,7 +871,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "wit-bindgen-rt 0.40.0",
+ "wit-bindgen-rt 0.41.0",
 ]
 
 [[package]]
@@ -883,7 +883,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "wit-bindgen-rt 0.40.0",
+ "wit-bindgen-rt 0.41.0",
 ]
 
 [[package]]

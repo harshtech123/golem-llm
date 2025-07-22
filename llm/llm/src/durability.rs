@@ -674,7 +674,7 @@ mod durable_impl {
             println!("{encoded:#?}");
 
             for wit_type in encoded.typ.nodes {
-                if let WitTypeNode::ListType(idx) = wit_type {
+                if let WitTypeNode::ListType(idx) = wit_type.type_ {
                     assert!(idx >= 0);
                 }
             }
