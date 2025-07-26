@@ -1057,6 +1057,76 @@ dependencies = [
 ]
 
 [[package]]
+name = "golem-tts"
+version = "0.0.0"
+dependencies = [
+ "golem-rust",
+ "log",
+ "mime",
+ "nom",
+ "reqwest",
+ "thiserror",
+ "wasi-logger",
+ "wit-bindgen 0.40.0",
+]
+
+[[package]]
+name = "golem-tts-aws"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "golem-rust",
+ "golem-tts",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.40.0",
+]
+
+[[package]]
+name = "golem-tts-deepgram"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "golem-rust",
+ "golem-tts",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.40.0",
+]
+
+[[package]]
+name = "golem-tts-elevenlabs"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "golem-rust",
+ "golem-tts",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.40.0",
+]
+
+[[package]]
+name = "golem-tts-google"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "golem-rust",
+ "golem-tts",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.40.0",
+]
+
+[[package]]
 name = "golem-video"
 version = "0.0.0"
 dependencies = [
