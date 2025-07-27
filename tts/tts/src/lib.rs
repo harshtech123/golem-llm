@@ -19,7 +19,7 @@ wit_bindgen::generate!({
 pub use crate::exports::golem;
 pub use __export_tts_library_impl as export_tts;
 
-use crate::golem::tts::core::TtsError;
+use crate::golem::tts::types::TtsError;
 use std::cell::RefCell;
 use std::str::FromStr;
 

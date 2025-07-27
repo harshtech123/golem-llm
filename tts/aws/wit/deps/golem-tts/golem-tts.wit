@@ -114,7 +114,7 @@ interface types {
     }
 
     /// Audio effects and device optimization
-    flags audio-effects {
+    enum audio-effects {
         telephone-quality,
         headphone-optimized,
         speaker-optimized,
@@ -282,7 +282,7 @@ interface synthesis {
     record synthesis-options {
         audio-config: option<audio-config>,
         voice-settings: option<voice-settings>,
-        audio-effects: option<audio-effects>,
+        audio-effects: option<list<audio-effects>>,
         enable-timing: option<bool>,
         enable-word-timing: option<bool>,
         seed: option<u32>,
