@@ -4,7 +4,7 @@ WebAssembly Components providing a unified API for various LLM providers.
 
 ## Versions
 
-There are 8 published WASM files for each release:
+There are  26 published WASM files for each release:
 
 | Name                                 | Description                                                                            |
 |--------------------------------------|----------------------------------------------------------------------------------------|
