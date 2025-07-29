@@ -398,18 +398,7 @@ impl GuestTransaction for Transaction {
         updates: PropertyMap,
     ) -> Result<Edge, GraphError> {
         let key = helpers::element_id_to_key(&id)?;
-        let collection = if let ElementId::StringValue(s) = &id {
-            s.split('/').next().unwrap_or_default()
-        } else {
-            ""
-        };
-
-        if collection.is_empty() {
-            return Err(GraphError::InvalidQuery(
-                "ElementId for update_edge_properties must be a full _id (e.g., 'collection/key')"
-                    .to_string(),
-            ));
-        }
+        let collection = helpers::collection_from_element_id(&id)?;
 
         let props = conversions::to_arango_properties(updates)?;
 
@@ -438,17 +427,7 @@ impl GuestTransaction for Transaction {
 
     fn delete_edge(&self, id: ElementId) -> Result<(), GraphError> {
         let key = helpers::element_id_to_key(&id)?;
-        let collection = if let ElementId::StringValue(s) = &id {
-            s.split('/').next().unwrap_or_default()
-        } else {
-            ""
-        };
-
-        if collection.is_empty() {
-            return Err(GraphError::InvalidQuery(
-                "ElementId for delete_edge must be a full _id (e.g., 'collection/key')".to_string(),
-            ));
-        }
+        let collection = helpers::collection_from_element_id(&id)?;
 
         let query = json!({
             "query": "REMOVE @key IN @@collection",

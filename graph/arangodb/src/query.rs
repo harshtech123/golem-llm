@@ -5,6 +5,30 @@ use golem_graph::golem::graph::{
         Guest as QueryGuest, QueryExecutionResult, QueryOptions, QueryParameters, QueryResult,
     },
 };
+use serde::Deserialize;
+
+// Response type for query execution
+#[derive(Debug, Deserialize)]
+struct QueryResponse {
+    result: Vec<serde_json::Value>,
+    #[serde(rename = "hasMore")]
+    has_more: Option<bool>,
+    count: Option<u64>,
+    extra: Option<QueryExtra>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QueryExtra {
+    stats: Option<QueryStats>,
+}
+
+#[derive(Debug, Deserialize)]
+struct QueryStats {
+    #[serde(rename = "executionTime")]
+    execution_time: Option<f64>,
+    #[serde(rename = "writesExecuted")]
+    writes_executed: Option<u64>,
+}
 
 impl Transaction {
     pub fn execute_query(

@@ -12,8 +12,22 @@ use golem_graph::golem::graph::{
     },
     types::{ElementId, Vertex},
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+
+// Response types for traversal operations
+#[derive(Debug, Deserialize)]
+struct TraversalItem {
+    vertex: Option<Value>,
+    edge: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PathResponse {
+    vertices: Vec<Value>,
+    edges: Vec<Value>,
+}
 
 fn id_to_aql(id: &ElementId) -> String {
     element_id_to_string(id)
@@ -50,8 +64,9 @@ impl Transaction {
         let response = self
             .api
             .execute_in_transaction(&self.transaction_id, request)?;
+            
         let arr = response.as_array().ok_or_else(|| {
-            GraphError::InternalError("Invalid response for shortest path".to_string())
+            GraphError::InternalError("Expected array response for shortest path query".to_string())
         })?;
 
         if arr.is_empty() {
@@ -63,25 +78,28 @@ impl Transaction {
         let mut edges = vec![];
 
         for item in arr {
-            if let Some(obj) = item.as_object() {
-                if let Some(v_doc) = obj.get("vertex").and_then(|v| v.as_object()) {
-                    let coll = v_doc
-                        .get("_id")
-                        .and_then(|id| id.as_str())
-                        .and_then(|s| s.split('/').next())
-                        .unwrap_or_default();
-                    let vertex = parse_vertex_from_document(v_doc, coll)?;
-                    vertices.push(vertex);
-                }
-                if let Some(e_doc) = obj.get("edge").and_then(|e| e.as_object()) {
-                    let coll = e_doc
-                        .get("_id")
-                        .and_then(|id| id.as_str())
-                        .and_then(|s| s.split('/').next())
-                        .unwrap_or_default();
-                    let edge = parse_edge_from_document(e_doc, coll)?;
-                    edges.push(edge);
-                }
+            let obj = item.as_object().ok_or_else(|| {
+                GraphError::InternalError("Expected object in shortest path response".to_string())
+            })?;
+            
+            if let Some(v_doc) = obj.get("vertex").and_then(|v| v.as_object()) {
+                let coll = v_doc
+                    .get("_id")
+                    .and_then(|id| id.as_str())
+                    .and_then(|s| s.split('/').next())
+                    .unwrap_or_default();
+                let vertex = parse_vertex_from_document(v_doc, coll)?;
+                vertices.push(vertex);
+            }
+            
+            if let Some(e_doc) = obj.get("edge").and_then(|e| e.as_object()) {
+                let coll = e_doc
+                    .get("_id")
+                    .and_then(|id| id.as_str())
+                    .and_then(|s| s.split('/').next())
+                    .unwrap_or_default();
+                let edge = parse_edge_from_document(e_doc, coll)?;
+                edges.push(edge);
             }
         }
 
@@ -137,12 +155,19 @@ impl Transaction {
         let response = self
             .api
             .execute_in_transaction(&self.transaction_id, request)?;
+            
         let arr = response.as_array().ok_or_else(|| {
-            GraphError::InternalError("Invalid response for all paths".to_string())
+            GraphError::InternalError("Expected array response for all paths query".to_string())
         })?;
 
         arr.iter()
-            .filter_map(|v| v.as_object())
+            .map(|v| {
+                v.as_object().ok_or_else(|| {
+                    GraphError::InternalError("Expected object in all paths response".to_string())
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
             .map(parse_path_from_document)
             .collect()
     }
@@ -180,32 +205,37 @@ impl Transaction {
         let response = self
             .api
             .execute_in_transaction(&self.transaction_id, request)?;
+            
         let arr = response.as_array().ok_or_else(|| {
-            GraphError::InternalError("Invalid response for neighborhood".to_string())
+            GraphError::InternalError("Expected array response for neighborhood query".to_string())
         })?;
 
         let mut verts = HashMap::new();
         let mut edges = HashMap::new();
+        
         for item in arr {
-            if let Some(obj) = item.as_object() {
-                if let Some(v_doc) = obj.get("vertex").and_then(|v| v.as_object()) {
-                    let coll = v_doc
-                        .get("_id")
-                        .and_then(|id| id.as_str())
-                        .and_then(|s| s.split('/').next())
-                        .unwrap_or_default();
-                    let vert = parse_vertex_from_document(v_doc, coll)?;
-                    verts.insert(element_id_to_string(&vert.id), vert);
-                }
-                if let Some(e_doc) = obj.get("edge").and_then(|e| e.as_object()) {
-                    let coll = e_doc
-                        .get("_id")
-                        .and_then(|id| id.as_str())
-                        .and_then(|s| s.split('/').next())
-                        .unwrap_or_default();
-                    let edge = parse_edge_from_document(e_doc, coll)?;
-                    edges.insert(element_id_to_string(&edge.id), edge);
-                }
+            let obj = item.as_object().ok_or_else(|| {
+                GraphError::InternalError("Expected object in neighborhood response".to_string())
+            })?;
+            
+            if let Some(v_doc) = obj.get("vertex").and_then(|v| v.as_object()) {
+                let coll = v_doc
+                    .get("_id")
+                    .and_then(|id| id.as_str())
+                    .and_then(|s| s.split('/').next())
+                    .unwrap_or_default();
+                let vert = parse_vertex_from_document(v_doc, coll)?;
+                verts.insert(element_id_to_string(&vert.id), vert);
+            }
+            
+            if let Some(e_doc) = obj.get("edge").and_then(|e| e.as_object()) {
+                let coll = e_doc
+                    .get("_id")
+                    .and_then(|id| id.as_str())
+                    .and_then(|s| s.split('/').next())
+                    .unwrap_or_default();
+                let edge = parse_edge_from_document(e_doc, coll)?;
+                edges.insert(element_id_to_string(&edge.id), edge);
             }
         }
 
@@ -254,18 +284,23 @@ impl Transaction {
         let response = self
             .api
             .execute_in_transaction(&self.transaction_id, request)?;
+            
         let arr = response.as_array().ok_or_else(|| {
-            GraphError::InternalError("Invalid response for vertices at distance".to_string())
+            GraphError::InternalError("Expected array response for vertices at distance query".to_string())
         })?;
 
         arr.iter()
-            .filter_map(|v| v.as_object())
-            .map(|doc| {
+            .map(|v| {
+                let doc = v.as_object().ok_or_else(|| {
+                    GraphError::InternalError("Expected object in vertices at distance response".to_string())
+                })?;
+                
                 let coll = doc
                     .get("_id")
                     .and_then(|id| id.as_str())
                     .and_then(|s| s.split('/').next())
                     .unwrap_or_default();
+                    
                 parse_vertex_from_document(doc, coll)
             })
             .collect()
