@@ -8,6 +8,7 @@ use golem_graph::golem::graph::{
 use serde::Deserialize;
 
 // Response type for query execution
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct QueryResponse {
     result: Vec<serde_json::Value>,
@@ -19,9 +20,10 @@ struct QueryResponse {
 
 #[derive(Debug, Deserialize)]
 struct QueryExtra {
-    stats: Option<QueryStats>,
+    _stats: Option<QueryStats>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct QueryStats {
     #[serde(rename = "executionTime")]

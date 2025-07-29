@@ -17,6 +17,7 @@ pub struct ArangoDbApi {
 }
 
 // Response type definitions for ArangoDB API responses
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct ArangoResponse<T> {
     pub result: T,
@@ -30,12 +31,12 @@ pub struct ArangoResponse<T> {
 
 #[derive(Debug, Deserialize)]
 pub struct ArangoErrorResponse {
-    pub error: bool,
+    pub _error: bool,
     #[serde(rename = "errorNum")]
     pub error_num: Option<i64>,
     #[serde(rename = "errorMessage")]
     pub error_message: String,
-    pub code: u16,
+    pub _code: u16,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,23 +47,24 @@ pub struct TransactionBeginResponse {
 #[derive(Debug, Deserialize)]
 pub struct TransactionResult {
     pub id: String,
-    pub status: String,
+    pub _status: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct QueryResponse {
     pub result: Vec<Value>,
-    pub count: Option<u64>,
+    pub _count: Option<u64>,
     #[serde(rename = "hasMore")]
-    pub has_more: Option<bool>,
-    pub extra: Option<QueryExtra>,
+    pub _has_more: Option<bool>,
+    pub _extra: Option<QueryExtra>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct QueryExtra {
-    pub stats: Option<QueryStats>,
+    pub _stats: Option<QueryStats>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct QueryStats {
     #[serde(rename = "writesExecuted")]
@@ -79,9 +81,10 @@ pub struct QueryStats {
 
 #[derive(Debug, Deserialize)]
 pub struct CollectionCreateResponse {
-    pub result: CollectionInfo,
+    pub _result: CollectionInfo,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct CollectionInfo {
     pub id: String,
@@ -95,9 +98,10 @@ pub struct CollectionInfo {
 
 #[derive(Debug, Deserialize)]
 pub struct IndexCreateResponse {
-    pub result: IndexInfo,
+    pub _result: IndexInfo,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct IndexInfo {
     pub id: String,
@@ -169,7 +173,7 @@ impl ArangoDbApi {
             .map_err(|e| self.handle_arango_reqwest_error("Request failed", e))
     }
 
-    pub fn execute_query_raw(&self, query: Value) -> Result<QueryResponse, GraphError> {
+    pub fn _execute_query_raw(&self, query: Value) -> Result<QueryResponse, GraphError> {
         let response = self.execute_request(Method::POST, "/_api/cursor", Some(&query))?;
         parse_arango_response(response)
     }
@@ -258,91 +262,6 @@ impl ArangoDbApi {
         trace!("Ping ArangoDB");
         let _: Value = self.execute(Method::GET, "/_api/version", None)?;
         Ok(())
-    }
-
-    fn enhance_arangodb_error(
-        &self,
-        error: GraphError,
-        error_body: &serde_json::Value,
-    ) -> GraphError {
-        match &error {
-            GraphError::InternalError(_)
-                if self.is_arangodb_document_not_found_error(error_body) =>
-            {
-                if let Some(element_id) = self.extract_arangodb_element_id(error_body) {
-                    GraphError::ElementNotFound(element_id)
-                } else {
-                    error
-                }
-            }
-            // ArangoDB unique constraint violations (error code 1210)
-            GraphError::ConstraintViolation(_)
-                if self.is_arangodb_unique_constraint_error(error_body) =>
-            {
-                if let Some(element_id) = self.extract_arangodb_element_id(error_body) {
-                    GraphError::DuplicateElement(element_id)
-                } else {
-                    error
-                }
-            }
-            _ => error,
-        }
-    }
-
-    fn is_arangodb_document_not_found_error(&self, error_body: &serde_json::Value) -> bool {
-        if let Some(error_num) = error_body.get("errorNum").and_then(|v| v.as_i64()) {
-            return error_num == 1202;
-        }
-        false
-    }
-
-    fn is_arangodb_unique_constraint_error(&self, error_body: &serde_json::Value) -> bool {
-        if let Some(error_num) = error_body.get("errorNum").and_then(|v| v.as_i64()) {
-            return error_num == 1210;
-        }
-        false
-    }
-
-    fn extract_arangodb_element_id(&self, error_body: &serde_json::Value) -> Option<ElementId> {
-        if let Some(doc_id) = error_body.get("_id").and_then(|v| v.as_str()) {
-            return Some(ElementId::StringValue(doc_id.to_string()));
-        }
-
-        if let Some(doc_key) = error_body.get("_key").and_then(|v| v.as_str()) {
-            return Some(ElementId::StringValue(doc_key.to_string()));
-        }
-
-        if let Some(error_msg) = error_body.get("errorMessage").and_then(|v| v.as_str()) {
-            if let Some(element_id) = self.extract_arangodb_id_from_message(error_msg) {
-                return Some(element_id);
-            }
-        }
-        None
-    }
-
-    fn extract_arangodb_id_from_message(&self, message: &str) -> Option<ElementId> {
-        // ArangoDB uses collection/key format for document handles
-        if let Some(start) = message.find('"') {
-            if let Some(end) = message[start + 1..].find('"') {
-                let potential_id = &message[start + 1..start + 1 + end];
-                if potential_id.contains('/') && potential_id.len() > 3 {
-                    return Some(ElementId::StringValue(potential_id.to_string()));
-                }
-            }
-        }
-
-        if message.contains('/') {
-            let words: Vec<&str> = message.split_whitespace().collect();
-            for word in words {
-                if word.contains('/') && word.matches('/').count() == 1 {
-                    let parts: Vec<&str> = word.split('/').collect();
-                    if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
-                        return Some(ElementId::StringValue(word.to_string()));
-                    }
-                }
-            }
-        }
-        None
     }
 
     fn handle_arango_reqwest_error(&self, details: &str, err: reqwest::Error) -> GraphError {

@@ -12,17 +12,19 @@ use golem_graph::golem::graph::{
     },
     types::{ElementId, Vertex},
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 
 // Response types for traversal operations
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct TraversalItem {
     vertex: Option<Value>,
     edge: Option<Value>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct PathResponse {
     vertices: Vec<Value>,
