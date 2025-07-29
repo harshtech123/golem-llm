@@ -65,17 +65,7 @@ impl GuestTransaction for Transaction {
 
     fn get_vertex(&self, id: ElementId) -> Result<Option<Vertex>, GraphError> {
         let key = helpers::element_id_to_key(&id)?;
-        let collection = if let ElementId::StringValue(s) = &id {
-            s.split('/').next().unwrap_or_default()
-        } else {
-            ""
-        };
-
-        if collection.is_empty() {
-            return Err(GraphError::InvalidQuery(
-                "ElementId for get_vertex must be a full _id (e.g., 'collection/key')".to_string(),
-            ));
-        }
+        let collection = helpers::collection_from_element_id(&id)?;
 
         let query = json!({
             "query": "RETURN DOCUMENT(@@collection, @key)",
@@ -93,15 +83,20 @@ impl GuestTransaction for Transaction {
             GraphError::InternalError("Expected array in AQL response".to_string())
         })?;
 
-        if let Some(vertex_doc) = result_array.first().and_then(|v| v.as_object()) {
-            if vertex_doc.is_empty() || result_array.first().unwrap().is_null() {
+        if let Some(vertex_value) = result_array.first() {
+            if vertex_value.is_null() {
                 return Ok(None);
             }
-            let vertex = helpers::parse_vertex_from_document(vertex_doc, collection)?;
-            Ok(Some(vertex))
-        } else {
-            Ok(None)
+            
+            if let Some(vertex_doc) = vertex_value.as_object() {
+                if !vertex_doc.is_empty() {
+                    let vertex = helpers::parse_vertex_from_document(vertex_doc, collection)?;
+                    return Ok(Some(vertex));
+                }
+            }
         }
+        
+        Ok(None)
     }
 
     fn update_vertex(&self, id: ElementId, properties: PropertyMap) -> Result<Vertex, GraphError> {
@@ -139,17 +134,7 @@ impl GuestTransaction for Transaction {
         updates: PropertyMap,
     ) -> Result<Vertex, GraphError> {
         let key = helpers::element_id_to_key(&id)?;
-        let collection = if let ElementId::StringValue(s) = &id {
-            s.split('/').next().unwrap_or_default()
-        } else {
-            ""
-        };
-
-        if collection.is_empty() {
-            return Err(GraphError::InvalidQuery(
-                "ElementId for update_vertex_properties must be a full _id (e.g., 'collection/key')".to_string(),
-            ));
-        }
+        let collection = helpers::collection_from_element_id(&id)?;
 
         let props = conversions::to_arango_properties(updates)?;
 
@@ -165,9 +150,11 @@ impl GuestTransaction for Transaction {
         let response = self
             .api
             .execute_in_transaction(&self.transaction_id, query)?;
+        
         let result_array = response.as_array().ok_or_else(|| {
             GraphError::InternalError("Expected array in AQL response".to_string())
         })?;
+        
         let vertex_doc = result_array
             .first()
             .and_then(|v| v.as_object())
@@ -178,18 +165,7 @@ impl GuestTransaction for Transaction {
 
     fn delete_vertex(&self, id: ElementId, delete_edges: bool) -> Result<(), GraphError> {
         let key = helpers::element_id_to_key(&id)?;
-        let collection = if let ElementId::StringValue(s) = &id {
-            s.split('/').next().unwrap_or_default()
-        } else {
-            ""
-        };
-
-        if collection.is_empty() {
-            return Err(GraphError::InvalidQuery(
-                "ElementId for delete_vertex must be a full _id (e.g., 'collection/key')"
-                    .to_string(),
-            ));
-        }
+        let collection = helpers::collection_from_element_id(&id)?;
 
         if delete_edges {
             let vertex_id = helpers::element_id_to_string(&id);
@@ -320,9 +296,11 @@ impl GuestTransaction for Transaction {
         let response = self
             .api
             .execute_in_transaction(&self.transaction_id, query)?;
+        
         let result_array = response.as_array().ok_or_else(|| {
             GraphError::InternalError("Expected array in AQL response".to_string())
         })?;
+        
         let edge_doc = result_array
             .first()
             .and_then(|v| v.as_object())
@@ -335,17 +313,7 @@ impl GuestTransaction for Transaction {
 
     fn get_edge(&self, id: ElementId) -> Result<Option<Edge>, GraphError> {
         let key = helpers::element_id_to_key(&id)?;
-        let collection = if let ElementId::StringValue(s) = &id {
-            s.split('/').next().unwrap_or_default()
-        } else {
-            ""
-        };
-
-        if collection.is_empty() {
-            return Err(GraphError::InvalidQuery(
-                "ElementId for get_edge must be a full _id (e.g., 'collection/key')".to_string(),
-            ));
-        }
+        let collection = helpers::collection_from_element_id(&id)?;
 
         let query = json!({
             "query": "RETURN DOCUMENT(@@collection, @key)",
@@ -358,19 +326,25 @@ impl GuestTransaction for Transaction {
         let response = self
             .api
             .execute_in_transaction(&self.transaction_id, query)?;
+        
         let result_array = response.as_array().ok_or_else(|| {
             GraphError::InternalError("Expected array in AQL response".to_string())
         })?;
 
-        if let Some(edge_doc) = result_array.first().and_then(|v| v.as_object()) {
-            if edge_doc.is_empty() || result_array.first().unwrap().is_null() {
+        if let Some(edge_value) = result_array.first() {
+            if edge_value.is_null() {
                 return Ok(None);
             }
-            let edge = helpers::parse_edge_from_document(edge_doc, collection)?;
-            Ok(Some(edge))
-        } else {
-            Ok(None)
+            
+            if let Some(edge_doc) = edge_value.as_object() {
+                if !edge_doc.is_empty() {
+                    let edge = helpers::parse_edge_from_document(edge_doc, collection)?;
+                    return Ok(Some(edge));
+                }
+            }
         }
+        
+        Ok(None)
     }
 
     fn update_edge(&self, id: ElementId, properties: PropertyMap) -> Result<Edge, GraphError> {

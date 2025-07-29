@@ -2,12 +2,12 @@
 // Options used:
 //   * runtime_path: "wit_bindgen_rt"
 //   * with "golem:graph/transactions@1.0.0" = "golem_graph::golem::graph::transactions"
-//   * with "golem:graph/traversal@1.0.0" = "golem_graph::golem::graph::traversal"
-//   * with "golem:graph/errors@1.0.0" = "golem_graph::golem::graph::errors"
-//   * with "golem:graph/schema@1.0.0" = "golem_graph::golem::graph::schema"
 //   * with "golem:graph/connection@1.0.0" = "golem_graph::golem::graph::connection"
-//   * with "golem:graph/types@1.0.0" = "golem_graph::golem::graph::types"
+//   * with "golem:graph/schema@1.0.0" = "golem_graph::golem::graph::schema"
 //   * with "golem:graph/query@1.0.0" = "golem_graph::golem::graph::query"
+//   * with "golem:graph/errors@1.0.0" = "golem_graph::golem::graph::errors"
+//   * with "golem:graph/traversal@1.0.0" = "golem_graph::golem::graph::traversal"
+//   * with "golem:graph/types@1.0.0" = "golem_graph::golem::graph::types"
 //   * generate_unused_types
 use golem_graph::golem::graph::types as __with_name0;
 use golem_graph::golem::graph::errors as __with_name1;

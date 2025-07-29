@@ -6,13 +6,106 @@ use golem_graph::golem::graph::schema::{
 use golem_graph::golem::graph::types::ElementId;
 use log::trace;
 use reqwest::{Client, Method, Response};
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::{json, Value};
+use std::fmt::Debug;
 
 pub struct ArangoDbApi {
     base_url: String,
     client: Client,
     auth_header: String,
+}
+
+// Response type definitions for ArangoDB API responses
+#[derive(Debug, Deserialize)]
+pub struct ArangoResponse<T> {
+    pub result: T,
+    pub error: Option<bool>,
+    #[serde(rename = "errorNum")]
+    pub error_num: Option<i64>,
+    #[serde(rename = "errorMessage")]
+    pub error_message: Option<String>,
+    pub code: Option<u16>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ArangoErrorResponse {
+    pub error: bool,
+    #[serde(rename = "errorNum")]
+    pub error_num: Option<i64>,
+    #[serde(rename = "errorMessage")]
+    pub error_message: String,
+    pub code: u16,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransactionBeginResponse {
+    pub result: TransactionResult,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransactionResult {
+    pub id: String,
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct QueryResponse {
+    pub result: Vec<Value>,
+    pub count: Option<u64>,
+    #[serde(rename = "hasMore")]
+    pub has_more: Option<bool>,
+    pub extra: Option<QueryExtra>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct QueryExtra {
+    pub stats: Option<QueryStats>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct QueryStats {
+    #[serde(rename = "writesExecuted")]
+    pub writes_executed: Option<u64>,
+    #[serde(rename = "writesIgnored")]
+    pub writes_ignored: Option<u64>,
+    #[serde(rename = "scannedFull")]
+    pub scanned_full: Option<u64>,
+    #[serde(rename = "scannedIndex")]
+    pub scanned_index: Option<u64>,
+    #[serde(rename = "executionTime")]
+    pub execution_time: Option<f64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CollectionCreateResponse {
+    pub result: CollectionInfo,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CollectionInfo {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub collection_type: u8,
+    pub status: u8,
+    #[serde(rename = "isSystem")]
+    pub is_system: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IndexCreateResponse {
+    pub result: IndexInfo,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct IndexInfo {
+    pub id: String,
+    pub name: Option<String>,
+    #[serde(rename = "type")]
+    pub index_type: String,
+    pub fields: Vec<String>,
+    pub unique: bool,
 }
 
 impl ArangoDbApi {
@@ -37,12 +130,22 @@ impl ArangoDbApi {
         }
     }
 
-    fn execute<T: DeserializeOwned>(
+    fn execute<T: DeserializeOwned + Debug>(
         &self,
         method: Method,
         endpoint: &str,
         body: Option<&Value>,
     ) -> Result<T, GraphError> {
+        let response = self.execute_request(method, endpoint, body)?;
+        parse_arango_response(response)
+    }
+
+    fn execute_request(
+        &self,
+        method: Method,
+        endpoint: &str,
+        body: Option<&Value>,
+    ) -> Result<Response, GraphError> {
         let url = format!("{}{}", self.base_url, endpoint);
 
         let mut request_builder = self
@@ -61,58 +164,14 @@ impl ArangoDbApi {
                 .body(body_string);
         }
 
-        let response = request_builder
+        request_builder
             .send()
-            .map_err(|e| self.handle_arango_reqwest_error("Request failed", e))?;
-
-        self.handle_response(response)
+            .map_err(|e| self.handle_arango_reqwest_error("Request failed", e))
     }
 
-    fn handle_response<T: DeserializeOwned>(&self, response: Response) -> Result<T, GraphError> {
-        let status = response.status();
-        let status_code = status.as_u16();
-
-        if status.is_success() {
-            let response_body: Value = response.json().map_err(|e| {
-                GraphError::InternalError(format!("Failed to parse response body: {e}"))
-            })?;
-
-            if let Some(result) = response_body.get("result") {
-                serde_json::from_value(result.clone()).map_err(|e| {
-                    GraphError::InternalError(format!(
-                        "Failed to deserialize successful response: {e}"
-                    ))
-                })
-            } else {
-                serde_json::from_value(response_body).map_err(|e| {
-                    GraphError::InternalError(format!(
-                        "Failed to deserialize successful response: {e}"
-                    ))
-                })
-            }
-        } else {
-            let error_body: Value = response.json().map_err(|e| {
-                GraphError::InternalError(format!("Failed to read error response: {e}"))
-            })?;
-
-            let error_msg = error_body
-                .get("errorMessage")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown error");
-
-            let error_num = error_body.get("errorNum").and_then(|v| v.as_i64());
-
-            let mut error = if let Some(code) = error_num {
-                from_arangodb_error_code(code, error_msg)
-            } else {
-                // Fallback for cases without ArangoDB error codes - use basic HTTP status mapping
-                map_arangodb_http_status(status_code, error_msg, &error_body)
-            };
-
-            error = self.enhance_arangodb_error(error, &error_body);
-
-            Err(error)
-        }
+    pub fn execute_query_raw(&self, query: Value) -> Result<QueryResponse, GraphError> {
+        let response = self.execute_request(Method::POST, "/_api/cursor", Some(&query))?;
+        parse_arango_response(response)
     }
 
     #[allow(dead_code)]
@@ -131,15 +190,8 @@ impl ArangoDbApi {
         };
 
         let body = json!({ "collections": collections });
-        let result: Value = self.execute(Method::POST, "/_api/transaction/begin", Some(&body))?;
-
-        result
-            .get("id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .ok_or_else(|| {
-                GraphError::InternalError("Missing transaction ID in response".to_string())
-            })
+        let result: TransactionBeginResponse = self.execute(Method::POST, "/_api/transaction/begin", Some(&body))?;
+        Ok(result.result.id)
     }
 
     #[allow(dead_code)]
@@ -158,15 +210,8 @@ impl ArangoDbApi {
         };
 
         let body = json!({ "collections": collections_spec });
-        let result: Value = self.execute(Method::POST, "/_api/transaction/begin", Some(&body))?;
-
-        result
-            .get("id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .ok_or_else(|| {
-                GraphError::InternalError("Missing transaction ID in response".to_string())
-            })
+        let result: TransactionBeginResponse = self.execute(Method::POST, "/_api/transaction/begin", Some(&body))?;
+        Ok(result.result.id)
     }
 
     pub fn commit_transaction(&self, transaction_id: &str) -> Result<(), GraphError> {
@@ -205,7 +250,8 @@ impl ArangoDbApi {
             .send()
             .map_err(|e| self.handle_arango_reqwest_error("Transaction query failed", e))?;
 
-        self.handle_response(response)
+        let query_response: QueryResponse = parse_arango_response(response)?;
+        Ok(Value::Array(query_response.result))
     }
 
     pub fn ping(&self) -> Result<(), GraphError> {
@@ -346,7 +392,7 @@ impl ArangoDbApi {
             ContainerType::EdgeContainer => 3,
         };
         let body = json!({ "name": name, "type": collection_type });
-        let _: Value = self.execute(Method::POST, "/_api/collection", Some(&body))?;
+        let _: CollectionCreateResponse = self.execute(Method::POST, "/_api/collection", Some(&body))?;
         Ok(())
     }
 
@@ -417,7 +463,7 @@ impl ArangoDbApi {
         }
 
         let endpoint = format!("/_api/index?collection={collection}");
-        let _: Value = self.execute(Method::POST, &endpoint, Some(&body))?;
+        let _: IndexCreateResponse = self.execute(Method::POST, &endpoint, Some(&body))?;
         Ok(())
     }
 
@@ -591,7 +637,7 @@ impl ArangoDbApi {
         trace!("Get transaction status: {transaction_id}");
         let endpoint = format!("/_api/transaction/{transaction_id}");
         let response: TransactionStatusResponse = self.execute(Method::GET, &endpoint, None)?;
-        Ok(response.status)
+        Ok(response.result.status)
     }
 
     pub fn get_database_statistics(&self) -> Result<DatabaseStatistics, GraphError> {
@@ -663,23 +709,139 @@ impl ArangoDbApi {
         };
 
         let body = json!({ "collections": collections });
-        let result: Value = self.execute(Method::POST, "/_api/transaction/begin", Some(&body))?;
-
-        result
-            .get("id")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .ok_or_else(|| {
-                GraphError::InternalError("Missing transaction ID in response".to_string())
-            })
+        let result: TransactionBeginResponse = self.execute(Method::POST, "/_api/transaction/begin", Some(&body))?;
+        Ok(result.result.id)
     }
+}
+
+// Generic response parsing function
+fn parse_arango_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, GraphError> {
+    let status = response.status();
+
+    trace!("Received response from ArangoDB: status={}", status);
+
+    if status.is_success() {
+        let body = response
+            .json::<T>()
+            .map_err(|err| GraphError::InternalError(format!("Failed to decode response body: {err}")))?;
+
+        trace!("Successfully parsed ArangoDB response: {body:?}");
+        Ok(body)
+    } else {
+        let error_body = response
+            .text()
+            .map_err(|err| GraphError::InternalError(format!("Failed to receive error response body: {err}")))?;
+
+        trace!("Received {} response from ArangoDB: {error_body:?}", status);
+
+        // Try to parse as ArangoDB error response
+        if let Ok(arango_error) = serde_json::from_str::<ArangoErrorResponse>(&error_body) {
+            let mut error = if let Some(code) = arango_error.error_num {
+                from_arangodb_error_code(code, &arango_error.error_message)
+            } else {
+                map_arangodb_http_status(status.as_u16(), &arango_error.error_message, &serde_json::Value::Null)
+            };
+
+            // Try to enhance the error with element ID if possible
+            if let Ok(error_json) = serde_json::from_str::<serde_json::Value>(&error_body) {
+                error = enhance_arangodb_error_static(error, &error_json);
+            }
+
+            Err(error)
+        } else {
+            // Fallback for non-JSON error responses
+            Err(map_arangodb_http_status(status.as_u16(), &error_body, &serde_json::Value::Null))
+        }
+    }
+}
+
+// Static version of enhance_arangodb_error for use in parse_arango_response
+fn enhance_arangodb_error_static(error: GraphError, error_body: &serde_json::Value) -> GraphError {
+    match &error {
+        GraphError::InternalError(_) if is_arangodb_document_not_found_error_static(error_body) => {
+            if let Some(element_id) = extract_arangodb_element_id_static(error_body) {
+                GraphError::ElementNotFound(element_id)
+            } else {
+                error
+            }
+        }
+        GraphError::ConstraintViolation(_) if is_arangodb_unique_constraint_error_static(error_body) => {
+            if let Some(element_id) = extract_arangodb_element_id_static(error_body) {
+                GraphError::DuplicateElement(element_id)
+            } else {
+                error
+            }
+        }
+        _ => error,
+    }
+}
+
+fn is_arangodb_document_not_found_error_static(error_body: &serde_json::Value) -> bool {
+    if let Some(error_num) = error_body.get("errorNum").and_then(|v| v.as_i64()) {
+        return error_num == 1202;
+    }
+    false
+}
+
+fn is_arangodb_unique_constraint_error_static(error_body: &serde_json::Value) -> bool {
+    if let Some(error_num) = error_body.get("errorNum").and_then(|v| v.as_i64()) {
+        return error_num == 1210;
+    }
+    false
+}
+
+fn extract_arangodb_element_id_static(error_body: &serde_json::Value) -> Option<ElementId> {
+    if let Some(doc_id) = error_body.get("_id").and_then(|v| v.as_str()) {
+        return Some(ElementId::StringValue(doc_id.to_string()));
+    }
+
+    if let Some(doc_key) = error_body.get("_key").and_then(|v| v.as_str()) {
+        return Some(ElementId::StringValue(doc_key.to_string()));
+    }
+
+    if let Some(error_msg) = error_body.get("errorMessage").and_then(|v| v.as_str()) {
+        if let Some(element_id) = extract_arangodb_id_from_message_static(error_msg) {
+            return Some(element_id);
+        }
+    }
+    None
+}
+
+fn extract_arangodb_id_from_message_static(message: &str) -> Option<ElementId> {
+    // ArangoDB uses collection/key format for document handles
+    if let Some(start) = message.find('"') {
+        if let Some(end) = message[start + 1..].find('"') {
+            let potential_id = &message[start + 1..start + 1 + end];
+            if potential_id.contains('/') && potential_id.len() > 3 {
+                return Some(ElementId::StringValue(potential_id.to_string()));
+            }
+        }
+    }
+
+    if message.contains('/') {
+        let words: Vec<&str> = message.split_whitespace().collect();
+        for word in words {
+            if word.contains('/') && word.matches('/').count() == 1 {
+                let parts: Vec<&str> = word.split('/').collect();
+                if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+                    return Some(ElementId::StringValue(word.to_string()));
+                }
+            }
+        }
+    }
+    None
 }
 
 #[derive(serde::Deserialize, Debug)]
 struct TransactionStatusResponse {
+    pub result: TransactionStatus,
+}
+
+#[derive(serde::Deserialize, Debug)]
+struct TransactionStatus {
     #[serde(rename = "id")]
-    _id: String,
-    status: String,
+    pub _id: String,
+    pub status: String,
 }
 
 #[derive(serde::Deserialize, Debug)]
