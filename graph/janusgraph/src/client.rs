@@ -1,4 +1,5 @@
 use golem_graph::golem::graph::errors::GraphError;
+use golem_graph::golem::graph::types::{Edge, Vertex};
 use log::trace;
 use reqwest::{Client, Response};
 use serde_json::{json, Value};
@@ -9,6 +10,36 @@ pub struct JanusGraphApi {
     endpoint: String,
     client: Client,
     session_id: String,
+}
+
+// Response type definitions for type-safe parsing
+pub struct VertexDocument {
+    pub id: Value,
+    pub label: String,
+    pub properties: std::collections::HashMap<String, Value>,
+}
+
+pub struct EdgeDocument {
+    pub id: Value,
+    pub label: String,
+    pub in_v: Value,
+    pub out_v: Value,
+    pub properties: std::collections::HashMap<String, Value>,
+}
+
+pub struct GremlinOperationResponse {
+    pub data: Vec<Value>,
+    pub meta: Option<GremlinOperationExtra>,
+}
+
+pub struct GremlinOperationExtra {
+    pub request_id: Option<String>,
+    pub status: Option<GremlinOperationStatus>,
+}
+
+pub struct GremlinOperationStatus {
+    pub message: String,
+    pub code: u16,
 }
 
 impl JanusGraphApi {
@@ -550,5 +581,277 @@ impl JanusGraphApi {
                 GraphError::InternalError(debug_info)
             }
         }
+    }
+
+    // Centralized response parsing functions
+    pub fn parse_gremlin_response(&self, response: Value, operation: &str) -> Result<GremlinOperationResponse, GraphError> {
+        let result = response
+            .get("result")
+            .ok_or_else(|| GraphError::InternalError(
+                format!("Missing 'result' in {} response", operation)
+            ))?;
+
+        let data = result
+            .get("data")
+            .ok_or_else(|| GraphError::InternalError(
+                format!("Missing 'data' in {} response", operation)
+            ))?;
+
+        let data_vec = if let Some(graphson_obj) = data.as_object() {
+            if data.get("@type") == Some(&json!("g:List")) {
+                data.get("@value")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.clone())
+                    .unwrap_or_default()
+            } else {
+                vec![data.clone()]
+            }
+        } else if let Some(arr) = data.as_array() {
+            arr.clone()
+        } else {
+            vec![data.clone()]
+        };
+
+        let meta = result.get("meta").map(|_| GremlinOperationExtra {
+            request_id: result.get("requestId").and_then(|v| v.as_str()).map(String::from),
+            status: result.get("status").and_then(|s| {
+                s.as_object().map(|obj| GremlinOperationStatus {
+                    message: obj.get("message").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    code: obj.get("code").and_then(|v| v.as_u64()).unwrap_or(0) as u16,
+                })
+            }),
+        });
+
+        Ok(GremlinOperationResponse {
+            data: data_vec,
+            meta,
+        })
+    }
+
+    pub fn parse_gremlin_vertex_response(&self, response: Value, operation: &str) -> Result<Vec<Vertex>, GraphError> {
+        let gremlin_response = self.parse_gremlin_response(response, operation)?;
+        
+        gremlin_response.data
+            .iter()
+            .map(|item| crate::helpers::parse_vertex_from_gremlin(item)
+                .map_err(|e| GraphError::InternalError(
+                    format!("Failed to parse vertex in {} operation: {}", operation, e)
+                )))
+            .collect()
+    }
+
+    pub fn parse_gremlin_edge_response(&self, response: Value, operation: &str) -> Result<Vec<Edge>, GraphError> {
+        let gremlin_response = self.parse_gremlin_response(response, operation)?;
+        
+        gremlin_response.data
+            .iter()
+            .map(|item| crate::helpers::parse_edge_from_gremlin(item)
+                .map_err(|e| GraphError::InternalError(
+                    format!("Failed to parse edge in {} operation: {}", operation, e)
+                )))
+            .collect()
+    }
+
+    pub fn parse_single_vertex_response(&self, response: Value, operation: &str) -> Result<Option<Vertex>, GraphError> {
+        let vertices = self.parse_gremlin_vertex_response(response, operation)?;
+        Ok(vertices.into_iter().next())
+    }
+
+    pub fn parse_single_edge_response(&self, response: Value, operation: &str) -> Result<Option<Edge>, GraphError> {
+        let edges = self.parse_gremlin_edge_response(response, operation)?;
+        Ok(edges.into_iter().next())
+    }
+
+    // Static helper functions for centralized parsing
+    pub fn parse_gremlin_vertex_list(data: &Value, operation: &str) -> Result<Vec<Vertex>, GraphError> {
+        let data_vec = if let Some(graphson_obj) = data.as_object() {
+            if data.get("@type") == Some(&json!("g:List")) {
+                data.get("@value")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.clone())
+                    .unwrap_or_default()
+            } else {
+                vec![data.clone()]
+            }
+        } else if let Some(arr) = data.as_array() {
+            arr.clone()
+        } else {
+            vec![data.clone()]
+        };
+
+        let mut vertices = Vec::new();
+        for item in data_vec {
+            if let Some(vertex_obj) = item.as_object() {
+                if vertex_obj.get("@type") == Some(&json!("g:Vertex")) {
+                    if let Some(value_obj) = vertex_obj.get("@value").and_then(|v| v.as_object()) {
+                        let vertex = JanusGraphApi::parse_vertex_from_graphson(value_obj, operation)?;
+                        vertices.push(vertex);
+                    }
+                }
+            }
+        }
+        Ok(vertices)
+    }
+
+    pub fn parse_gremlin_edge_list(data: &Value, operation: &str) -> Result<Vec<Edge>, GraphError> {
+        let data_vec = if let Some(graphson_obj) = data.as_object() {
+            if data.get("@type") == Some(&json!("g:List")) {
+                data.get("@value")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.clone())
+                    .unwrap_or_default()
+            } else {
+                vec![data.clone()]
+            }
+        } else if let Some(arr) = data.as_array() {
+            arr.clone()
+        } else {
+            vec![data.clone()]
+        };
+
+        let mut edges = Vec::new();
+        for item in data_vec {
+            if let Some(edge_obj) = item.as_object() {
+                if edge_obj.get("@type") == Some(&json!("g:Edge")) {
+                    if let Some(value_obj) = edge_obj.get("@value").and_then(|v| v.as_object()) {
+                        let edge = JanusGraphApi::parse_edge_from_graphson(value_obj, operation)?;
+                        edges.push(edge);
+                    }
+                }
+            }
+        }
+        Ok(edges)
+    }
+
+    pub fn parse_gremlin_single_vertex(data: &Value, operation: &str) -> Result<Option<Vertex>, GraphError> {
+        let vertices = JanusGraphApi::parse_gremlin_vertex_list(data, operation)?;
+        Ok(vertices.into_iter().next())
+    }
+
+    fn parse_vertex_from_graphson(value_obj: &serde_json::Map<String, Value>, operation: &str) -> Result<Vertex, GraphError> {
+        use crate::conversions::from_gremlin_value;
+        use golem_graph::golem::graph::types::{ElementId, PropertyValue};
+
+        let id = value_obj
+            .get("id")
+            .ok_or_else(|| GraphError::InternalError(format!("Missing vertex id in {}", operation)))?;
+        
+        let vertex_id = match id {
+            Value::String(s) => ElementId::StringValue(s.clone()),
+            Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    ElementId::Int64(i)
+                } else {
+                    return Err(GraphError::InternalError(format!("Invalid vertex id type in {}", operation)));
+                }
+            },
+            _ => return Err(GraphError::InternalError(format!("Unsupported vertex id type in {}", operation))),
+        };
+
+        let label = value_obj
+            .get("label")
+            .and_then(|l| l.as_str())
+            .unwrap_or("vertex")
+            .to_string();
+
+        let mut properties = Vec::new();
+        if let Some(props_obj) = value_obj.get("properties").and_then(|p| p.as_object()) {
+            for (prop_key, prop_value_array) in props_obj {
+                if let Some(prop_array) = prop_value_array.as_array() {
+                    if let Some(first_prop) = prop_array.first() {
+                        if let Some(prop_obj) = first_prop.as_object() {
+                            if let Some(prop_value_obj) = prop_obj.get("@value").and_then(|v| v.as_object()) {
+                                if let Some(actual_value) = prop_value_obj.get("value") {
+                                    if let Ok(converted_value) = from_gremlin_value(actual_value) {
+                                        properties.push((prop_key.clone(), converted_value));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(Vertex {
+            id: vertex_id,
+            vertex_type: label,
+            properties,
+            additional_labels: Vec::new(),
+        })
+    }
+
+    fn parse_edge_from_graphson(value_obj: &serde_json::Map<String, Value>, operation: &str) -> Result<Edge, GraphError> {
+        use crate::conversions::from_gremlin_value;
+        use golem_graph::golem::graph::types::{ElementId, PropertyValue};
+
+        let id = value_obj
+            .get("id")
+            .ok_or_else(|| GraphError::InternalError(format!("Missing edge id in {}", operation)))?;
+        
+        let edge_id = match id {
+            Value::String(s) => ElementId::StringValue(s.clone()),
+            Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    ElementId::Int64(i)
+                } else {
+                    return Err(GraphError::InternalError(format!("Invalid edge id type in {}", operation)));
+                }
+            },
+            _ => return Err(GraphError::InternalError(format!("Unsupported edge id type in {}", operation))),
+        };
+
+        let label = value_obj
+            .get("label")
+            .and_then(|l| l.as_str())
+            .unwrap_or("edge")
+            .to_string();
+
+        let from_vertex = value_obj
+            .get("outV")
+            .ok_or_else(|| GraphError::InternalError(format!("Missing outV in edge for {}", operation)))?;
+        let from_vertex_id = match from_vertex {
+            Value::String(s) => ElementId::StringValue(s.clone()),
+            Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    ElementId::Int64(i)
+                } else {
+                    return Err(GraphError::InternalError(format!("Invalid from vertex id type in {}", operation)));
+                }
+            },
+            _ => return Err(GraphError::InternalError(format!("Unsupported from vertex id type in {}", operation))),
+        };
+
+        let to_vertex = value_obj
+            .get("inV")
+            .ok_or_else(|| GraphError::InternalError(format!("Missing inV in edge for {}", operation)))?;
+        let to_vertex_id = match to_vertex {
+            Value::String(s) => ElementId::StringValue(s.clone()),
+            Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    ElementId::Int64(i)
+                } else {
+                    return Err(GraphError::InternalError(format!("Invalid to vertex id type in {}", operation)));
+                }
+            },
+            _ => return Err(GraphError::InternalError(format!("Unsupported to vertex id type in {}", operation))),
+        };
+
+        let mut properties = Vec::new();
+        if let Some(props_obj) = value_obj.get("properties").and_then(|p| p.as_object()) {
+            for (prop_key, prop_value) in props_obj {
+                if let Ok(converted_value) = from_gremlin_value(prop_value) {
+                    properties.push((prop_key.clone(), converted_value));
+                }
+            }
+        }
+
+        Ok(Edge {
+            id: edge_id,
+            edge_type: label,
+            from_vertex: from_vertex_id,
+            to_vertex: to_vertex_id,
+            properties,
+        })
     }
 }

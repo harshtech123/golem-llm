@@ -10,53 +10,6 @@ use golem_graph::golem::graph::{
 use log::trace;
 use serde_json::{json, Value};
 
-/// Given a GraphSON Map element, turn it into a serde_json::Value::Object
-fn graphson_map_to_object(data: &Value) -> Result<Value, GraphError> {
-    let arr = data
-        .get("@value")
-        .and_then(Value::as_array)
-        .ok_or_else(|| {
-            GraphError::InternalError("Expected GraphSON Map with @value array".into())
-        })?;
-
-    let mut obj = serde_json::Map::new();
-    let mut iter = arr.iter();
-    while let (Some(k), Some(v)) = (iter.next(), iter.next()) {
-        let key = if let Some(s) = k.as_str() {
-            s.to_string()
-        } else if let Some(inner) = k.get("@value").and_then(Value::as_str) {
-            inner.to_string()
-        } else {
-            return Err(GraphError::InternalError(format!(
-                "Expected string key in GraphSON Map, got {k}"
-            )));
-        };
-
-        let val = if let Some(inner) = v.get("@value") {
-            inner.clone()
-        } else {
-            v.clone()
-        };
-
-        obj.insert(key, val);
-    }
-
-    Ok(Value::Object(obj))
-}
-
-fn unwrap_list(data: &Value) -> Result<&Vec<Value>, GraphError> {
-    data.get("@value")
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| {
-            GraphError::InternalError("Expected `@value: List` in Gremlin response".into())
-        })
-}
-fn first_list_item(data: &Value) -> Result<&Value, GraphError> {
-    unwrap_list(data)?
-        .first()
-        .ok_or_else(|| GraphError::InternalError("Empty result list from Gremlin".into()))
-}
-
 impl GuestTransaction for Transaction {
     fn commit(&self) -> Result<(), GraphError> {
         Ok(())
@@ -93,10 +46,11 @@ impl GuestTransaction for Transaction {
         gremlin.push_str(".elementMap()");
 
         let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-        let element = first_list_item(&response["result"]["data"])?;
-        let obj = graphson_map_to_object(element)?;
-
-        helpers::parse_vertex_from_gremlin(&obj)
+        
+        // Use centralized parsing with operation context
+        let vertices = self.api.parse_gremlin_vertex_response(response, "create_vertex")?;
+        vertices.into_iter().next()
+            .ok_or_else(|| GraphError::InternalError("No vertex returned from create_vertex operation".to_string()))
     }
 
     fn get_vertex(&self, id: ElementId) -> Result<Option<Vertex>, GraphError> {
@@ -112,48 +66,10 @@ impl GuestTransaction for Transaction {
             },
         );
 
-        let resp = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-
-        let data = &resp["result"]["data"];
-        let list: Vec<Value> = if let Some(arr) = data.as_array() {
-            arr.clone()
-        } else if let Some(inner) = data.get("@value").and_then(Value::as_array) {
-            inner.clone()
-        } else {
-            vec![]
-        };
-
-        if let Some(row) = list.into_iter().next() {
-            let obj = if row.get("@type") == Some(&json!("g:Map")) {
-                let vals = row.get("@value").and_then(Value::as_array).unwrap();
-                let mut m = serde_json::Map::new();
-                let mut it = vals.iter();
-                while let (Some(kv), Some(vv)) = (it.next(), it.next()) {
-                    let key = if kv.is_string() {
-                        kv.as_str().unwrap().to_string()
-                    } else {
-                        kv.get("@value")
-                            .and_then(Value::as_str)
-                            .unwrap()
-                            .to_string()
-                    };
-                    let val = if vv.is_object() {
-                        vv.get("@value").cloned().unwrap_or(vv.clone())
-                    } else {
-                        vv.clone()
-                    };
-                    m.insert(key, val);
-                }
-                Value::Object(m)
-            } else {
-                row.clone()
-            };
-
-            let vertex = helpers::parse_vertex_from_gremlin(&obj)?;
-            Ok(Some(vertex))
-        } else {
-            Ok(None)
-        }
+        let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
+        
+        // Use centralized parsing with operation context
+        self.api.parse_single_vertex_response(response, "get_vertex")
     }
 
     fn update_vertex(&self, id: ElementId, properties: PropertyMap) -> Result<Vertex, GraphError> {
@@ -178,61 +94,12 @@ impl GuestTransaction for Transaction {
 
         gremlin.push_str(".elementMap()");
 
-        let resp = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-
-        let data = &resp["result"]["data"];
-        let maybe_row = data
-            .as_array()
-            .and_then(|arr| arr.first().cloned())
-            .or_else(|| {
-                data.get("@value")
-                    .and_then(Value::as_array)
-                    .and_then(|arr| arr.first().cloned())
-            });
-        let row = maybe_row.ok_or(GraphError::ElementNotFound(id.clone()))?;
-
-        let mut flat = serde_json::Map::new();
-        if row.get("@type") == Some(&json!("g:Map")) {
-            let vals = row.get("@value").and_then(Value::as_array).unwrap();
-            let mut it = vals.iter();
-            while let (Some(kv), Some(vv)) = (it.next(), it.next()) {
-                // key: plain string or wrapped
-                let key = if kv.is_string() {
-                    kv.as_str().unwrap().to_string()
-                } else {
-                    kv.get("@value")
-                        .and_then(Value::as_str)
-                        .unwrap()
-                        .to_string()
-                };
-                let val = if vv.is_object() {
-                    vv.get("@value").cloned().unwrap_or(vv.clone())
-                } else {
-                    vv.clone()
-                };
-                flat.insert(key, val);
-            }
-        } else if let Some(obj) = row.as_object() {
-            flat = obj.clone();
-        } else {
-            return Err(GraphError::InternalError(
-                "Unexpected Gremlin row format".into(),
-            ));
-        }
-
-        let mut obj = serde_json::Map::new();
-        obj.insert("id".to_string(), flat["id"].clone());
-        obj.insert("label".to_string(), flat["label"].clone());
-
-        let mut props = serde_json::Map::new();
-        for (k, v) in flat.into_iter() {
-            if k != "id" && k != "label" {
-                props.insert(k, v);
-            }
-        }
-        obj.insert("properties".to_string(), Value::Object(props));
-
-        helpers::parse_vertex_from_gremlin(&Value::Object(obj))
+        let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
+        
+        // Use centralized parsing with operation context
+        let vertices = self.api.parse_gremlin_vertex_response(response, "update_vertex")?;
+        vertices.into_iter().next()
+            .ok_or_else(|| GraphError::ElementNotFound(id))
     }
 
     fn update_vertex_properties(
@@ -266,72 +133,12 @@ impl GuestTransaction for Transaction {
 
         gremlin.push_str(".elementMap()");
 
-        let resp = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-        let data = &resp["result"]["data"];
-
-        let row = if let Some(arr) = data.as_array() {
-            arr.first()
-        } else if let Some(inner) = data.get("@value").and_then(Value::as_array) {
-            inner.first()
-        } else {
-            None
-        }
-        .ok_or_else(|| GraphError::ElementNotFound(id_clone.clone()))?;
-
-        let mut flat = serde_json::Map::new();
-        if row.get("@type") == Some(&json!("g:Map")) {
-            let vals = row.get("@value").and_then(Value::as_array).unwrap(); // we know it's an array
-            let mut it = vals.iter();
-            while let (Some(kv), Some(vv)) = (it.next(), it.next()) {
-                // key:
-                let key = if let Some(s) = kv.as_str() {
-                    s.to_string()
-                } else if kv.get("@type") == Some(&json!("g:T")) {
-                    kv.get("@value")
-                        .and_then(Value::as_str)
-                        .unwrap()
-                        .to_string()
-                } else {
-                    return Err(GraphError::InternalError(
-                        "Unexpected key format in Gremlin map".into(),
-                    ));
-                };
-                let val = if let Some(obj) = vv.as_object() {
-                    obj.get("@value")
-                        .cloned()
-                        .unwrap_or(Value::Object(obj.clone()))
-                } else {
-                    vv.clone()
-                };
-                flat.insert(key, val);
-            }
-        } else if let Some(obj) = row.as_object() {
-            flat = obj.clone();
-        } else {
-            return Err(GraphError::InternalError(
-                "Unexpected Gremlin row format".into(),
-            ));
-        }
-
-        let mut vertex_json = serde_json::Map::new();
-        vertex_json.insert("id".to_string(), flat["id"].clone());
-        vertex_json.insert("label".to_string(), flat["label"].clone());
-
-        let mut props = serde_json::Map::new();
-        for (k, v) in flat.into_iter() {
-            if k == "id" || k == "label" {
-                continue;
-            }
-            props.insert(k, v);
-        }
-        vertex_json.insert("properties".to_string(), Value::Object(props));
-
-        trace!(
-            "[DEBUG update_vertex] parser input = {:#}",
-            Value::Object(vertex_json.clone())
-        );
-
-        helpers::parse_vertex_from_gremlin(&Value::Object(vertex_json))
+        let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
+        
+        // Use centralized parsing with operation context
+        let vertices = self.api.parse_gremlin_vertex_response(response, "update_vertex_properties")?;
+        vertices.into_iter().next()
+            .ok_or_else(|| GraphError::ElementNotFound(id_clone))
     }
 
     fn delete_vertex(&self, id: ElementId, _detach: bool) -> Result<(), GraphError> {
@@ -418,30 +225,9 @@ impl GuestTransaction for Transaction {
         gremlin.push_str(".elementMap()");
 
         let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-        trace!("[DEBUG][find_vertices] Raw Gremlin response: {response:?}");
-
-        // Handle GraphSON g:List structure
-        let data = &response["result"]["data"];
-        let result_data = if let Some(arr) = data.as_array() {
-            arr.clone()
-        } else if let Some(inner) = data.get("@value").and_then(Value::as_array) {
-            inner.clone()
-        } else {
-            return Err(GraphError::InternalError(
-                "Invalid response from Gremlin for find_vertices".to_string(),
-            ));
-        };
-
-        result_data
-            .iter()
-            .map(|item| {
-                let result = helpers::parse_vertex_from_gremlin(item);
-                if let Err(ref e) = result {
-                    trace!("[DEBUG][find_vertices] Parse error for item {item:?}: {e:?}");
-                }
-                result
-            })
-            .collect()
+        
+        // Use centralized parsing with operation context
+        self.api.parse_gremlin_vertex_response(response, "find_vertices")
     }
 
     fn create_edge(
@@ -453,7 +239,6 @@ impl GuestTransaction for Transaction {
     ) -> Result<Edge, GraphError> {
         let mut gremlin = "g.V(from_id).addE(edge_label).to(__.V(to_id))".to_string();
         let mut bindings = serde_json::Map::new();
-        let from_clone = from_vertex.clone();
 
         bindings.insert(
             "from_id".into(),
@@ -484,73 +269,12 @@ impl GuestTransaction for Transaction {
 
         gremlin.push_str(".elementMap()");
 
-        let resp = self
-            .api
-            .execute(&gremlin, Some(Value::Object(bindings.clone())))?;
-        let data = &resp["result"]["data"];
-
-        let row = if let Some(arr) = data.as_array() {
-            arr.first().cloned()
-        } else if let Some(inner) = data.get("@value").and_then(Value::as_array) {
-            inner.first().cloned()
-        } else {
-            None
-        }
-        .ok_or_else(|| GraphError::ElementNotFound(from_clone.clone()))?;
-
-        let mut flat = serde_json::Map::new();
-        if row.get("@type") == Some(&json!("g:Map")) {
-            let vals = row.get("@value").and_then(Value::as_array).unwrap();
-            let mut it = vals.iter();
-            while let (Some(kv), Some(vv)) = (it.next(), it.next()) {
-                let key = if kv.is_string() {
-                    kv.as_str().unwrap().to_string()
-                } else {
-                    kv.get("@value")
-                        .and_then(Value::as_str)
-                        .unwrap()
-                        .to_string()
-                };
-                let val = if vv.is_object() {
-                    vv.get("@value").cloned().unwrap_or(vv.clone())
-                } else {
-                    vv.clone()
-                };
-                flat.insert(key.clone(), val.clone());
-            }
-        } else if let Some(obj) = row.as_object() {
-            flat = obj.clone();
-        } else {
-            return Err(GraphError::InternalError("Unexpected row format".into()));
-        }
-
-        let mut edge_json = serde_json::Map::new();
-
-        let id_field = &flat["id"];
-        let real_id = if let Some(rel) = id_field.get("relationId").and_then(Value::as_str) {
-            json!(rel)
-        } else {
-            id_field.clone()
-        };
-        edge_json.insert("id".into(), real_id.clone());
-
-        let lbl = flat["label"].clone();
-        edge_json.insert("label".into(), lbl.clone());
-
-        if let Some(arr) = flat.get("OUT").and_then(Value::as_array) {
-            if let Some(vv) = arr.get(1).and_then(|v| v.get("@value")).cloned() {
-                edge_json.insert("outV".into(), vv.clone());
-            }
-        }
-        if let Some(arr) = flat.get("IN").and_then(Value::as_array) {
-            if let Some(vv) = arr.get(1).and_then(|v| v.get("@value")).cloned() {
-                edge_json.insert("inV".into(), vv.clone());
-            }
-        }
-
-        edge_json.insert("properties".into(), json!({}));
-
-        helpers::parse_edge_from_gremlin(&Value::Object(edge_json))
+        let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
+        
+        // Use centralized parsing with operation context
+        let edges = self.api.parse_gremlin_edge_response(response, "create_edge")?;
+        edges.into_iter().next()
+            .ok_or_else(|| GraphError::InternalError("No edge returned from create_edge operation".to_string()))
     }
 
     fn get_edge(&self, id: ElementId) -> Result<Option<Edge>, GraphError> {
@@ -565,94 +289,10 @@ impl GuestTransaction for Transaction {
             },
         );
 
-        let resp = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-
-        let data = &resp["result"]["data"];
-        let maybe_row = data
-            .as_array()
-            .and_then(|arr| arr.first().cloned())
-            .or_else(|| {
-                data.get("@value")
-                    .and_then(Value::as_array)
-                    .and_then(|arr| arr.first().cloned())
-            });
-        let row = if let Some(r) = maybe_row {
-            r
-        } else {
-            return Ok(None);
-        };
-
-        let mut flat = serde_json::Map::new();
-        if row.get("@type") == Some(&json!("g:Map")) {
-            let vals = row.get("@value").and_then(Value::as_array).unwrap();
-            let mut it = vals.iter();
-            while let (Some(kv), Some(vv)) = (it.next(), it.next()) {
-                let key = if kv.is_string() {
-                    kv.as_str().unwrap().to_string()
-                } else if kv.get("@type") == Some(&json!("g:T"))
-                    || kv.get("@type") == Some(&json!("g:Direction"))
-                {
-                    kv.get("@value")
-                        .and_then(Value::as_str)
-                        .unwrap()
-                        .to_string()
-                } else {
-                    return Err(GraphError::InternalError(
-                        "Unexpected key format in Gremlin map".into(),
-                    ));
-                };
-
-                let val = if vv.is_object() {
-                    if vv.get("@type") == Some(&json!("g:Map")) {
-                        vv.get("@value").cloned().unwrap()
-                    } else {
-                        vv.get("@value").cloned().unwrap_or(vv.clone())
-                    }
-                } else {
-                    vv.clone()
-                };
-                flat.insert(key.clone(), val.clone());
-            }
-        } else if let Some(obj) = row.as_object() {
-            flat = obj.clone();
-        } else {
-            return Err(GraphError::InternalError(
-                "Unexpected Gremlin row format".into(),
-            ));
-        }
-
-        let mut edge_json = serde_json::Map::new();
-
-        let id_field = &flat["id"];
-        let real_id = id_field
-            .get("relationId")
-            .and_then(Value::as_str)
-            .map(|s| json!(s))
-            .unwrap_or_else(|| id_field.clone());
-        edge_json.insert("id".into(), real_id.clone());
-
-        let lbl = flat["label"].clone();
-        edge_json.insert("label".into(), lbl.clone());
-
-        if let Some(arr) = flat.get("OUT").and_then(Value::as_array) {
-            let ov = arr[1].get("@value").cloned().unwrap();
-            edge_json.insert("outV".into(), ov.clone());
-        }
-        if let Some(arr) = flat.get("IN").and_then(Value::as_array) {
-            let iv = arr[1].get("@value").cloned().unwrap();
-            edge_json.insert("inV".into(), iv.clone());
-        }
-
-        let mut props = serde_json::Map::new();
-        for (k, v) in flat.into_iter() {
-            if k != "id" && k != "label" && k != "IN" && k != "OUT" {
-                props.insert(k.clone(), v.clone());
-            }
-        }
-        edge_json.insert("properties".into(), Value::Object(props.clone()));
-
-        let edge = helpers::parse_edge_from_gremlin(&Value::Object(edge_json))?;
-        Ok(Some(edge))
+        let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
+        
+        // Use centralized parsing with operation context
+        self.api.parse_single_edge_response(response, "get_edge")
     }
 
     fn update_edge(&self, id: ElementId, properties: PropertyMap) -> Result<Edge, GraphError> {
@@ -927,15 +567,9 @@ impl GuestTransaction for Transaction {
         gremlin.push_str(".elementMap()");
 
         let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-
-        let result_data = response["result"]["data"].as_array().ok_or_else(|| {
-            GraphError::InternalError("Invalid response from Gremlin for find_edges".to_string())
-        })?;
-
-        result_data
-            .iter()
-            .map(helpers::parse_edge_from_gremlin)
-            .collect()
+        
+        // Use centralized parsing with operation context
+        self.api.parse_gremlin_edge_response(response, "find_edges")
     }
 
     fn get_adjacent_vertices(
@@ -986,22 +620,9 @@ impl GuestTransaction for Transaction {
         gremlin.push_str(".elementMap()");
 
         let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-
-        let data = &response["result"]["data"];
-        let result_data = if let Some(arr) = data.as_array() {
-            arr.clone()
-        } else if let Some(inner) = data.get("@value").and_then(Value::as_array) {
-            inner.clone()
-        } else {
-            return Err(GraphError::InternalError(
-                "Invalid response from Gremlin for get_adjacent_vertices".to_string(),
-            ));
-        };
-
-        result_data
-            .iter()
-            .map(helpers::parse_vertex_from_gremlin)
-            .collect()
+        
+        // Use centralized parsing with operation context
+        self.api.parse_gremlin_vertex_response(response, "get_adjacent_vertices")
     }
 
     fn get_connected_edges(
@@ -1052,22 +673,9 @@ impl GuestTransaction for Transaction {
         gremlin.push_str(".elementMap()");
 
         let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-
-        let data = &response["result"]["data"];
-        let result_data = if let Some(arr) = data.as_array() {
-            arr.clone()
-        } else if let Some(inner) = data.get("@value").and_then(Value::as_array) {
-            inner.clone()
-        } else {
-            return Err(GraphError::InternalError(
-                "Invalid response from Gremlin for get_connected_edges".to_string(),
-            ));
-        };
-
-        result_data
-            .iter()
-            .map(helpers::parse_edge_from_gremlin)
-            .collect()
+        
+        // Use centralized parsing with operation context
+        self.api.parse_gremlin_edge_response(response, "get_connected_edges")
     }
 
     fn create_vertices(&self, vertices: Vec<VertexSpec>) -> Result<Vec<Vertex>, GraphError> {
@@ -1105,23 +713,9 @@ impl GuestTransaction for Transaction {
         gremlin.push_str(").elementMap()");
 
         let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-
-        // Handle GraphSON g:List structure
-        let data = &response["result"]["data"];
-        let result_data = if let Some(arr) = data.as_array() {
-            arr.clone()
-        } else if let Some(inner) = data.get("@value").and_then(Value::as_array) {
-            inner.clone()
-        } else {
-            return Err(GraphError::InternalError(
-                "Invalid response from Gremlin for create_vertices".to_string(),
-            ));
-        };
-
-        result_data
-            .iter()
-            .map(helpers::parse_vertex_from_gremlin)
-            .collect()
+        
+        // Use centralized parsing with operation context
+        self.api.parse_gremlin_vertex_response(response, "create_vertices")
     }
 
     fn create_edges(&self, edges: Vec<EdgeSpec>) -> Result<Vec<Edge>, GraphError> {
@@ -1182,23 +776,9 @@ impl GuestTransaction for Transaction {
         gremlin.push_str(").elementMap()");
 
         let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-
-        // Handle GraphSON g:List structure
-        let data = &response["result"]["data"];
-        let result_data = if let Some(arr) = data.as_array() {
-            arr.clone()
-        } else if let Some(inner) = data.get("@value").and_then(Value::as_array) {
-            inner.clone()
-        } else {
-            return Err(GraphError::InternalError(
-                "Invalid response from Gremlin for create_edges".to_string(),
-            ));
-        };
-
-        result_data
-            .iter()
-            .map(helpers::parse_edge_from_gremlin)
-            .collect()
+        
+        // Use centralized parsing with operation context
+        self.api.parse_gremlin_edge_response(response, "create_edges")
     }
 
     fn upsert_vertex(
@@ -1237,17 +817,11 @@ impl GuestTransaction for Transaction {
             format!("{gremlin_match}.fold().coalesce(unfold(), {gremlin_create}).elementMap()");
 
         let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-
-        let result_data = response["result"]["data"]
-            .as_array()
-            .and_then(|arr| arr.first())
-            .ok_or_else(|| {
-                GraphError::InternalError(
-                    "Invalid response from Gremlin for upsert_vertex".to_string(),
-                )
-            })?;
-
-        helpers::parse_vertex_from_gremlin(result_data)
+        
+        // Use centralized parsing with operation context
+        let vertices = self.api.parse_gremlin_vertex_response(response, "upsert_vertex")?;
+        vertices.into_iter().next()
+            .ok_or_else(|| GraphError::InternalError("No vertex returned from upsert_vertex operation".to_string()))
     }
 
     fn upsert_edge(
@@ -1308,13 +882,11 @@ impl GuestTransaction for Transaction {
             format!("{gremlin_match}.fold().coalesce(unfold(), {gremlin_create}).elementMap()");
 
         let response = self.api.execute(&gremlin, Some(Value::Object(bindings)))?;
-        let result_data = response["result"]["data"]
-            .as_array()
-            .and_then(|arr| arr.first())
-            .ok_or_else(|| {
-                GraphError::InternalError("Invalid response from Gremlin for upsert_edge".into())
-            })?;
-        helpers::parse_edge_from_gremlin(result_data)
+        
+        // Use centralized parsing with operation context
+        let edges = self.api.parse_gremlin_edge_response(response, "upsert_edge")?;
+        edges.into_iter().next()
+            .ok_or_else(|| GraphError::InternalError("No edge returned from upsert_edge operation".to_string()))
     }
 
     fn is_active(&self) -> bool {
