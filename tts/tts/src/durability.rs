@@ -631,9 +631,11 @@ mod durable_impl {
             pollables: Vec<LazyInitializedPollable>,
         },
         Replay {
+            #[allow(dead_code)]
             options: Option<SynthesisOptions>,
             pollables: Vec<LazyInitializedPollable>,
             partial_result: Vec<AudioChunk>,
+            #[allow(dead_code)]
             finished: bool,
         },
     }
@@ -666,6 +668,7 @@ mod durable_impl {
             }
         }
 
+        #[allow(dead_code)]
         fn subscribe(&self) -> Pollable {
             let mut state = self.state.borrow_mut();
             match &mut *state {
@@ -711,9 +714,11 @@ mod durable_impl {
             pollables: Vec<LazyInitializedPollable>,
         },
         Replay {
+            #[allow(dead_code)]
             options: Option<SynthesisOptions>,
             pollables: Vec<LazyInitializedPollable>,
             partial_result: Vec<AudioChunk>,
+            #[allow(dead_code)]
             finished: bool,
         },
     }
@@ -746,6 +751,7 @@ mod durable_impl {
             }
         }
 
+        #[allow(dead_code)]
         fn subscribe(&self) -> Pollable {
             let mut state = self.state.borrow_mut();
             match &mut *state {
