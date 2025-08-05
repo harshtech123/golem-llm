@@ -19,15 +19,9 @@ wit_bindgen::generate!({
 pub use crate::exports::golem;
 pub use __export_tts_library_impl as export_tts;
 
-use crate::golem::tts::types::TtsError;
 use std::cell::RefCell;
 use std::str::FromStr;
 
-impl<'a> From<&'a TtsError> for TtsError {
-    fn from(value: &'a TtsError) -> Self {
-        value.clone()
-    }
-}
 
 struct LoggingState {
     logging_initialized: bool,
