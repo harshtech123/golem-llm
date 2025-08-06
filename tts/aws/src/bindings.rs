@@ -2,9 +2,9 @@
 // Options used:
 //   * runtime_path: "wit_bindgen_rt"
 //   * with "golem:tts/streaming@1.0.0" = "golem_tts::golem::tts::streaming"
-//   * with "golem:tts/types@1.0.0" = "golem_tts::golem::tts::types"
-//   * with "golem:tts/voices@1.0.0" = "golem_tts::golem::tts::voices"
 //   * with "golem:tts/synthesis@1.0.0" = "golem_tts::golem::tts::synthesis"
+//   * with "golem:tts/voices@1.0.0" = "golem_tts::golem::tts::voices"
+//   * with "golem:tts/types@1.0.0" = "golem_tts::golem::tts::types"
 //   * with "golem:tts/advanced@1.0.0" = "golem_tts::golem::tts::advanced"
 //   * generate_unused_types
 use golem_tts::golem::tts::types as __with_name0;

@@ -5,6 +5,46 @@ use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
+use std::time::Duration;
+
+/// Rate limiting configuration
+#[derive(Debug, Clone)]
+pub struct RateLimitConfig {
+    pub max_retries: u32,
+    pub initial_delay: Duration,
+    pub max_delay: Duration,
+    pub backoff_multiplier: f64,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            max_retries: 3,
+            initial_delay: Duration::from_millis(1000),
+            max_delay: Duration::from_secs(30),
+            backoff_multiplier: 2.0,
+        }
+    }
+}
+
+/// User quota information for rate limiting decisions
+#[derive(Debug, Clone, Deserialize)]
+pub struct QuotaInfo {
+    pub character_count: u32,
+    pub character_limit: u32,
+    pub can_extend_character_limit: bool,
+    pub allowed_to_extend_character_limit: bool,
+    pub next_character_count_reset_unix: i64,
+    pub voice_limit: u32,
+    pub max_voice_add_edits: u32,
+    pub voice_add_edit_counter: u32,
+    pub professional_voice_limit: u32,
+    pub can_extend_voice_limit: bool,
+    pub can_use_instant_voice_cloning: bool,
+    pub can_use_professional_voice_cloning: bool,
+    pub currency: Option<String>,
+    pub status: String,
+}
 
 /// The ElevenLabs TTS API client for managing voices and performing text-to-speech
 /// Based on https://elevenlabs.io/docs/api-reference/
@@ -13,6 +53,7 @@ pub struct ElevenLabsTtsApi {
     client: Client,
     api_key: String,
     base_url: String,
+    rate_limit_config: RateLimitConfig,
 }
 
 impl ElevenLabsTtsApi {
@@ -27,14 +68,114 @@ impl ElevenLabsTtsApi {
             api_key,
             client,
             base_url,
+            rate_limit_config: RateLimitConfig::default(),
         }
+    }
+
+    pub fn with_rate_limit_config(mut self, config: RateLimitConfig) -> Self {
+        self.rate_limit_config = config;
+        self
     }
 
     fn create_request(&self, method: Method, url: &str) -> RequestBuilder {
         self.client
             .request(method, url)
             .header("xi-api-key", &self.api_key)
-            .header("Content-Type", "application/json")
+    }
+
+    /// Execute a request with retry logic for rate limiting
+    fn execute_with_retry<F>(&self, operation: F) -> Result<Response, TtsError>
+    where
+        F: Fn() -> Result<Response, TtsError>,
+    {
+        let mut attempt = 0;
+        let mut delay = self.rate_limit_config.initial_delay;
+
+        loop {
+            match operation() {
+                Ok(response) => {
+                    let status = response.status();
+                    
+                    if status.is_success() {
+                        return Ok(response);
+                    } else if status.as_u16() == 429 || status.as_u16() == 503 {
+                        // Rate limit or service unavailable - retry
+                        if attempt >= self.rate_limit_config.max_retries {
+                            trace!("Max retries ({}) exceeded for rate limiting", self.rate_limit_config.max_retries);
+                            return Err(tts_error_from_status(status));
+                        }
+                        
+                        trace!("Rate limited ({}), retrying in {:?} (attempt {}/{})", 
+                               status, delay, attempt + 1, self.rate_limit_config.max_retries);
+                        
+                        // Extract retry-after header if available
+                        let retry_delay = if let Some(retry_after) = response.headers().get("retry-after") {
+                            if let Ok(seconds) = retry_after.to_str().unwrap_or("").parse::<u64>() {
+                                Duration::from_secs(seconds)
+                            } else {
+                                delay
+                            }
+                        } else {
+                            delay
+                        };
+                        
+                        std::thread::sleep(retry_delay);
+                        
+                        attempt += 1;
+                        delay = std::cmp::min(
+                            Duration::from_millis((delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64),
+                            self.rate_limit_config.max_delay
+                        );
+                    } else {
+                        // Non-retryable error
+                        return Err(tts_error_from_status(status));
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    /// Execute a request with retry logic for streaming responses
+    fn execute_stream_with_retry<F>(&self, operation: F) -> Result<Response, TtsError>
+    where
+        F: Fn() -> Result<Response, TtsError>,
+    {
+        let mut attempt = 0;
+        let mut delay = self.rate_limit_config.initial_delay;
+
+        loop {
+            match operation() {
+                Ok(response) => {
+                    let status = response.status();
+                    
+                    if status.is_success() {
+                        return Ok(response);
+                    } else if status.as_u16() == 429 || status.as_u16() == 503 {
+                        // Rate limit or service unavailable - retry
+                        if attempt >= self.rate_limit_config.max_retries {
+                            trace!("Max retries ({}) exceeded for rate limiting", self.rate_limit_config.max_retries);
+                            return Err(tts_error_from_status(status));
+                        }
+                        
+                        trace!("Rate limited ({}), retrying in {:?} (attempt {}/{})", 
+                               status, delay, attempt + 1, self.rate_limit_config.max_retries);
+                        
+                        std::thread::sleep(delay);
+                        
+                        attempt += 1;
+                        delay = std::cmp::min(
+                            Duration::from_millis((delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64),
+                            self.rate_limit_config.max_delay
+                        );
+                    } else {
+                        // Non-retryable error
+                        return Err(tts_error_from_status(status));
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
     }
 
     /// Get a list of available voices
@@ -77,10 +218,11 @@ impl ElevenLabsTtsApi {
             }
         }
 
-        let response = self
-            .create_request(Method::GET, &url)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to list voices: {e}")))?;
+        let response = self.execute_with_retry(|| {
+            self.create_request(Method::GET, &url)
+                .send()
+                .map_err(|e| internal_error(format!("Failed to list voices: {e}")))
+        })?;
 
         parse_response(response)
     }
@@ -91,10 +233,11 @@ impl ElevenLabsTtsApi {
 
         let url = format!("{}/v1/voices/{}", self.base_url, voice_id);
 
-        let response = self
-            .create_request(Method::GET, &url)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to get voice: {e}")))?;
+        let response = self.execute_with_retry(|| {
+            self.create_request(Method::GET, &url)
+                .send()
+                .map_err(|e| internal_error(format!("Failed to get voice: {e}")))
+        })?;
 
         parse_response(response)
     }
@@ -129,11 +272,12 @@ impl ElevenLabsTtsApi {
             }
         }
 
-        let response = self
-            .create_request(Method::POST, &url)
-            .json(request)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to synthesize speech: {e}")))?;
+        let response = self.execute_with_retry(|| {
+            self.create_request(Method::POST, &url)
+                .json(request)
+                .send()
+                .map_err(|e| internal_error(format!("Failed to synthesize speech: {e}")))
+        })?;
 
         if response.status().is_success() {
             let audio_data = response
@@ -149,6 +293,149 @@ impl ElevenLabsTtsApi {
             trace!("Received {status} response from ElevenLabs API: {error_body:?}");
             Err(tts_error_from_status(status))
         }
+    }
+
+    /// Process long-form content with intelligent chunking and batch processing
+    pub fn synthesize_long_form_batch(
+        &self,
+        voice_id: &str,
+        content: &str,
+        options: Option<&TextToSpeechParams>,
+        max_chunk_size: usize,
+    ) -> Result<Vec<Vec<u8>>, TtsError> {
+        trace!("Synthesizing long-form content with batch processing");
+
+        // Split content into manageable chunks
+        let chunks = self.split_content_intelligently(content, max_chunk_size);
+        let mut audio_chunks = Vec::new();
+
+        for (i, chunk) in chunks.iter().enumerate() {
+            trace!("Processing chunk {}/{}: {} characters", i + 1, chunks.len(), chunk.len());
+
+            let request = TextToSpeechRequest {
+                text: chunk.clone(),
+                model_id: Some("eleven_monolingual_v1".to_string()),
+                language_code: None,
+                voice_settings: None,
+                pronunciation_dictionary_locators: None,
+                seed: None,
+                previous_text: if i > 0 { Some(chunks[i - 1].clone()) } else { None },
+                next_text: if i < chunks.len() - 1 { Some(chunks[i + 1].clone()) } else { None },
+                previous_request_ids: None,
+                next_request_ids: None,
+                apply_text_normalization: Some("auto".to_string()),
+                apply_language_text_normalization: Some(true),
+                use_pvc_as_ivc: Some(true), // Use previous voice context for continuity
+            };
+
+            let audio_data = self.text_to_speech(voice_id, &request, options.cloned())?;
+            audio_chunks.push(audio_data);
+
+            // Add small delay between requests to be respectful to API limits
+            if i < chunks.len() - 1 {
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+
+        Ok(audio_chunks)
+    }
+
+    /// Split content intelligently at sentence boundaries, respecting character limits
+    fn split_content_intelligently(&self, content: &str, max_chunk_size: usize) -> Vec<String> {
+        if content.len() <= max_chunk_size {
+            return vec![content.to_string()];
+        }
+
+        let mut chunks = Vec::new();
+        let mut current_chunk = String::new();
+        
+        // Split by sentences first
+        let sentences: Vec<&str> = content
+            .split(|c| c == '.' || c == '!' || c == '?')
+            .filter(|s| !s.trim().is_empty())
+            .collect();
+
+        for sentence in sentences {
+            let sentence = sentence.trim();
+            if sentence.is_empty() {
+                continue;
+            }
+
+            // Add sentence ending punctuation back
+            let sentence_with_punct = format!("{}.", sentence);
+            
+            // If adding this sentence would exceed the limit, finalize current chunk
+            if !current_chunk.is_empty() && 
+               (current_chunk.len() + sentence_with_punct.len() + 1) > max_chunk_size {
+                chunks.push(current_chunk.trim().to_string());
+                current_chunk = String::new();
+            }
+
+            // If a single sentence is too long, split it at word boundaries
+            if sentence_with_punct.len() > max_chunk_size {
+                let word_chunks = self.split_at_word_boundaries(&sentence_with_punct, max_chunk_size);
+                for word_chunk in word_chunks {
+                    if !current_chunk.is_empty() {
+                        chunks.push(current_chunk.trim().to_string());
+                        current_chunk = String::new();
+                    }
+                    chunks.push(word_chunk);
+                }
+            } else {
+                if !current_chunk.is_empty() {
+                    current_chunk.push(' ');
+                }
+                current_chunk.push_str(&sentence_with_punct);
+            }
+        }
+
+        // Add any remaining content
+        if !current_chunk.trim().is_empty() {
+            chunks.push(current_chunk.trim().to_string());
+        }
+
+        chunks
+    }
+
+    /// Split text at word boundaries when sentence splitting isn't sufficient
+    fn split_at_word_boundaries(&self, text: &str, max_size: usize) -> Vec<String> {
+        let words: Vec<&str> = text.split_whitespace().collect();
+        let mut chunks = Vec::new();
+        let mut current_chunk = String::new();
+
+        for word in words {
+            if !current_chunk.is_empty() && 
+               (current_chunk.len() + word.len() + 1) > max_size {
+                chunks.push(current_chunk.trim().to_string());
+                current_chunk = String::new();
+            }
+
+            if !current_chunk.is_empty() {
+                current_chunk.push(' ');
+            }
+            current_chunk.push_str(word);
+        }
+
+        if !current_chunk.trim().is_empty() {
+            chunks.push(current_chunk.trim().to_string());
+        }
+
+        chunks
+    }
+
+    /// Get user quota information for rate limiting decisions
+    pub fn get_quota_info(&self) -> Result<QuotaInfo, TtsError> {
+        trace!("Getting user quota information");
+
+        let url = format!("{}/v1/user", self.base_url);
+
+        let response = self.execute_with_retry(|| {
+            self.create_request(Method::GET, &url)
+                .send()
+                .map_err(|e| internal_error(format!("Failed to get quota info: {e}")))
+        })?;
+
+        parse_response(response)
     }
 
     /// Stream text to speech (returns response body for streaming)
@@ -181,11 +468,12 @@ impl ElevenLabsTtsApi {
             }
         }
 
-        let response = self
-            .create_request(Method::POST, &url)
-            .json(request)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to start streaming synthesis: {e}")))?;
+        let response = self.execute_stream_with_retry(|| {
+            self.create_request(Method::POST, &url)
+                .json(request)
+                .send()
+                .map_err(|e| internal_error(format!("Failed to start streaming synthesis: {e}")))
+        })?;
 
         if !response.status().is_success() {
             let status = response.status();
@@ -201,10 +489,11 @@ impl ElevenLabsTtsApi {
 
         let url = format!("{}/v1/models", self.base_url);
 
-        let response = self
-            .create_request(Method::GET, &url)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to get models: {e}")))?;
+        let response = self.execute_with_retry(|| {
+            self.create_request(Method::GET, &url)
+                .send()
+                .map_err(|e| internal_error(format!("Failed to get models: {e}")))
+        })?;
 
         parse_response(response)
     }
@@ -215,10 +504,11 @@ impl ElevenLabsTtsApi {
 
         let url = format!("{}/v1/user/subscription", self.base_url);
 
-        let response = self
-            .create_request(Method::GET, &url)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to get user subscription: {e}")))?;
+        let response = self.execute_with_retry(|| {
+            self.create_request(Method::GET, &url)
+                .send()
+                .map_err(|e| internal_error(format!("Failed to get user subscription: {e}")))
+        })?;
 
         parse_response(response)
     }
@@ -232,31 +522,28 @@ impl ElevenLabsTtsApi {
 
         let url = format!("{}/v1/voices/add", self.base_url);
 
-        // For voice creation, we need to send multipart/form-data
-        let mut form = reqwest::multipart::Form::new()
-            .text("name", request.name.clone())
-            .text("description", request.description.clone().unwrap_or_default());
+        // Convert audio files to base64 for JSON submission
+        let files_base64: Vec<String> = request.files
+            .iter()
+            .map(|file| {
+                use base64::Engine;
+                base64::engine::general_purpose::STANDARD.encode(&file.data)
+            })
+            .collect();
 
-        // Add audio files
-        for (i, sample) in request.files.iter().enumerate() {
-            let part = reqwest::multipart::Part::bytes(sample.data.clone())
-                .file_name(format!("sample_{}.wav", i))
-                .mime_str("audio/wav")
-                .map_err(|e| internal_error(format!("Failed to create multipart: {e}")))?;
-            form = form.part(format!("files[{}]", i), part);
-        }
+        let json_request = CreateVoiceJsonRequest {
+            name: request.name.clone(),
+            description: request.description.clone(),
+            files: files_base64,
+            labels: request.labels.clone(),
+        };
 
-        if let Some(labels) = &request.labels {
-            form = form.text("labels", labels.clone());
-        }
-
-        let response = self
-            .client
-            .request(Method::POST, &url)
-            .header("xi-api-key", &self.api_key)
-            .multipart(form)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to create voice: {e}")))?;
+        let response = self.execute_with_retry(|| {
+            self.create_request(Method::POST, &url)
+                .json(&json_request)
+                .send()
+                .map_err(|e| internal_error(format!("Failed to create voice: {e}")))
+        })?;
 
         parse_response(response)
     }
@@ -267,15 +554,129 @@ impl ElevenLabsTtsApi {
 
         let url = format!("{}/v1/voices/{}", self.base_url, voice_id);
 
-        let response = self
-            .create_request(Method::DELETE, &url)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to delete voice: {e}")))?;
+        let response = self.execute_with_retry(|| {
+            self.create_request(Method::DELETE, &url)
+                .send()
+                .map_err(|e| internal_error(format!("Failed to delete voice: {e}")))
+        })?;
 
         if response.status().is_success() {
             Ok(())
         } else {
             Err(tts_error_from_status(response.status()))
+        }
+    }
+
+    /// Speech-to-speech voice conversion (for voice-conversion WIT interface)
+    pub fn speech_to_speech(
+        &self,
+        voice_id: &str,
+        request: &SpeechToSpeechRequest,
+        params: Option<SpeechToSpeechParams>,
+    ) -> Result<Vec<u8>, TtsError> {
+        trace!("Converting speech to speech with voice: {voice_id}");
+
+        let mut url = format!("{}/v1/speech-to-speech/{}", self.base_url, voice_id);
+        
+        if let Some(params) = params {
+            let mut query_params = Vec::new();
+            
+            if let Some(enable_logging) = params.enable_logging {
+                query_params.push(format!("enable_logging={}", enable_logging));
+            }
+            if let Some(optimize_streaming_latency) = params.optimize_streaming_latency {
+                query_params.push(format!("optimize_streaming_latency={}", optimize_streaming_latency));
+            }
+            if let Some(output_format) = params.output_format {
+                query_params.push(format!("output_format={}", output_format));
+            }
+            if let Some(remove_background_noise) = params.remove_background_noise {
+                query_params.push(format!("remove_background_noise={}", remove_background_noise));
+            }
+            
+            if !query_params.is_empty() {
+                url.push('?');
+                url.push_str(&query_params.join("&"));
+            }
+        }
+
+        // Convert audio to base64 for JSON request (similar to voice cloning)
+        use base64::Engine;
+        let audio_base64 = base64::engine::general_purpose::STANDARD.encode(&request.audio_data);
+        
+        let json_request = SpeechToSpeechJsonRequest {
+            audio: audio_base64,
+            model_id: request.model_id.clone().unwrap_or("eleven_english_sts_v2".to_string()),
+            voice_settings: request.voice_settings.clone(),
+            seed: request.seed,
+        };
+
+        let response = self.execute_with_retry(|| {
+            self.create_request(Method::POST, &url)
+                .json(&json_request)
+                .send()
+                .map_err(|e| internal_error(format!("Failed to convert speech: {e}")))
+        })?;
+
+        if response.status().is_success() {
+            let audio_data = response
+                .bytes()
+                .map_err(|err| from_reqwest_error("Failed to read audio response", err))?;
+            Ok(audio_data.to_vec())
+        } else {
+            let status = response.status();
+            let error_body = response
+                .text()
+                .map_err(|err| from_reqwest_error("Failed to receive error response body", err))?;
+
+            trace!("Received {status} response from ElevenLabs API: {error_body:?}");
+            Err(tts_error_from_status(status))
+        }
+    }
+
+    /// Generate sound effects from text description (for sound-effects WIT interface)
+    pub fn create_sound_effect(
+        &self,
+        request: &SoundEffectRequest,
+        params: Option<SoundEffectParams>,
+    ) -> Result<Vec<u8>, TtsError> {
+        trace!("Creating sound effect: {}", request.text);
+
+        let mut url = format!("{}/v1/sound-generation", self.base_url);
+        
+        if let Some(params) = params {
+            let mut query_params = Vec::new();
+            
+            if let Some(output_format) = params.output_format {
+                query_params.push(format!("output_format={}", output_format));
+            }
+            
+            if !query_params.is_empty() {
+                url.push('?');
+                url.push_str(&query_params.join("&"));
+            }
+        }
+
+        let response = self.execute_with_retry(|| {
+            self.create_request(Method::POST, &url)
+                .json(request)
+                .send()
+                .map_err(|e| internal_error(format!("Failed to create sound effect: {e}")))
+        })?;
+
+        if response.status().is_success() {
+            let audio_data = response
+                .bytes()
+                .map_err(|err| from_reqwest_error("Failed to read audio response", err))?;
+            Ok(audio_data.to_vec())
+        } else {
+            let status = response.status();
+            let error_body = response
+                .text()
+                .map_err(|err| from_reqwest_error("Failed to receive error response body", err))?;
+
+            trace!("Received {status} response from ElevenLabs API: {error_body:?}");
+            Err(tts_error_from_status(status))
         }
     }
 }
@@ -455,9 +856,66 @@ pub struct CreateVoiceRequest {
     pub labels: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateVoiceJsonRequest {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub files: Vec<String>, // Base64-encoded audio files
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub labels: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct AudioFile {
     pub data: Vec<u8>,
+}
+
+// Speech-to-Speech (Voice Conversion) Types
+#[derive(Debug, Clone)]
+pub struct SpeechToSpeechRequest {
+    pub audio_data: Vec<u8>,
+    pub model_id: Option<String>,
+    pub voice_settings: Option<VoiceSettings>,
+    pub seed: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpeechToSpeechJsonRequest {
+    pub audio: String, // Base64-encoded audio
+    pub model_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voice_settings: Option<VoiceSettings>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpeechToSpeechParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enable_logging: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub optimize_streaming_latency: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remove_background_noise: Option<bool>,
+}
+
+// Sound Effects Types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SoundEffectRequest {
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_seconds: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_influence: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SoundEffectParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_format: Option<String>,
 }
 
 fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, TtsError> {

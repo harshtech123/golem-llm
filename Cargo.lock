@@ -1105,13 +1105,17 @@ name = "golem-tts-elevenlabs"
 version = "0.0.0"
 dependencies = [
  "base64 0.22.1",
+ "bytes",
  "chrono",
+ "futures-util",
  "golem-rust",
  "golem-tts",
  "log",
  "reqwest",
  "serde",
  "serde_json",
+ "urlencoding",
+ "uuid",
  "wit-bindgen-rt 0.40.0",
 ]
 
