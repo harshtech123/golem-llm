@@ -547,17 +547,20 @@ struct DeepgramComponent;
 
 impl DeepgramComponent {
     const ENV_VAR_NAME: &'static str = "DEEPGRAM_API_KEY";
+    const API_VERSION_ENV_VAR: &'static str = "DEEPGRAM_API_VERSION";
 
     fn create_client() -> Result<DeepgramTtsApi, TtsError> {
         with_config_key(Self::ENV_VAR_NAME, Err, |api_key| {
-            Ok(DeepgramTtsApi::new(api_key.to_string()))
+            let api_version = std::env::var(Self::API_VERSION_ENV_VAR).unwrap_or_else(|_| "v1".to_string());
+            Ok(DeepgramTtsApi::new(api_key.to_string(), api_version))
         })
     }
 
     /// Create client with custom rate limiting configuration
     fn create_client_with_rate_limit(rate_limit_config: RateLimitConfig) -> Result<DeepgramTtsApi, TtsError> {
         with_config_key(Self::ENV_VAR_NAME, Err, |api_key| {
-            Ok(DeepgramTtsApi::new(api_key.to_string()).with_rate_limit_config(rate_limit_config))
+            let api_version = std::env::var(Self::API_VERSION_ENV_VAR).unwrap_or_else(|_| "v1".to_string());
+            Ok(DeepgramTtsApi::new(api_key.to_string(), api_version).with_rate_limit_config(rate_limit_config))
         })
     }
 
@@ -946,7 +949,7 @@ impl ExtendedGuest for DeepgramComponent {
     ) -> Self::SynthesisStream {
         let client = Self::create_streaming_client().unwrap_or_else(|_| {
             // Fallback to default client for unwrapped method
-            DeepgramTtsApi::new("dummy".to_string())
+            DeepgramTtsApi::new("dummy".to_string(), "v1".to_string())
         });
         let voice_id = voice.get::<DeepgramVoiceImpl>().get_id();
         
@@ -958,8 +961,7 @@ impl ExtendedGuest for DeepgramComponent {
         _options: Option<SynthesisOptions>,
     ) -> Self::VoiceConversionStream {
         let client = Self::create_client().unwrap_or_else(|_| {
-            // Fallback client for unwrapped method
-            DeepgramTtsApi::new("dummy".to_string())
+            DeepgramTtsApi::new("dummy".to_string(), "v1".to_string())
         });
         let voice_id = target_voice.get::<DeepgramVoiceImpl>().get_id();
         

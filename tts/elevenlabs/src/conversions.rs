@@ -1,12 +1,12 @@
 use crate::client::{
-    CreateVoiceRequest, ElevenLabsTtsApi, ListVoicesParams, Model, TextToSpeechParams,
+    CreateVoiceRequest, ListVoicesParams, Model, TextToSpeechParams,
     TextToSpeechRequest, Voice as ElevenLabsVoice, VoiceSettings as ElevenLabsVoiceSettings,
 };
 use golem_tts::golem::tts::types::{
-    AudioFormat, SynthesisResult, SynthesisMetadata, TtsError, VoiceGender,
+    AudioFormat, SynthesisResult, SynthesisMetadata, VoiceGender,
     VoiceQuality, VoiceSettings,
 };
-use golem_tts::golem::tts::voices::{LanguageInfo, Voice, VoiceFilter, VoiceInfo};
+use golem_tts::golem::tts::voices::{LanguageInfo, VoiceFilter, VoiceInfo};
 use golem_tts::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
 use golem_tts::golem::tts::advanced::{AudioSample, VoiceDesignParams, AgeCategory};
 
@@ -317,10 +317,11 @@ fn origin_to_language_code(origin: &str) -> String {
 
 pub fn synthesis_options_to_tts_request(
     options: Option<SynthesisOptions>,
+    model_version: &str,
 ) -> (TextToSpeechRequest, Option<TextToSpeechParams>) {
     let default_request = TextToSpeechRequest {
         text: String::new(),
-        model_id: Some(std::env::var("ELEVENLABS_MODEL_VERSION").unwrap_or_else(|_| "eleven_monolingual_v1".to_string())),
+        model_id: Some(model_version.to_string()),
         language_code: None,
         voice_settings: None,
         pronunciation_dictionary_locators: None,

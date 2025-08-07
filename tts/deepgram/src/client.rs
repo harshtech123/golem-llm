@@ -40,20 +40,13 @@ pub struct DeepgramTtsApi {
 }
 
 impl DeepgramTtsApi {
-    /// Create a new Deepgram TTS API client
-    /// 
-    /// The API version can be configured using the DEEPGRAM_API_VERSION environment variable.
-    /// If not set, defaults to "v1".
-    pub fn new(api_key: String) -> Self {
+    pub fn new(api_key: String, api_version: String) -> Self {
         let client = Client::builder()
             .timeout(Duration::from_secs(get_timeout_config()))
             .build()
             .unwrap();
         
         let base_url = get_endpoint_config("https://api.deepgram.com");
-        
-        // Get API version from environment variable, default to "v1"
-        let api_version = std::env::var("DEEPGRAM_API_VERSION").unwrap_or_else(|_| "v1".to_string());
 
         Self {
             client,

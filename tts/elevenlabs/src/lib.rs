@@ -112,7 +112,7 @@ impl GuestVoice for ElevenLabsVoiceImpl {
 
         let request = crate::client::TextToSpeechRequest {
             text,
-            model_id: Some(std::env::var("ELEVENLABS_MODEL_VERSION").unwrap_or_else(|_| "eleven_monolingual_v1".to_string())),
+            model_id: Some(self.client.get_model_version().to_string()),
             language_code: None,
             voice_settings: self.voice_data.settings.clone(),
             pronunciation_dictionary_locators: None,
@@ -196,7 +196,7 @@ struct ElevenLabsSynthesisStream {
 
 impl ElevenLabsSynthesisStream {
     fn new(voice_id: String, client: ElevenLabsTtsApi, options: Option<SynthesisOptions>) -> Self {
-        let (request, params) = conversions::synthesis_options_to_tts_request(options);
+        let (request, params) = conversions::synthesis_options_to_tts_request(options, client.get_model_version());
         
         Self {
             voice_id,
@@ -615,10 +615,13 @@ struct ElevenLabsComponent;
 
 impl ElevenLabsComponent {
     const ENV_VAR_NAME: &'static str = "ELEVENLABS_API_KEY";
+    const MODEL_VERSION_ENV_VAR: &'static str = "ELEVENLABS_MODEL_VERSION";
 
     fn create_client() -> Result<ElevenLabsTtsApi, TtsError> {
         with_config_key(Self::ENV_VAR_NAME, Err, |api_key| {
-            Ok(ElevenLabsTtsApi::new(api_key))
+            let model_version = std::env::var(Self::MODEL_VERSION_ENV_VAR)
+                .unwrap_or_else(|_| "eleven_monolingual_v1".to_string());
+            Ok(ElevenLabsTtsApi::new(api_key.to_string(), model_version))
         })
     }
 }
@@ -703,7 +706,7 @@ impl SynthesisGuest for ElevenLabsComponent {
         let client = Self::create_client()?;
         let voice_id = voice.get::<ElevenLabsVoiceImpl>().get_id();
         
-        let (mut request, params) = synthesis_options_to_tts_request(options);
+        let (mut request, params) = synthesis_options_to_tts_request(options, client.get_model_version());
         request.text = input.content;
 
         match client.text_to_speech(&voice_id, &request, params) {
@@ -739,7 +742,7 @@ impl SynthesisGuest for ElevenLabsComponent {
                 results.push(result);
             } else {
                 // Use regular synthesis for shorter content
-                let (mut request, params) = synthesis_options_to_tts_request(options.clone());
+                let (mut request, params) = synthesis_options_to_tts_request(options.clone(), client.get_model_version());
                 request.text = input.content.clone();
 
                 match client.text_to_speech(&voice_id, &request, params) {
@@ -917,7 +920,7 @@ impl ExtendedGuest for ElevenLabsComponent {
     ) -> Self::SynthesisStream {
         let client = Self::create_client().unwrap_or_else(|_| {
             // Fallback client for unwrapped method
-            ElevenLabsTtsApi::new("dummy".to_string())
+            ElevenLabsTtsApi::new("dummy".to_string(), "eleven_monolingual_v1".to_string())
         });
         let voice_id = voice.get::<ElevenLabsVoiceImpl>().get_id();
         
@@ -930,7 +933,7 @@ impl ExtendedGuest for ElevenLabsComponent {
     ) -> Self::VoiceConversionStream {
         let client = Self::create_client().unwrap_or_else(|_| {
             // Fallback client for unwrapped method
-            ElevenLabsTtsApi::new("dummy".to_string())
+            ElevenLabsTtsApi::new("dummy".to_string(), "eleven_monolingual_v1".to_string())
         });
         let voice_id = target_voice.get::<ElevenLabsVoiceImpl>().get_id();
         

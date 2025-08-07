@@ -29,6 +29,7 @@ impl Default for RateLimitConfig {
 }
 
 /// User quota information for rate limiting decisions
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct QuotaInfo {
     pub character_count: u32,
@@ -55,10 +56,11 @@ pub struct ElevenLabsTtsApi {
     api_key: String,
     base_url: String,
     rate_limit_config: RateLimitConfig,
+    model_version: String,
 }
 
 impl ElevenLabsTtsApi {
-    pub fn new(api_key: String) -> Self {
+    pub fn new(api_key: String, model_version: String) -> Self {
         let timeout_secs = get_timeout_config();
         let client = Client::builder()
             .timeout(Duration::from_secs(timeout_secs))
@@ -72,18 +74,19 @@ impl ElevenLabsTtsApi {
             client,
             base_url,
             rate_limit_config: RateLimitConfig::default(),
+            model_version,
         }
-    }
-
-    /// Get ElevenLabs model version from environment variable or default
-    fn get_model_version() -> String {
-        std::env::var("ELEVENLABS_MODEL_VERSION").unwrap_or_else(|_| "eleven_monolingual_v1".to_string())
     }
 
     fn create_request(&self, method: Method, url: &str) -> RequestBuilder {
         self.client
             .request(method, url)
             .header("xi-api-key", &self.api_key)
+    }
+
+    /// Get the model version for this client
+    pub fn get_model_version(&self) -> &str {
+        &self.model_version
     }
 
     /// Execute a request with retry logic for rate limiting
@@ -317,7 +320,7 @@ impl ElevenLabsTtsApi {
 
             let request = TextToSpeechRequest {
                 text: chunk.clone(),
-                model_id: Some(Self::get_model_version()),
+                model_id: Some(self.model_version.clone()),
                 language_code: None,
                 voice_settings: None,
                 pronunciation_dictionary_locators: None,
@@ -427,6 +430,7 @@ impl ElevenLabsTtsApi {
     }
 
     /// Get user quota information for rate limiting decisions
+    #[allow(dead_code)]
     pub fn get_quota_info(&self) -> Result<QuotaInfo, TtsError> {
         trace!("Getting user quota information");
 
@@ -502,6 +506,7 @@ impl ElevenLabsTtsApi {
     }
 
     /// Get user subscription info
+    #[allow(dead_code)]
     pub fn get_user_subscription(&self) -> Result<UserSubscription, TtsError> {
         trace!("Getting user subscription info");
 
