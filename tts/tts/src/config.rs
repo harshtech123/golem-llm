@@ -53,3 +53,7 @@ pub fn get_max_retries_config() -> u32 {
         .parse()
         .unwrap_or(3)
 }
+
+pub fn get_endpoint_config(default_endpoint: impl Into<String>) -> String {
+    get_config_with_default("TTS_PROVIDER_ENDPOINT", default_endpoint)
+}

@@ -1,5 +1,6 @@
 use golem_tts::error::{from_reqwest_error, internal_error, tts_error_from_status};
 use golem_tts::golem::tts::types::TtsError;
+use golem_tts::config::{get_endpoint_config, get_max_retries_config, get_timeout_config};
 use log::trace;
 use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
@@ -19,7 +20,7 @@ pub struct RateLimitConfig {
 impl Default for RateLimitConfig {
     fn default() -> Self {
         Self {
-            max_retries: 3,
+            max_retries: get_max_retries_config(),
             initial_delay: Duration::from_millis(1000),
             max_delay: Duration::from_secs(30),
             backoff_multiplier: 2.0,
@@ -58,11 +59,13 @@ pub struct ElevenLabsTtsApi {
 
 impl ElevenLabsTtsApi {
     pub fn new(api_key: String) -> Self {
+        let timeout_secs = get_timeout_config();
         let client = Client::builder()
+            .timeout(Duration::from_secs(timeout_secs))
             .build()
             .expect("Failed to initialize HTTP client");
 
-        let base_url = "https://api.elevenlabs.io".to_string();
+        let base_url = get_endpoint_config("https://api.elevenlabs.io");
 
         Self {
             api_key,
@@ -70,6 +73,11 @@ impl ElevenLabsTtsApi {
             base_url,
             rate_limit_config: RateLimitConfig::default(),
         }
+    }
+
+    /// Get ElevenLabs model version from environment variable or default
+    fn get_model_version() -> String {
+        std::env::var("ELEVENLABS_MODEL_VERSION").unwrap_or_else(|_| "eleven_monolingual_v1".to_string())
     }
 
     pub fn with_rate_limit_config(mut self, config: RateLimitConfig) -> Self {
@@ -314,7 +322,7 @@ impl ElevenLabsTtsApi {
 
             let request = TextToSpeechRequest {
                 text: chunk.clone(),
-                model_id: Some("eleven_monolingual_v1".to_string()),
+                model_id: Some(Self::get_model_version()),
                 language_code: None,
                 voice_settings: None,
                 pronunciation_dictionary_locators: None,

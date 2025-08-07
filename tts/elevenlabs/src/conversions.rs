@@ -320,7 +320,7 @@ pub fn synthesis_options_to_tts_request(
 ) -> (TextToSpeechRequest, Option<TextToSpeechParams>) {
     let default_request = TextToSpeechRequest {
         text: String::new(),
-        model_id: Some("eleven_monolingual_v1".to_string()),
+        model_id: Some(std::env::var("ELEVENLABS_MODEL_VERSION").unwrap_or_else(|_| "eleven_monolingual_v1".to_string())),
         language_code: None,
         voice_settings: None,
         pronunciation_dictionary_locators: None,

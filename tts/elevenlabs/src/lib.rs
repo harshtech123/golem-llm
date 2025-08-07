@@ -112,7 +112,7 @@ impl GuestVoice for ElevenLabsVoiceImpl {
 
         let request = crate::client::TextToSpeechRequest {
             text,
-            model_id: Some("eleven_monolingual_v1".to_string()),
+            model_id: Some(std::env::var("ELEVENLABS_MODEL_VERSION").unwrap_or_else(|_| "eleven_monolingual_v1".to_string())),
             language_code: None,
             voice_settings: self.voice_data.settings.clone(),
             pronunciation_dictionary_locators: None,
