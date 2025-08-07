@@ -1,5 +1,5 @@
 [package]
-name = "test_search"
+name = "test_tts"
 version = "0.0.0"
 edition = "2021"
 
@@ -9,12 +9,11 @@ crate-type = ["cdylib"]
 required-features = []
 
 [features]
-default = ["algolia"]
-algolia = []
-elasticsearch = []
-meilisearch = []
-opensearch = []
-typesense = []
+default = ["elevenlabs"]
+elevenlabs = []
+deepgram = []
+google = []
+aws = []
 
 [dependencies]
 # To use common shared libs, use the following:
@@ -39,9 +38,9 @@ path = "wit-generated"
 "wasi:io" = { path = "wit-generated/deps/io" }
 "wasi:clocks" = { path = "wit-generated/deps/clocks" }
 "golem:rpc" = { path = "wit-generated/deps/golem-rpc" }
-"golem:search" = { path = "wit-generated/deps/golem-search" }
+"golem:tts" = { path = "wit-generated/deps/golem-tts" }
 "test:helper-client" = { path = "wit-generated/deps/test_helper-client" }
-"test:search-exports" = { path = "wit-generated/deps/test_search-exports" }
+"test:tts-exports" = { path = "wit-generated/deps/test_tts-exports" }
 
 [package.metadata.component.bindings]
 # See https://github.com/bytecodealliance/cargo-component/blob/main/src/metadata.rs#L62
