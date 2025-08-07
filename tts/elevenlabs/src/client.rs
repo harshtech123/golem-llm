@@ -1,6 +1,6 @@
+use golem_tts::config::{get_endpoint_config, get_max_retries_config, get_timeout_config};
 use golem_tts::error::{from_reqwest_error, internal_error, tts_error_from_status};
 use golem_tts::golem::tts::types::TtsError;
-use golem_tts::config::{get_endpoint_config, get_max_retries_config, get_timeout_config};
 use log::trace;
 use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
@@ -101,21 +101,31 @@ impl ElevenLabsTtsApi {
             match operation() {
                 Ok(response) => {
                     let status = response.status();
-                    
+
                     if status.is_success() {
                         return Ok(response);
                     } else if status.as_u16() == 429 || status.as_u16() == 503 {
                         // Rate limit or service unavailable - retry
                         if attempt >= self.rate_limit_config.max_retries {
-                            trace!("Max retries ({}) exceeded for rate limiting", self.rate_limit_config.max_retries);
+                            trace!(
+                                "Max retries ({}) exceeded for rate limiting",
+                                self.rate_limit_config.max_retries
+                            );
                             return Err(tts_error_from_status(status));
                         }
-                        
-                        trace!("Rate limited ({}), retrying in {:?} (attempt {}/{})", 
-                               status, delay, attempt + 1, self.rate_limit_config.max_retries);
-                        
+
+                        trace!(
+                            "Rate limited ({}), retrying in {:?} (attempt {}/{})",
+                            status,
+                            delay,
+                            attempt + 1,
+                            self.rate_limit_config.max_retries
+                        );
+
                         // Extract retry-after header if available
-                        let retry_delay = if let Some(retry_after) = response.headers().get("retry-after") {
+                        let retry_delay = if let Some(retry_after) =
+                            response.headers().get("retry-after")
+                        {
                             if let Ok(seconds) = retry_after.to_str().unwrap_or("").parse::<u64>() {
                                 Duration::from_secs(seconds)
                             } else {
@@ -124,13 +134,17 @@ impl ElevenLabsTtsApi {
                         } else {
                             delay
                         };
-                        
+
                         std::thread::sleep(retry_delay);
-                        
+
                         attempt += 1;
                         delay = std::cmp::min(
-                            Duration::from_millis((delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64),
-                            self.rate_limit_config.max_delay
+                            Duration::from_millis(
+                                (delay.as_millis() as f64
+                                    * self.rate_limit_config.backoff_multiplier)
+                                    as u64,
+                            ),
+                            self.rate_limit_config.max_delay,
                         );
                     } else {
                         // Non-retryable error
@@ -154,25 +168,37 @@ impl ElevenLabsTtsApi {
             match operation() {
                 Ok(response) => {
                     let status = response.status();
-                    
+
                     if status.is_success() {
                         return Ok(response);
                     } else if status.as_u16() == 429 || status.as_u16() == 503 {
                         // Rate limit or service unavailable - retry
                         if attempt >= self.rate_limit_config.max_retries {
-                            trace!("Max retries ({}) exceeded for rate limiting", self.rate_limit_config.max_retries);
+                            trace!(
+                                "Max retries ({}) exceeded for rate limiting",
+                                self.rate_limit_config.max_retries
+                            );
                             return Err(tts_error_from_status(status));
                         }
-                        
-                        trace!("Rate limited ({}), retrying in {:?} (attempt {}/{})", 
-                               status, delay, attempt + 1, self.rate_limit_config.max_retries);
-                        
+
+                        trace!(
+                            "Rate limited ({}), retrying in {:?} (attempt {}/{})",
+                            status,
+                            delay,
+                            attempt + 1,
+                            self.rate_limit_config.max_retries
+                        );
+
                         std::thread::sleep(delay);
-                        
+
                         attempt += 1;
                         delay = std::cmp::min(
-                            Duration::from_millis((delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64),
-                            self.rate_limit_config.max_delay
+                            Duration::from_millis(
+                                (delay.as_millis() as f64
+                                    * self.rate_limit_config.backoff_multiplier)
+                                    as u64,
+                            ),
+                            self.rate_limit_config.max_delay,
                         );
                     } else {
                         // Non-retryable error
@@ -185,14 +211,17 @@ impl ElevenLabsTtsApi {
     }
 
     /// Get a list of available voices
-    pub fn list_voices(&self, params: Option<ListVoicesParams>) -> Result<ListVoicesResponse, TtsError> {
+    pub fn list_voices(
+        &self,
+        params: Option<ListVoicesParams>,
+    ) -> Result<ListVoicesResponse, TtsError> {
         trace!("Listing voices");
 
         let mut url = format!("{}/v2/voices", self.base_url);
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(page_size) = params.page_size {
                 query_params.push(format!("page_size={}", page_size));
             }
@@ -212,12 +241,15 @@ impl ElevenLabsTtsApi {
                 query_params.push(format!("category={}", category));
             }
             if let Some(next_page_token) = params.next_page_token {
-                query_params.push(format!("next_page_token={}", urlencoding::encode(&next_page_token)));
+                query_params.push(format!(
+                    "next_page_token={}",
+                    urlencoding::encode(&next_page_token)
+                ));
             }
             if let Some(include_total_count) = params.include_total_count {
                 query_params.push(format!("include_total_count={}", include_total_count));
             }
-            
+
             if !query_params.is_empty() {
                 url.push('?');
                 url.push_str(&query_params.join("&"));
@@ -258,20 +290,23 @@ impl ElevenLabsTtsApi {
         trace!("Converting text to speech with voice: {voice_id}");
 
         let mut url = format!("{}/v1/text-to-speech/{}", self.base_url, voice_id);
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(enable_logging) = params.enable_logging {
                 query_params.push(format!("enable_logging={}", enable_logging));
             }
             if let Some(optimize_streaming_latency) = params.optimize_streaming_latency {
-                query_params.push(format!("optimize_streaming_latency={}", optimize_streaming_latency));
+                query_params.push(format!(
+                    "optimize_streaming_latency={}",
+                    optimize_streaming_latency
+                ));
             }
             if let Some(output_format) = params.output_format {
                 query_params.push(format!("output_format={}", output_format));
             }
-            
+
             if !query_params.is_empty() {
                 url.push('?');
                 url.push_str(&query_params.join("&"));
@@ -316,7 +351,12 @@ impl ElevenLabsTtsApi {
         let mut audio_chunks = Vec::new();
 
         for (i, chunk) in chunks.iter().enumerate() {
-            trace!("Processing chunk {}/{}: {} characters", i + 1, chunks.len(), chunk.len());
+            trace!(
+                "Processing chunk {}/{}: {} characters",
+                i + 1,
+                chunks.len(),
+                chunk.len()
+            );
 
             let request = TextToSpeechRequest {
                 text: chunk.clone(),
@@ -325,8 +365,16 @@ impl ElevenLabsTtsApi {
                 voice_settings: None,
                 pronunciation_dictionary_locators: None,
                 seed: None,
-                previous_text: if i > 0 { Some(chunks[i - 1].clone()) } else { None },
-                next_text: if i < chunks.len() - 1 { Some(chunks[i + 1].clone()) } else { None },
+                previous_text: if i > 0 {
+                    Some(chunks[i - 1].clone())
+                } else {
+                    None
+                },
+                next_text: if i < chunks.len() - 1 {
+                    Some(chunks[i + 1].clone())
+                } else {
+                    None
+                },
                 previous_request_ids: None,
                 next_request_ids: None,
                 apply_text_normalization: Some("auto".to_string()),
@@ -354,10 +402,10 @@ impl ElevenLabsTtsApi {
 
         let mut chunks = Vec::new();
         let mut current_chunk = String::new();
-        
+
         // Split by sentences first
         let sentences: Vec<&str> = content
-            .split(|c| c == '.' || c == '!' || c == '?')
+            .split(['.', '!', '?'])
             .filter(|s| !s.trim().is_empty())
             .collect();
 
@@ -369,17 +417,19 @@ impl ElevenLabsTtsApi {
 
             // Add sentence ending punctuation back
             let sentence_with_punct = format!("{}.", sentence);
-            
+
             // If adding this sentence would exceed the limit, finalize current chunk
-            if !current_chunk.is_empty() && 
-               (current_chunk.len() + sentence_with_punct.len() + 1) > max_chunk_size {
+            if !current_chunk.is_empty()
+                && (current_chunk.len() + sentence_with_punct.len() + 1) > max_chunk_size
+            {
                 chunks.push(current_chunk.trim().to_string());
                 current_chunk = String::new();
             }
 
             // If a single sentence is too long, split it at word boundaries
             if sentence_with_punct.len() > max_chunk_size {
-                let word_chunks = self.split_at_word_boundaries(&sentence_with_punct, max_chunk_size);
+                let word_chunks =
+                    self.split_at_word_boundaries(&sentence_with_punct, max_chunk_size);
                 for word_chunk in word_chunks {
                     if !current_chunk.is_empty() {
                         chunks.push(current_chunk.trim().to_string());
@@ -410,8 +460,7 @@ impl ElevenLabsTtsApi {
         let mut current_chunk = String::new();
 
         for word in words {
-            if !current_chunk.is_empty() && 
-               (current_chunk.len() + word.len() + 1) > max_size {
+            if !current_chunk.is_empty() && (current_chunk.len() + word.len() + 1) > max_size {
                 chunks.push(current_chunk.trim().to_string());
                 current_chunk = String::new();
             }
@@ -455,20 +504,23 @@ impl ElevenLabsTtsApi {
         trace!("Streaming text to speech with voice: {voice_id}");
 
         let mut url = format!("{}/v1/text-to-speech/{}/stream", self.base_url, voice_id);
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(enable_logging) = params.enable_logging {
                 query_params.push(format!("enable_logging={}", enable_logging));
             }
             if let Some(optimize_streaming_latency) = params.optimize_streaming_latency {
-                query_params.push(format!("optimize_streaming_latency={}", optimize_streaming_latency));
+                query_params.push(format!(
+                    "optimize_streaming_latency={}",
+                    optimize_streaming_latency
+                ));
             }
             if let Some(output_format) = params.output_format {
                 query_params.push(format!("output_format={}", output_format));
             }
-            
+
             if !query_params.is_empty() {
                 url.push('?');
                 url.push_str(&query_params.join("&"));
@@ -522,16 +574,14 @@ impl ElevenLabsTtsApi {
     }
 
     /// Create a voice clone
-    pub fn create_voice(
-        &self,
-        request: &CreateVoiceRequest,
-    ) -> Result<Voice, TtsError> {
+    pub fn create_voice(&self, request: &CreateVoiceRequest) -> Result<Voice, TtsError> {
         trace!("Creating voice clone: {}", request.name);
 
         let url = format!("{}/v1/voices/add", self.base_url);
 
         // Convert audio files to base64 for JSON submission
-        let files_base64: Vec<String> = request.files
+        let files_base64: Vec<String> = request
+            .files
             .iter()
             .map(|file| {
                 use base64::Engine;
@@ -585,23 +635,29 @@ impl ElevenLabsTtsApi {
         trace!("Converting speech to speech with voice: {voice_id}");
 
         let mut url = format!("{}/v1/speech-to-speech/{}", self.base_url, voice_id);
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(enable_logging) = params.enable_logging {
                 query_params.push(format!("enable_logging={}", enable_logging));
             }
             if let Some(optimize_streaming_latency) = params.optimize_streaming_latency {
-                query_params.push(format!("optimize_streaming_latency={}", optimize_streaming_latency));
+                query_params.push(format!(
+                    "optimize_streaming_latency={}",
+                    optimize_streaming_latency
+                ));
             }
             if let Some(output_format) = params.output_format {
                 query_params.push(format!("output_format={}", output_format));
             }
             if let Some(remove_background_noise) = params.remove_background_noise {
-                query_params.push(format!("remove_background_noise={}", remove_background_noise));
+                query_params.push(format!(
+                    "remove_background_noise={}",
+                    remove_background_noise
+                ));
             }
-            
+
             if !query_params.is_empty() {
                 url.push('?');
                 url.push_str(&query_params.join("&"));
@@ -611,10 +667,13 @@ impl ElevenLabsTtsApi {
         // Convert audio to base64 for JSON request (similar to voice cloning)
         use base64::Engine;
         let audio_base64 = base64::engine::general_purpose::STANDARD.encode(&request.audio_data);
-        
+
         let json_request = SpeechToSpeechJsonRequest {
             audio: audio_base64,
-            model_id: request.model_id.clone().unwrap_or("eleven_english_sts_v2".to_string()),
+            model_id: request
+                .model_id
+                .clone()
+                .unwrap_or("eleven_english_sts_v2".to_string()),
             voice_settings: request.voice_settings.clone(),
             seed: request.seed,
         };
@@ -651,14 +710,14 @@ impl ElevenLabsTtsApi {
         trace!("Creating sound effect: {}", request.text);
 
         let mut url = format!("{}/v1/sound-generation", self.base_url);
-        
+
         if let Some(params) = params {
             let mut query_params = Vec::new();
-            
+
             if let Some(output_format) = params.output_format {
                 query_params.push(format!("output_format={}", output_format));
             }
-            
+
             if !query_params.is_empty() {
                 url.push('?');
                 url.push_str(&query_params.join("&"));

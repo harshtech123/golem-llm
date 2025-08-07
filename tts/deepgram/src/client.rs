@@ -1,6 +1,6 @@
+use golem_tts::config::{get_endpoint_config, get_max_retries_config, get_timeout_config};
 use golem_tts::error::{from_reqwest_error, tts_error_from_status};
 use golem_tts::golem::tts::types::TtsError;
-use golem_tts::config::{get_endpoint_config, get_max_retries_config, get_timeout_config};
 use log::trace;
 use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
@@ -45,7 +45,7 @@ impl DeepgramTtsApi {
             .timeout(Duration::from_secs(get_timeout_config()))
             .build()
             .unwrap();
-        
+
         let base_url = get_endpoint_config("https://api.deepgram.com");
 
         Self {
@@ -61,7 +61,6 @@ impl DeepgramTtsApi {
         self.rate_limit_config = config;
         self
     }
-
 
     fn create_request(&self, method: Method, url: &str) -> RequestBuilder {
         self.client
@@ -96,24 +95,41 @@ impl DeepgramTtsApi {
                             .and_then(|s| s.parse::<u64>().ok())
                             .map(Duration::from_secs)
                             .unwrap_or(delay);
-                        
-                        trace!("Deepgram API rate limited (429), waiting {}ms before retry {} of {}", 
-                               wait_time.as_millis(), attempt + 1, max_retries);
-                        
+
+                        trace!(
+                            "Deepgram API rate limited (429), waiting {}ms before retry {} of {}",
+                            wait_time.as_millis(),
+                            attempt + 1,
+                            max_retries
+                        );
+
                         std::thread::sleep(wait_time);
                         delay = std::cmp::min(
-                            Duration::from_millis((delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64),
+                            Duration::from_millis(
+                                (delay.as_millis() as f64
+                                    * self.rate_limit_config.backoff_multiplier)
+                                    as u64,
+                            ),
                             self.rate_limit_config.max_delay,
                         );
                         continue;
                     } else if response.status().as_u16() >= 500 && attempt < max_retries {
                         // Server error - retry with backoff
-                        trace!("Deepgram API server error ({}), waiting {}ms before retry {} of {}", 
-                               response.status().as_u16(), delay.as_millis(), attempt + 1, max_retries);
-                        
+                        trace!(
+                            "Deepgram API server error ({}), waiting {}ms before retry {} of {}",
+                            response.status().as_u16(),
+                            delay.as_millis(),
+                            attempt + 1,
+                            max_retries
+                        );
+
                         std::thread::sleep(delay);
                         delay = std::cmp::min(
-                            Duration::from_millis((delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64),
+                            Duration::from_millis(
+                                (delay.as_millis() as f64
+                                    * self.rate_limit_config.backoff_multiplier)
+                                    as u64,
+                            ),
                             self.rate_limit_config.max_delay,
                         );
                         continue;
@@ -128,18 +144,28 @@ impl DeepgramTtsApi {
                 Err(e) => {
                     if attempt < max_retries {
                         // Network error - retry with backoff
-                        trace!("Deepgram API network error, waiting {}ms before retry {} of {}: {}", 
-                               delay.as_millis(), attempt + 1, max_retries, e);
-                        
+                        trace!(
+                            "Deepgram API network error, waiting {}ms before retry {} of {}: {}",
+                            delay.as_millis(),
+                            attempt + 1,
+                            max_retries,
+                            e
+                        );
+
                         std::thread::sleep(delay);
                         delay = std::cmp::min(
-                            Duration::from_millis((delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64),
+                            Duration::from_millis(
+                                (delay.as_millis() as f64
+                                    * self.rate_limit_config.backoff_multiplier)
+                                    as u64,
+                            ),
                             self.rate_limit_config.max_delay,
                         );
                         continue;
                     } else {
                         return Err(TtsError::NetworkError(format!(
-                            "Deepgram API network error after {} retries: {}", max_retries, e
+                            "Deepgram API network error after {} retries: {}",
+                            max_retries, e
                         )));
                     }
                 }
@@ -166,7 +192,12 @@ impl DeepgramTtsApi {
         params: Option<&TextToSpeechParams>,
     ) -> Result<TtsResponse, TtsError> {
         let url = if let Some(p) = params {
-            format!("{}{}?{}", self.base_url, format!("/{}/speak", self.api_version), p.to_query_string())
+            format!(
+                "{}/{}/speak?{}",
+                self.base_url,
+                self.api_version,
+                p.to_query_string()
+            )
         } else {
             format!("{}/{}/speak", self.base_url, self.api_version)
         };
@@ -174,9 +205,8 @@ impl DeepgramTtsApi {
         trace!("Making TTS request to: {}", url);
 
         let operation = || {
-            let req = self.create_request(Method::POST, &url)
-                .json(request);
-            
+            let req = self.create_request(Method::POST, &url).json(request);
+
             match req.send() {
                 Ok(response) => Ok(response),
                 Err(e) => Err(from_reqwest_error("TTS request failed", e)),
@@ -184,15 +214,17 @@ impl DeepgramTtsApi {
         };
 
         let response = self.execute_with_retry(operation)?;
-        
+
         // Check if response is successful
         if !response.status().is_success() {
             return Err(tts_error_from_status(response.status()));
         }
 
         // Extract metadata from headers
-        let metadata = TtsResponseMetadata::from_response_headers(response.headers())
-            .ok_or_else(|| TtsError::InternalError("Missing required response headers".to_string()))?;
+        let metadata =
+            TtsResponseMetadata::from_response_headers(response.headers()).ok_or_else(|| {
+                TtsError::InternalError("Missing required response headers".to_string())
+            })?;
 
         // Get the audio data
         match response.bytes() {
@@ -211,7 +243,12 @@ impl DeepgramTtsApi {
         params: Option<&TextToSpeechParams>,
     ) -> Result<reqwest::Response, TtsError> {
         let url = if let Some(p) = params {
-            format!("{}{}?{}", self.base_url, format!("/{}/speak", self.api_version), p.to_query_string())
+            format!(
+                "{}/{}/speak?{}",
+                self.base_url,
+                self.api_version,
+                p.to_query_string()
+            )
         } else {
             format!("{}/{}/speak", self.base_url, self.api_version)
         };
@@ -219,9 +256,8 @@ impl DeepgramTtsApi {
         trace!("Making streaming TTS request to: {}", url);
 
         let operation = || {
-            let req = self.create_request(Method::POST, &url)
-                .json(request);
-            
+            let req = self.create_request(Method::POST, &url).json(request);
+
             match req.send() {
                 Ok(response) => Ok(response),
                 Err(e) => Err(from_reqwest_error("Streaming TTS request failed", e)),
@@ -229,7 +265,7 @@ impl DeepgramTtsApi {
         };
 
         let response = self.execute_with_retry(operation)?;
-        
+
         // Check if response is successful
         if !response.status().is_success() {
             return Err(tts_error_from_status(response.status()));
@@ -239,7 +275,10 @@ impl DeepgramTtsApi {
     }
 
     /// Get models with filtering support
-    pub fn get_models_filtered(&self, filters: &VoiceFilters) -> Result<ModelListResponse, TtsError> {
+    pub fn get_models_filtered(
+        &self,
+        filters: &VoiceFilters,
+    ) -> Result<ModelListResponse, TtsError> {
         let models = get_available_models();
         Ok(ModelListResponse::filter_by(models, filters))
     }
@@ -275,26 +314,11 @@ impl TtsResponseMetadata {
     /// Extract metadata from response headers
     pub fn from_response_headers(headers: &reqwest::header::HeaderMap) -> Option<Self> {
         Some(Self {
-            content_type: headers
-                .get("content-type")?
-                .to_str().ok()?
-                .to_string(),
-            dg_request_id: headers
-                .get("dg-request-id")?
-                .to_str().ok()?
-                .to_string(),
-            dg_model_name: headers
-                .get("dg-model-name")?
-                .to_str().ok()?
-                .to_string(),
-            dg_model_uuid: headers
-                .get("dg-model-uuid")?
-                .to_str().ok()?
-                .to_string(),
-            dg_char_count: headers
-                .get("dg-char-count")?
-                .to_str().ok()?
-                .parse().ok()?,
+            content_type: headers.get("content-type")?.to_str().ok()?.to_string(),
+            dg_request_id: headers.get("dg-request-id")?.to_str().ok()?.to_string(),
+            dg_model_name: headers.get("dg-model-name")?.to_str().ok()?.to_string(),
+            dg_model_uuid: headers.get("dg-model-uuid")?.to_str().ok()?.to_string(),
+            dg_char_count: headers.get("dg-char-count")?.to_str().ok()?.parse().ok()?,
             content_length: headers
                 .get("content-length")
                 .and_then(|v| v.to_str().ok())
@@ -347,10 +371,9 @@ impl Default for TextToSpeechParams {
 }
 
 impl TextToSpeechParams {
-
     pub fn to_query_string(&self) -> String {
         let mut params = Vec::new();
-        
+
         if let Some(model) = &self.model {
             params.push(format!("model={}", model));
         }
@@ -366,7 +389,7 @@ impl TextToSpeechParams {
         if let Some(bit_rate) = self.bit_rate {
             params.push(format!("bit_rate={}", bit_rate));
         }
-        
+
         params.join("&")
     }
 }
@@ -460,8 +483,9 @@ pub struct ModelListResponse {
 impl ModelListResponse {
     pub fn filter_by(models: Vec<Model>, filters: &VoiceFilters) -> Self {
         let total_count = models.len();
-        
-        let filtered_models: Vec<Model> = models.into_iter()
+
+        let filtered_models: Vec<Model> = models
+            .into_iter()
             .filter(|model| {
                 // Language filter
                 if let Some(ref lang) = filters.language {
@@ -469,55 +493,59 @@ impl ModelListResponse {
                         return false;
                     }
                 }
-                
+
                 // Gender filter
                 if let Some(ref gender) = filters.gender {
                     if !model.gender.to_lowercase().contains(&gender.to_lowercase()) {
                         return false;
                     }
                 }
-                
+
                 // Accent filter
                 if let Some(ref accent) = filters.accent {
                     if !model.accent.to_lowercase().contains(&accent.to_lowercase()) {
                         return false;
                     }
                 }
-                
+
                 // Version filter
                 if let Some(ref version) = filters.version {
                     if model.version != *version {
                         return false;
                     }
                 }
-                
+
                 // Quality filter
                 if let Some(ref quality) = filters.quality {
                     if model.quality != *quality {
                         return false;
                     }
                 }
-                
+
                 // Search query filter
                 if let Some(ref query) = filters.search_query {
                     let query_lower = query.to_lowercase();
                     let matches_name = model.name.to_lowercase().contains(&query_lower);
-                    let matches_characteristics = model.characteristics.iter()
+                    let matches_characteristics = model
+                        .characteristics
+                        .iter()
                         .any(|c| c.to_lowercase().contains(&query_lower));
-                    let matches_use_cases = model.use_cases.iter()
+                    let matches_use_cases = model
+                        .use_cases
+                        .iter()
                         .any(|u| u.to_lowercase().contains(&query_lower));
-                    
+
                     if !matches_name && !matches_characteristics && !matches_use_cases {
                         return false;
                     }
                 }
-                
+
                 true
             })
             .collect();
-        
+
         let filtered_count = filtered_models.len();
-        
+
         Self {
             models: filtered_models,
             total_count,
@@ -538,8 +566,17 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "feminine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Clear".to_string(), "Confident".to_string(), "Energetic".to_string(), "Enthusiastic".to_string()],
-            use_cases: vec!["Casual chat".to_string(), "Customer service".to_string(), "IVR".to_string()],
+            characteristics: vec![
+                "Clear".to_string(),
+                "Confident".to_string(),
+                "Energetic".to_string(),
+                "Enthusiastic".to_string(),
+            ],
+            use_cases: vec![
+                "Casual chat".to_string(),
+                "Customer service".to_string(),
+                "IVR".to_string(),
+            ],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
         },
@@ -550,7 +587,11 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "feminine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Casual".to_string(), "Expressive".to_string(), "Comfortable".to_string()],
+            characteristics: vec![
+                "Casual".to_string(),
+                "Expressive".to_string(),
+                "Comfortable".to_string(),
+            ],
             use_cases: vec!["Customer service".to_string(), "IVR".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
@@ -562,7 +603,13 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "feminine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Caring".to_string(), "Natural".to_string(), "Positive".to_string(), "Friendly".to_string(), "Raspy".to_string()],
+            characteristics: vec![
+                "Caring".to_string(),
+                "Natural".to_string(),
+                "Positive".to_string(),
+                "Friendly".to_string(),
+                "Raspy".to_string(),
+            ],
             use_cases: vec!["IVR".to_string(), "Casual chat".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
@@ -574,7 +621,11 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "masculine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Confident".to_string(), "Comfortable".to_string(), "Casual".to_string()],
+            characteristics: vec![
+                "Confident".to_string(),
+                "Comfortable".to_string(),
+                "Casual".to_string(),
+            ],
             use_cases: vec!["Casual chat".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
@@ -586,7 +637,12 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "masculine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Natural".to_string(), "Smooth".to_string(), "Clear".to_string(), "Comfortable".to_string()],
+            characteristics: vec![
+                "Natural".to_string(),
+                "Smooth".to_string(),
+                "Clear".to_string(),
+                "Comfortable".to_string(),
+            ],
             use_cases: vec!["Customer service".to_string(), "Casual chat".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
@@ -598,7 +654,11 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "masculine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Warm".to_string(), "Energetic".to_string(), "Caring".to_string()],
+            characteristics: vec![
+                "Warm".to_string(),
+                "Energetic".to_string(),
+                "Caring".to_string(),
+            ],
             use_cases: vec!["Casual chat".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
@@ -611,7 +671,12 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "feminine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Clear".to_string(), "Confident".to_string(), "Knowledgeable".to_string(), "Energetic".to_string()],
+            characteristics: vec![
+                "Clear".to_string(),
+                "Confident".to_string(),
+                "Knowledgeable".to_string(),
+                "Energetic".to_string(),
+            ],
             use_cases: vec!["Advertising".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Professional,
@@ -623,7 +688,11 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "feminine".to_string(),
             age: "Mature".to_string(),
-            characteristics: vec!["Calm".to_string(), "Smooth".to_string(), "Professional".to_string()],
+            characteristics: vec![
+                "Calm".to_string(),
+                "Smooth".to_string(),
+                "Professional".to_string(),
+            ],
             use_cases: vec!["Storytelling".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Professional,
@@ -635,7 +704,12 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "masculine".to_string(),
             age: "Mature".to_string(),
-            characteristics: vec!["Enthusiastic".to_string(), "Confident".to_string(), "Approachable".to_string(), "Friendly".to_string()],
+            characteristics: vec![
+                "Enthusiastic".to_string(),
+                "Confident".to_string(),
+                "Approachable".to_string(),
+                "Friendly".to_string(),
+            ],
             use_cases: vec!["Advertising".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Professional,
@@ -648,7 +722,12 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "British".to_string(),
             gender: "masculine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Warm".to_string(), "Approachable".to_string(), "Trustworthy".to_string(), "Baritone".to_string()],
+            characteristics: vec![
+                "Warm".to_string(),
+                "Approachable".to_string(),
+                "Trustworthy".to_string(),
+                "Baritone".to_string(),
+            ],
             use_cases: vec!["Storytelling".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
@@ -661,7 +740,11 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "Australian".to_string(),
             gender: "masculine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Caring".to_string(), "Warm".to_string(), "Empathetic".to_string()],
+            characteristics: vec![
+                "Caring".to_string(),
+                "Warm".to_string(),
+                "Empathetic".to_string(),
+            ],
             use_cases: vec!["Interview".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
@@ -674,7 +757,11 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "Filipino".to_string(),
             gender: "feminine".to_string(),
             age: "Young Adult".to_string(),
-            characteristics: vec!["Engaging".to_string(), "Natural".to_string(), "Cheerful".to_string()],
+            characteristics: vec![
+                "Engaging".to_string(),
+                "Natural".to_string(),
+                "Cheerful".to_string(),
+            ],
             use_cases: vec!["Casual chat".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
@@ -687,8 +774,18 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "Colombian".to_string(),
             gender: "feminine".to_string(),
             age: "Young Adult".to_string(),
-            characteristics: vec!["Clear".to_string(), "Energetic".to_string(), "Positive".to_string(), "Friendly".to_string(), "Enthusiastic".to_string()],
-            use_cases: vec!["Casual Chat".to_string(), "Advertising".to_string(), "IVR".to_string()],
+            characteristics: vec![
+                "Clear".to_string(),
+                "Energetic".to_string(),
+                "Positive".to_string(),
+                "Friendly".to_string(),
+                "Enthusiastic".to_string(),
+            ],
+            use_cases: vec![
+                "Casual Chat".to_string(),
+                "Advertising".to_string(),
+                "IVR".to_string(),
+            ],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
         },
@@ -699,7 +796,13 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "Mexican".to_string(),
             gender: "feminine".to_string(),
             age: "Mature".to_string(),
-            characteristics: vec!["Approachable".to_string(), "Natural".to_string(), "Calm".to_string(), "Comfortable".to_string(), "Expressive".to_string()],
+            characteristics: vec![
+                "Approachable".to_string(),
+                "Natural".to_string(),
+                "Calm".to_string(),
+                "Comfortable".to_string(),
+                "Expressive".to_string(),
+            ],
             use_cases: vec!["Casual Chat".to_string(), "Interview".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
@@ -711,7 +814,13 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "Peninsular".to_string(),
             gender: "masculine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Calm".to_string(), "Professional".to_string(), "Approachable".to_string(), "Clear".to_string(), "Confident".to_string()],
+            characteristics: vec![
+                "Calm".to_string(),
+                "Professional".to_string(),
+                "Approachable".to_string(),
+                "Clear".to_string(),
+                "Confident".to_string(),
+            ],
             use_cases: vec!["Casual Chat".to_string(), "Customer Service".to_string()],
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
@@ -724,7 +833,12 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "feminine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Clear".to_string(), "Confident".to_string(), "Knowledgeable".to_string(), "Energetic".to_string()],
+            characteristics: vec![
+                "Clear".to_string(),
+                "Confident".to_string(),
+                "Knowledgeable".to_string(),
+                "Energetic".to_string(),
+            ],
             use_cases: vec!["Advertising".to_string()],
             version: ModelVersion::Aura1,
             quality: VoiceQuality::Standard,
@@ -736,7 +850,11 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "feminine".to_string(),
             age: "Young Adult".to_string(),
-            characteristics: vec!["Friendly".to_string(), "Natural".to_string(), "Engaging".to_string()],
+            characteristics: vec![
+                "Friendly".to_string(),
+                "Natural".to_string(),
+                "Engaging".to_string(),
+            ],
             use_cases: vec!["IVR".to_string()],
             version: ModelVersion::Aura1,
             quality: VoiceQuality::Standard,
@@ -748,7 +866,11 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "feminine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Clear".to_string(), "Professional".to_string(), "Engaging".to_string()],
+            characteristics: vec![
+                "Clear".to_string(),
+                "Professional".to_string(),
+                "Engaging".to_string(),
+            ],
             use_cases: vec!["Customer service".to_string()],
             version: ModelVersion::Aura1,
             quality: VoiceQuality::Standard,
@@ -760,7 +882,11 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "British".to_string(),
             gender: "feminine".to_string(),
             age: "Mature".to_string(),
-            characteristics: vec!["Calm".to_string(), "Smooth".to_string(), "Professional".to_string()],
+            characteristics: vec![
+                "Calm".to_string(),
+                "Smooth".to_string(),
+                "Professional".to_string(),
+            ],
             use_cases: vec!["Storytelling".to_string()],
             version: ModelVersion::Aura1,
             quality: VoiceQuality::Standard,
@@ -772,7 +898,12 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "masculine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Approachable".to_string(), "Comfortable".to_string(), "Calm".to_string(), "Polite".to_string()],
+            characteristics: vec![
+                "Approachable".to_string(),
+                "Comfortable".to_string(),
+                "Calm".to_string(),
+                "Polite".to_string(),
+            ],
             use_cases: vec!["Informative".to_string()],
             version: ModelVersion::Aura1,
             quality: VoiceQuality::Standard,
@@ -784,7 +915,11 @@ pub fn get_available_models() -> Vec<Model> {
             accent: "American".to_string(),
             gender: "masculine".to_string(),
             age: "Adult".to_string(),
-            characteristics: vec!["Deep".to_string(), "Trustworthy".to_string(), "Smooth".to_string()],
+            characteristics: vec![
+                "Deep".to_string(),
+                "Trustworthy".to_string(),
+                "Smooth".to_string(),
+            ],
             use_cases: vec!["IVR".to_string()],
             version: ModelVersion::Aura1,
             quality: VoiceQuality::Standard,

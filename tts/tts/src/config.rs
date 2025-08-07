@@ -26,7 +26,8 @@ pub fn get_config_with_default(key: impl AsRef<OsStr>, default: impl Into<String
 
 pub fn validate_config_key(key: impl AsRef<OsStr>) -> Result<String, TtsError> {
     let key_str = key.as_ref().to_string_lossy().to_string();
-    std::env::var(key).map_err(|_| TtsError::InternalError(format!("Missing config key: {key_str}")))
+    std::env::var(key)
+        .map_err(|_| TtsError::InternalError(format!("Missing config key: {key_str}")))
 }
 
 pub fn with_config_keys<R>(keys: &[&str], callback: impl FnOnce(Vec<String>) -> R) -> R {

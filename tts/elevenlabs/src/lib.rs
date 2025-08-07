@@ -1,28 +1,33 @@
 use crate::client::{ElevenLabsTtsApi, Voice as ElevenLabsVoice};
 use crate::conversions::{
-    voice_filter_to_list_params, elevenlabs_voice_to_voice_info, synthesis_options_to_tts_request,
-    audio_data_to_synthesis_result, create_voice_request_from_samples, voice_design_params_to_create_request,
-    create_validation_result, models_to_language_info, estimate_audio_duration,
+    audio_data_to_synthesis_result, create_validation_result, create_voice_request_from_samples,
+    elevenlabs_voice_to_voice_info, estimate_audio_duration, models_to_language_info,
+    synthesis_options_to_tts_request, voice_design_params_to_create_request,
+    voice_filter_to_list_params,
 };
+use golem_rust::wasm_rpc::Pollable;
 use golem_tts::config::with_config_key;
 use golem_tts::durability::{DurableTts, ExtendedGuest};
-use golem_tts::golem::tts::types::{
-    AudioChunk, AudioFormat, LanguageCode, SynthesisResult, TextInput, TimingInfo, TtsError, VoiceGender, VoiceQuality, VoiceSettings,
+use golem_tts::golem::tts::advanced::{
+    AudioSample, Guest as AdvancedGuest, GuestLongFormOperation, GuestPronunciationLexicon,
+    LongFormOperation, LongFormResult, OperationStatus, PronunciationEntry, PronunciationLexicon,
+    VoiceDesignParams,
 };
-use golem_tts::golem::tts::voices::{
-    Guest as VoicesGuest, GuestVoice, GuestVoiceResults, LanguageInfo, Voice, VoiceFilter, VoiceInfo, VoiceResults,
+use golem_tts::golem::tts::streaming::{
+    Guest as StreamingGuest, GuestSynthesisStream, GuestVoiceConversionStream, StreamStatus,
+    SynthesisStream, VoiceConversionStream,
 };
 use golem_tts::golem::tts::synthesis::{
     Guest as SynthesisGuest, SynthesisOptions, ValidationResult,
 };
-use golem_tts::golem::tts::streaming::{
-    Guest as StreamingGuest, GuestSynthesisStream, GuestVoiceConversionStream, StreamStatus, SynthesisStream, VoiceConversionStream,
+use golem_tts::golem::tts::types::{
+    AudioChunk, AudioFormat, LanguageCode, SynthesisResult, TextInput, TimingInfo, TtsError,
+    VoiceGender, VoiceQuality, VoiceSettings,
 };
-use golem_tts::golem::tts::advanced::{
-    Guest as AdvancedGuest, GuestPronunciationLexicon, GuestLongFormOperation, AudioSample, VoiceDesignParams, 
-    PronunciationLexicon, PronunciationEntry, LongFormOperation, LongFormResult, OperationStatus,
+use golem_tts::golem::tts::voices::{
+    Guest as VoicesGuest, GuestVoice, GuestVoiceResults, LanguageInfo, Voice, VoiceFilter,
+    VoiceInfo, VoiceResults,
 };
-use golem_rust::wasm_rpc::Pollable;
 use log::trace;
 use std::cell::{Cell, RefCell};
 
@@ -67,7 +72,8 @@ impl GuestVoice for ElevenLabsVoiceImpl {
     }
 
     fn get_quality(&self) -> VoiceQuality {
-        conversions::infer_quality_from_category(&self.voice_data.category).unwrap_or(VoiceQuality::Standard)
+        conversions::infer_quality_from_category(&self.voice_data.category)
+            .unwrap_or(VoiceQuality::Standard)
     }
 
     fn get_description(&self) -> Option<String> {
@@ -88,7 +94,9 @@ impl GuestVoice for ElevenLabsVoiceImpl {
 
     fn update_settings(&self, _settings: VoiceSettings) -> Result<(), TtsError> {
         // ElevenLabs doesn't support updating voice settings directly
-        Err(TtsError::UnsupportedOperation("Voice settings update not supported by ElevenLabs".to_string()))
+        Err(TtsError::UnsupportedOperation(
+            "Voice settings update not supported by ElevenLabs".to_string(),
+        ))
     }
 
     fn delete(&self) -> Result<(), TtsError> {
@@ -100,7 +108,9 @@ impl GuestVoice for ElevenLabsVoiceImpl {
 
     fn clone(&self) -> Result<Voice, TtsError> {
         // ElevenLabs doesn't have a direct clone API, so we simulate it
-        Err(TtsError::UnsupportedOperation("Voice cloning not directly supported by ElevenLabs API".to_string()))
+        Err(TtsError::UnsupportedOperation(
+            "Voice cloning not directly supported by ElevenLabs API".to_string(),
+        ))
     }
 
     fn preview(&self, text: String) -> Result<Vec<u8>, TtsError> {
@@ -126,7 +136,8 @@ impl GuestVoice for ElevenLabsVoiceImpl {
             use_pvc_as_ivc: Some(false),
         };
 
-        self.client.text_to_speech(&self.voice_data.voice_id, &request, Some(params))
+        self.client
+            .text_to_speech(&self.voice_data.voice_id, &request, Some(params))
     }
 }
 
@@ -158,7 +169,7 @@ impl GuestVoiceResults for ElevenLabsVoiceResults {
     fn get_next(&self) -> Result<Vec<VoiceInfo>, TtsError> {
         let voices = self.voices.borrow();
         let current_idx = self.current_index.get();
-        
+
         if current_idx >= voices.len() {
             self.has_more.set(false);
             return Ok(vec![]);
@@ -168,10 +179,10 @@ impl GuestVoiceResults for ElevenLabsVoiceResults {
         const BATCH_SIZE: usize = 10;
         let end_idx = std::cmp::min(current_idx + BATCH_SIZE, voices.len());
         let batch = voices[current_idx..end_idx].to_vec();
-        
+
         self.current_index.set(end_idx);
         self.has_more.set(end_idx < voices.len());
-        
+
         Ok(batch)
     }
 
@@ -196,8 +207,9 @@ struct ElevenLabsSynthesisStream {
 
 impl ElevenLabsSynthesisStream {
     fn new(voice_id: String, client: ElevenLabsTtsApi, options: Option<SynthesisOptions>) -> Self {
-        let (request, params) = conversions::synthesis_options_to_tts_request(options, client.get_model_version());
-        
+        let (request, params) =
+            conversions::synthesis_options_to_tts_request(options, client.get_model_version());
+
         Self {
             voice_id,
             client,
@@ -211,7 +223,7 @@ impl ElevenLabsSynthesisStream {
             sequence_number: Cell::new(0),
         }
     }
-    
+
     /// Get streaming progress information
     #[allow(dead_code)]
     fn get_progress(&self) -> (usize, u32) {
@@ -224,13 +236,13 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
         if self.finished.get() {
             return Err(TtsError::InternalError("Stream is finished".to_string()));
         }
-        
+
         // Update the request with new text
         if let Some(mut request) = self.current_request.borrow_mut().take() {
             request.text = input.content;
             self.current_request.borrow_mut().replace(request);
         }
-        
+
         Ok(())
     }
 
@@ -238,7 +250,11 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
         // Start the streaming request if we have text
         if let Some(request) = self.current_request.borrow().as_ref() {
             if !request.text.is_empty() {
-                match self.client.text_to_speech_stream(&self.voice_id, request, self.params.borrow().clone()) {
+                match self.client.text_to_speech_stream(
+                    &self.voice_id,
+                    request,
+                    self.params.borrow().clone(),
+                ) {
                     Ok(response) => {
                         self.response_stream.borrow_mut().replace(response);
                     }
@@ -249,7 +265,7 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -257,7 +273,7 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
         if self.finished.get() {
             return Ok(None);
         }
-        
+
         // If we have a response stream, try to read data from it
         if let Some(response) = self.response_stream.borrow_mut().take() {
             // In a synchronous context, we read the entire response and simulate chunking
@@ -268,29 +284,29 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
                         // Simulate chunking by breaking the response into smaller pieces
                         const CHUNK_SIZE: usize = 4096; // 4KB chunks for realistic streaming feel
                         let mut current_buffer = self.chunk_buffer.borrow_mut();
-                        
+
                         // If this is the first call, store all the data
                         if current_buffer.is_empty() {
                             current_buffer.extend_from_slice(&bytes);
                         }
-                        
+
                         // Check if we have enough data for a chunk
                         if current_buffer.len() >= CHUNK_SIZE {
                             // Take a chunk from the buffer
                             let chunk_data: Vec<u8> = current_buffer.drain(0..CHUNK_SIZE).collect();
-                            
+
                             // Update streaming statistics
                             let current_bytes = self.bytes_streamed.get();
                             let current_chunks = self.total_chunks_received.get();
                             self.bytes_streamed.set(current_bytes + chunk_data.len());
                             self.total_chunks_received.set(current_chunks + 1);
-                            
+
                             let seq = self.sequence_number.get();
                             self.sequence_number.set(seq + 1);
-                            
+
                             // Determine if this is the final chunk
                             let is_final = current_buffer.is_empty();
-                            
+
                             // Create audio chunk with incremental data
                             let chunk = AudioChunk {
                                 data: chunk_data.clone(),
@@ -298,12 +314,15 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
                                 is_final,
                                 timing_info: Some(TimingInfo {
                                     start_time_seconds: (current_bytes as f32) / 12000.0, // Rough timing calculation
-                                    end_time_seconds: Some(estimate_audio_duration(&chunk_data, 22050)),
+                                    end_time_seconds: Some(estimate_audio_duration(
+                                        &chunk_data,
+                                        22050,
+                                    )),
                                     text_offset: None,
                                     mark_type: None,
                                 }),
                             };
-                            
+
                             // If not final, put the response back for next chunk
                             if !is_final {
                                 // In real implementation, we'd keep the response stream alive
@@ -311,18 +330,18 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
                             } else {
                                 self.finished.set(true);
                             }
-                            
+
                             return Ok(Some(chunk));
                         } else if !current_buffer.is_empty() {
                             // Send remaining data as final chunk
                             let final_data = current_buffer.clone();
                             current_buffer.clear();
-                            
+
                             let current_bytes = self.bytes_streamed.get();
                             let current_chunks = self.total_chunks_received.get();
                             self.bytes_streamed.set(current_bytes + final_data.len());
                             self.total_chunks_received.set(current_chunks + 1);
-                            
+
                             let seq = self.sequence_number.get();
                             let final_chunk = AudioChunk {
                                 data: final_data.clone(),
@@ -330,17 +349,20 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
                                 is_final: true,
                                 timing_info: Some(TimingInfo {
                                     start_time_seconds: (current_bytes as f32) / 12000.0,
-                                    end_time_seconds: Some(estimate_audio_duration(&final_data, 22050)),
+                                    end_time_seconds: Some(estimate_audio_duration(
+                                        &final_data,
+                                        22050,
+                                    )),
                                     text_offset: None,
                                     mark_type: None,
                                 }),
                             };
-                            
+
                             self.finished.set(true);
                             return Ok(Some(final_chunk));
                         }
                     }
-                    
+
                     // No data received, mark as finished
                     self.finished.set(true);
                     Ok(None)
@@ -357,7 +379,13 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
     }
 
     fn has_pending_audio(&self) -> bool {
-        !self.finished.get() && (self.response_stream.borrow().is_some() || self.current_request.borrow().as_ref().map_or(false, |r| !r.text.is_empty()))
+        !self.finished.get()
+            && (self.response_stream.borrow().is_some()
+                || self
+                    .current_request
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|r| !r.text.is_empty()))
     }
 
     fn get_status(&self) -> StreamStatus {
@@ -402,9 +430,11 @@ impl GuestVoiceConversionStream for ElevenLabsVoiceConversionStream {
         if self.finished.get() {
             return Err(TtsError::InternalError("Stream is finished".to_string()));
         }
-        
+
         // Accumulate audio data for processing
-        self.audio_buffer.borrow_mut().extend_from_slice(&audio_data);
+        self.audio_buffer
+            .borrow_mut()
+            .extend_from_slice(&audio_data);
         Ok(())
     }
 
@@ -412,7 +442,7 @@ impl GuestVoiceConversionStream for ElevenLabsVoiceConversionStream {
         if self.finished.get() {
             return Ok(None);
         }
-        
+
         // Process accumulated audio data using speech-to-speech
         let audio_data = self.audio_buffer.borrow().clone();
         if !audio_data.is_empty() {
@@ -422,23 +452,23 @@ impl GuestVoiceConversionStream for ElevenLabsVoiceConversionStream {
                 voice_settings: None,
                 seed: None,
             };
-            
+
             match self.client.speech_to_speech(&self.voice_id, &request, None) {
                 Ok(converted_audio) => {
                     let seq = self.sequence_number.get();
                     self.sequence_number.set(seq + 1);
-                    
+
                     let chunk = AudioChunk {
                         data: converted_audio,
                         sequence_number: seq,
                         is_final: true,
                         timing_info: None,
                     };
-                    
+
                     // Clear buffer after processing
                     self.audio_buffer.borrow_mut().clear();
                     self.finished.set(true);
-                    
+
                     return Ok(Some(chunk));
                 }
                 Err(e) => {
@@ -447,7 +477,7 @@ impl GuestVoiceConversionStream for ElevenLabsVoiceConversionStream {
                 }
             }
         }
-        
+
         Ok(None)
     }
 
@@ -508,12 +538,15 @@ impl GuestPronunciationLexicon for ElevenLabsPronunciationLexicon {
 
     fn export_content(&self) -> Result<String, TtsError> {
         let entries = self.entries.borrow();
-        let mut content = format!("# Pronunciation Lexicon: {}\n# Language: {}\n\n", self.name, self.language);
-        
+        let mut content = format!(
+            "# Pronunciation Lexicon: {}\n# Language: {}\n\n",
+            self.name, self.language
+        );
+
         for entry in entries.iter() {
             content.push_str(&format!("{}: {}\n", entry.word, entry.pronunciation));
         }
-        
+
         Ok(content)
     }
 }
@@ -530,7 +563,13 @@ struct ElevenLabsLongFormOperation {
 }
 
 impl ElevenLabsLongFormOperation {
-    fn new(content: String, output_location: String, voice_id: String, client: ElevenLabsTtsApi, _chapter_breaks: Option<Vec<u32>>) -> Self {
+    fn new(
+        content: String,
+        output_location: String,
+        voice_id: String,
+        client: ElevenLabsTtsApi,
+        _chapter_breaks: Option<Vec<u32>>,
+    ) -> Self {
         Self {
             content,
             output_location,
@@ -579,18 +618,20 @@ impl GuestLongFormOperation for ElevenLabsLongFormOperation {
             if self.status.get() == OperationStatus::Processing {
                 self.process_long_form()?;
             } else {
-                return Err(TtsError::InternalError("Operation not completed".to_string()));
+                return Err(TtsError::InternalError(
+                    "Operation not completed".to_string(),
+                ));
             }
         }
 
         let audio_chunks = self.audio_chunks.borrow();
-        let chunks = audio_chunks.as_ref().ok_or_else(|| {
-            TtsError::InternalError("Audio chunks not available".to_string())
-        })?;
+        let chunks = audio_chunks
+            .as_ref()
+            .ok_or_else(|| TtsError::InternalError("Audio chunks not available".to_string()))?;
 
         // Calculate total audio size
         let total_audio_size: usize = chunks.iter().map(|chunk| chunk.len()).sum();
-        
+
         // Estimate duration (assuming MP3 at ~128kbps, approximately 16KB per second)
         let estimated_duration = (total_audio_size as f64) / 16000.0;
 
@@ -636,10 +677,12 @@ impl VoicesGuest for ElevenLabsComponent {
 
         match client.list_voices(params) {
             Ok(response) => {
-                let voices: Vec<VoiceInfo> = response.voices.into_iter()
+                let voices: Vec<VoiceInfo> = response
+                    .voices
+                    .into_iter()
                     .map(elevenlabs_voice_to_voice_info)
                     .collect();
-                
+
                 Ok(VoiceResults::new(ElevenLabsVoiceResults::new(
                     voices,
                     response.total_count,
@@ -661,7 +704,10 @@ impl VoicesGuest for ElevenLabsComponent {
         }
     }
 
-    fn search_voices(query: String, filter: Option<VoiceFilter>) -> Result<Vec<VoiceInfo>, TtsError> {
+    fn search_voices(
+        query: String,
+        filter: Option<VoiceFilter>,
+    ) -> Result<Vec<VoiceInfo>, TtsError> {
         // ElevenLabs doesn't have a dedicated search API, so we use list with search query
         let mut search_filter = filter.unwrap_or(VoiceFilter {
             language: None,
@@ -672,13 +718,15 @@ impl VoicesGuest for ElevenLabsComponent {
             search_query: None,
         });
         search_filter.search_query = Some(query);
-        
+
         let client = Self::create_client()?;
         let params = voice_filter_to_list_params(Some(search_filter));
 
         match client.list_voices(params) {
             Ok(response) => {
-                let voices = response.voices.into_iter()
+                let voices = response
+                    .voices
+                    .into_iter()
                     .map(elevenlabs_voice_to_voice_info)
                     .collect();
                 Ok(voices)
@@ -705,8 +753,9 @@ impl SynthesisGuest for ElevenLabsComponent {
     ) -> Result<SynthesisResult, TtsError> {
         let client = Self::create_client()?;
         let voice_id = voice.get::<ElevenLabsVoiceImpl>().get_id();
-        
-        let (mut request, params) = synthesis_options_to_tts_request(options, client.get_model_version());
+
+        let (mut request, params) =
+            synthesis_options_to_tts_request(options, client.get_model_version());
         request.text = input.content;
 
         match client.text_to_speech(&voice_id, &request, params) {
@@ -723,26 +772,30 @@ impl SynthesisGuest for ElevenLabsComponent {
         let mut results = Vec::new();
         let client = Self::create_client()?;
         let voice_id = voice.get::<ElevenLabsVoiceImpl>().get_id();
-        
+
         for input in inputs {
             // For long content, use intelligent chunking
             if input.content.len() > 4500 {
-                trace!("Using long-form batch processing for content with {} characters", input.content.len());
-                
+                trace!(
+                    "Using long-form batch processing for content with {} characters",
+                    input.content.len()
+                );
+
                 let audio_chunks = client.synthesize_long_form_batch(
                     &voice_id,
                     &input.content,
                     None, // Use default synthesis options for now
                     4500, // Conservative chunk size
                 )?;
-                
+
                 // Combine all chunks into a single result
                 let combined_audio: Vec<u8> = audio_chunks.into_iter().flatten().collect();
                 let result = audio_data_to_synthesis_result(combined_audio, &input.content);
                 results.push(result);
             } else {
                 // Use regular synthesis for shorter content
-                let (mut request, params) = synthesis_options_to_tts_request(options.clone(), client.get_model_version());
+                let (mut request, params) =
+                    synthesis_options_to_tts_request(options.clone(), client.get_model_version());
                 request.text = input.content.clone();
 
                 match client.text_to_speech(&voice_id, &request, params) {
@@ -754,7 +807,7 @@ impl SynthesisGuest for ElevenLabsComponent {
                 }
             }
         }
-        
+
         Ok(results)
     }
 
@@ -763,7 +816,9 @@ impl SynthesisGuest for ElevenLabsComponent {
         _voice: golem_tts::golem::tts::voices::VoiceBorrow<'_>,
     ) -> Result<Vec<TimingInfo>, TtsError> {
         // ElevenLabs doesn't provide timing marks without synthesis
-        Err(TtsError::UnsupportedOperation("Timing marks not supported by ElevenLabs".to_string()))
+        Err(TtsError::UnsupportedOperation(
+            "Timing marks not supported by ElevenLabs".to_string(),
+        ))
     }
 
     fn validate_input(
@@ -777,7 +832,7 @@ impl SynthesisGuest for ElevenLabsComponent {
         } else {
             None
         };
-        
+
         Ok(create_validation_result(is_valid, message))
     }
 }
@@ -792,7 +847,7 @@ impl StreamingGuest for ElevenLabsComponent {
     ) -> Result<SynthesisStream, TtsError> {
         let client = Self::create_client()?;
         let voice_id = voice.get::<ElevenLabsVoiceImpl>().get_id();
-        
+
         let stream = ElevenLabsSynthesisStream::new(voice_id, client, options);
         Ok(SynthesisStream::new(stream))
     }
@@ -803,7 +858,7 @@ impl StreamingGuest for ElevenLabsComponent {
     ) -> Result<VoiceConversionStream, TtsError> {
         let client = Self::create_client()?;
         let voice_id = target_voice.get::<ElevenLabsVoiceImpl>().get_id();
-        
+
         let stream = ElevenLabsVoiceConversionStream::new(voice_id, client);
         Ok(VoiceConversionStream::new(stream))
     }
@@ -830,10 +885,7 @@ impl AdvancedGuest for ElevenLabsComponent {
         }
     }
 
-    fn design_voice(
-        _name: String,
-        characteristics: VoiceDesignParams,
-    ) -> Result<Voice, TtsError> {
+    fn design_voice(_name: String, characteristics: VoiceDesignParams) -> Result<Voice, TtsError> {
         let client = Self::create_client()?;
         let request = voice_design_params_to_create_request(characteristics);
 
@@ -853,14 +905,14 @@ impl AdvancedGuest for ElevenLabsComponent {
     ) -> Result<Vec<u8>, TtsError> {
         let client = Self::create_client()?;
         let voice_id = target_voice.get::<ElevenLabsVoiceImpl>().get_id();
-        
+
         let request = crate::client::SpeechToSpeechRequest {
             audio_data: input_audio,
             model_id: Some("eleven_english_sts_v2".to_string()),
             voice_settings: None,
             seed: None,
         };
-        
+
         match client.speech_to_speech(&voice_id, &request, None) {
             Ok(converted_audio) => Ok(converted_audio),
             Err(e) => Err(e),
@@ -873,17 +925,17 @@ impl AdvancedGuest for ElevenLabsComponent {
         style_influence: Option<f32>,
     ) -> Result<Vec<u8>, TtsError> {
         let client = Self::create_client()?;
-        
+
         let request = crate::client::SoundEffectRequest {
             text: description,
             duration_seconds: duration_seconds.map(|d| d as f64),
             prompt_influence: style_influence.map(|s| s as f64),
         };
-        
+
         let params = crate::client::SoundEffectParams {
             output_format: Some("mp3_22050_32".to_string()),
         };
-        
+
         match client.create_sound_effect(&request, Some(params)) {
             Ok(audio_data) => Ok(audio_data),
             Err(e) => Err(e),
@@ -907,8 +959,14 @@ impl AdvancedGuest for ElevenLabsComponent {
     ) -> Result<LongFormOperation, TtsError> {
         let client = Self::create_client()?;
         let voice_id = voice.get::<ElevenLabsVoiceImpl>().get_id();
-        
-        let operation = ElevenLabsLongFormOperation::new(content, output_location, voice_id, client, chapter_breaks);
+
+        let operation = ElevenLabsLongFormOperation::new(
+            content,
+            output_location,
+            voice_id,
+            client,
+            chapter_breaks,
+        );
         Ok(LongFormOperation::new(operation))
     }
 }
@@ -923,7 +981,7 @@ impl ExtendedGuest for ElevenLabsComponent {
             ElevenLabsTtsApi::new("dummy".to_string(), "eleven_monolingual_v1".to_string())
         });
         let voice_id = voice.get::<ElevenLabsVoiceImpl>().get_id();
-        
+
         ElevenLabsSynthesisStream::new(voice_id, client, options)
     }
 
@@ -936,7 +994,7 @@ impl ExtendedGuest for ElevenLabsComponent {
             ElevenLabsTtsApi::new("dummy".to_string(), "eleven_monolingual_v1".to_string())
         });
         let voice_id = target_voice.get::<ElevenLabsVoiceImpl>().get_id();
-        
+
         ElevenLabsVoiceConversionStream::new(voice_id, client)
     }
 

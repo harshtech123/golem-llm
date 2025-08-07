@@ -1,14 +1,13 @@
 use crate::client::{
-    CreateVoiceRequest, ListVoicesParams, Model, TextToSpeechParams,
-    TextToSpeechRequest, Voice as ElevenLabsVoice, VoiceSettings as ElevenLabsVoiceSettings,
+    CreateVoiceRequest, ListVoicesParams, Model, TextToSpeechParams, TextToSpeechRequest,
+    Voice as ElevenLabsVoice, VoiceSettings as ElevenLabsVoiceSettings,
 };
+use golem_tts::golem::tts::advanced::{AgeCategory, AudioSample, VoiceDesignParams};
+use golem_tts::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
 use golem_tts::golem::tts::types::{
-    AudioFormat, SynthesisResult, SynthesisMetadata, VoiceGender,
-    VoiceQuality, VoiceSettings,
+    AudioFormat, SynthesisMetadata, SynthesisResult, VoiceGender, VoiceQuality, VoiceSettings,
 };
 use golem_tts::golem::tts::voices::{LanguageInfo, VoiceFilter, VoiceInfo};
-use golem_tts::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
-use golem_tts::golem::tts::advanced::{AudioSample, VoiceDesignParams, AgeCategory};
 
 /// Estimate audio duration in seconds based on audio data size
 /// This is a rough estimation for MP3 data at given sample rate
@@ -16,12 +15,12 @@ pub fn estimate_audio_duration(audio_data: &[u8], _sample_rate: u32) -> f32 {
     if audio_data.is_empty() {
         return 0.0;
     }
-    
+
     // For MP3 files, use average bitrate estimation
     // ElevenLabs typically uses ~64-128 kbps for streaming
     let estimated_bitrate_bps = 96000; // 96 kbps average
     let bytes_per_second = estimated_bitrate_bps / 8;
-    
+
     (audio_data.len() as f32) / (bytes_per_second as f32)
 }
 
@@ -52,7 +51,7 @@ pub fn voice_filter_to_list_params(filter: Option<VoiceFilter>) -> Option<ListVo
 pub fn elevenlabs_voice_to_voice_info(voice: ElevenLabsVoice) -> VoiceInfo {
     let gender = infer_gender_from_name(&voice.name).unwrap_or(VoiceGender::Neutral);
     let quality = infer_quality_from_category(&voice.category).unwrap_or(VoiceQuality::Standard);
-    
+
     // Enhanced language detection
     let language = detect_voice_language(&voice);
     let additional_languages = detect_additional_languages(&voice);
@@ -61,7 +60,7 @@ pub fn elevenlabs_voice_to_voice_info(voice: ElevenLabsVoice) -> VoiceInfo {
     let is_cloned = voice.category.to_lowercase() == "cloned";
     let preview_url = voice.preview_url.clone();
     let description = voice.description.clone();
-    
+
     VoiceInfo {
         id: voice.voice_id,
         name: voice.name,
@@ -87,51 +86,57 @@ fn detect_voice_language(voice: &ElevenLabsVoice) -> String {
             return language;
         }
     }
-    
+
     // Priority 2: Infer from voice name patterns
     if let Some(language) = infer_language_from_name(&voice.name) {
         return language;
     }
-    
+
     // Priority 3: Infer from description
     if let Some(description) = &voice.description {
         if let Some(language) = infer_language_from_description(description) {
             return language;
         }
     }
-    
+
     // Priority 4: Category-based inference
     match voice.category.to_lowercase().as_str() {
         "multilingual" => "en".to_string(), // Default for multilingual
-        _ => "en".to_string(), // Default fallback
+        _ => "en".to_string(),              // Default fallback
     }
 }
 
 /// Detect additional supported languages for multilingual voices
 fn detect_additional_languages(voice: &ElevenLabsVoice) -> Vec<String> {
     let mut languages = Vec::new();
-    
+
     // Check if voice is multilingual
     if voice.category.to_lowercase().contains("multilingual") {
         // Common ElevenLabs multilingual support
         languages.extend_from_slice(&[
-            "es".to_string(), "fr".to_string(), "de".to_string(), 
-            "it".to_string(), "pt".to_string(), "pl".to_string(),
-            "zh".to_string(), "ja".to_string(), "hi".to_string(),
+            "es".to_string(),
+            "fr".to_string(),
+            "de".to_string(),
+            "it".to_string(),
+            "pt".to_string(),
+            "pl".to_string(),
+            "zh".to_string(),
+            "ja".to_string(),
+            "hi".to_string(),
         ]);
     }
-    
+
     // Check voice name/description for language mentions
     if let Some(description) = &voice.description {
         languages.extend(extract_mentioned_languages(description));
     }
-    
+
     // Remove duplicates and primary language
     let primary = detect_voice_language(voice);
     languages.retain(|lang| lang != &primary);
     languages.sort();
     languages.dedup();
-    
+
     languages
 }
 
@@ -155,9 +160,12 @@ fn extract_language_from_labels(labels: &serde_json::Value) -> Option<String> {
 /// Infer language from voice name patterns
 fn infer_language_from_name(name: &str) -> Option<String> {
     let name_lower = name.to_lowercase();
-    
+
     // Direct language mentions
-    if name_lower.contains("english") || name_lower.contains("american") || name_lower.contains("british") {
+    if name_lower.contains("english")
+        || name_lower.contains("american")
+        || name_lower.contains("british")
+    {
         return Some("en".to_string());
     }
     if name_lower.contains("spanish") || name_lower.contains("español") {
@@ -187,19 +195,25 @@ fn infer_language_from_name(name: &str) -> Option<String> {
     if name_lower.contains("hindi") || name_lower.contains("हिन्दी") {
         return Some("hi".to_string());
     }
-    
+
     None
 }
 
 /// Infer language from voice description
 fn infer_language_from_description(description: &str) -> Option<String> {
     let desc_lower = description.to_lowercase();
-    
+
     // Language pattern matching in descriptions
-    if desc_lower.contains("english") || desc_lower.contains("american accent") || desc_lower.contains("british accent") {
+    if desc_lower.contains("english")
+        || desc_lower.contains("american accent")
+        || desc_lower.contains("british accent")
+    {
         return Some("en".to_string());
     }
-    if desc_lower.contains("spanish") || desc_lower.contains("latino") || desc_lower.contains("hispanic") {
+    if desc_lower.contains("spanish")
+        || desc_lower.contains("latino")
+        || desc_lower.contains("hispanic")
+    {
         return Some("es".to_string());
     }
     if desc_lower.contains("french") || desc_lower.contains("parisian") {
@@ -208,7 +222,7 @@ fn infer_language_from_description(description: &str) -> Option<String> {
     if desc_lower.contains("german") || desc_lower.contains("bavarian") {
         return Some("de".to_string());
     }
-    
+
     None
 }
 
@@ -216,39 +230,52 @@ fn infer_language_from_description(description: &str) -> Option<String> {
 fn extract_mentioned_languages(text: &str) -> Vec<String> {
     let mut languages = Vec::new();
     let text_lower = text.to_lowercase();
-    
+
     let language_patterns = [
-        ("english", "en"), ("spanish", "es"), ("french", "fr"), ("german", "de"),
-        ("italian", "it"), ("portuguese", "pt"), ("polish", "pl"), ("chinese", "zh"),
-        ("japanese", "ja"), ("hindi", "hi"), ("arabic", "ar"), ("russian", "ru"),
+        ("english", "en"),
+        ("spanish", "es"),
+        ("french", "fr"),
+        ("german", "de"),
+        ("italian", "it"),
+        ("portuguese", "pt"),
+        ("polish", "pl"),
+        ("chinese", "zh"),
+        ("japanese", "ja"),
+        ("hindi", "hi"),
+        ("arabic", "ar"),
+        ("russian", "ru"),
     ];
-    
+
     for (pattern, code) in language_patterns {
         if text_lower.contains(pattern) {
             languages.push(code.to_string());
         }
     }
-    
+
     languages
 }
 
 /// Infer use cases from voice characteristics
 fn infer_use_cases_from_voice(voice: &ElevenLabsVoice) -> Vec<String> {
     let mut use_cases = Vec::new();
-    
+
     // Infer from category
     match voice.category.to_lowercase().as_str() {
         "narration" => use_cases.push("audiobooks".to_string()),
-        "conversational" => use_cases.extend_from_slice(&["chatbots".to_string(), "assistant".to_string()]),
+        "conversational" => {
+            use_cases.extend_from_slice(&["chatbots".to_string(), "assistant".to_string()])
+        }
         "news" => use_cases.push("news-reading".to_string()),
-        "storytelling" => use_cases.extend_from_slice(&["audiobooks".to_string(), "podcasts".to_string()]),
+        "storytelling" => {
+            use_cases.extend_from_slice(&["audiobooks".to_string(), "podcasts".to_string()])
+        }
         _ => {}
     }
-    
+
     // Infer from name/description
     if let Some(description) = &voice.description {
         let desc_lower = description.to_lowercase();
-        
+
         if desc_lower.contains("narrator") || desc_lower.contains("storytelling") {
             use_cases.push("audiobooks".to_string());
         }
@@ -265,12 +292,12 @@ fn infer_use_cases_from_voice(voice: &ElevenLabsVoice) -> Vec<String> {
             use_cases.push("commercials".to_string());
         }
     }
-    
+
     // Default use cases if none inferred
     if use_cases.is_empty() {
         use_cases.push("general".to_string());
     }
-    
+
     use_cases.sort();
     use_cases.dedup();
     use_cases
@@ -393,27 +420,24 @@ pub fn audio_format_to_string(format: AudioFormat) -> String {
         AudioFormat::Wav => "pcm_22050".to_string(),
         AudioFormat::Pcm => "pcm_22050".to_string(),
         AudioFormat::OggOpus => "mp3_22050_32".to_string(), // Fallback to MP3
-        AudioFormat::Aac => "mp3_22050_32".to_string(), // Fallback to MP3
+        AudioFormat::Aac => "mp3_22050_32".to_string(),     // Fallback to MP3
         AudioFormat::Flac => "pcm_22050".to_string(), // ElevenLabs doesn't support FLAC directly
         AudioFormat::Mulaw => "pcm_22050".to_string(), // Fallback to PCM
         AudioFormat::Alaw => "pcm_22050".to_string(), // Fallback to PCM
     }
 }
 
-pub fn audio_data_to_synthesis_result(
-    audio_data: Vec<u8>,
-    text: &str,
-) -> SynthesisResult {
+pub fn audio_data_to_synthesis_result(audio_data: Vec<u8>, text: &str) -> SynthesisResult {
     let audio_size = audio_data.len() as u32;
-    
+
     // Estimate duration based on average speaking rate (150 words per minute)
     let word_count = text.split_whitespace().count();
     let estimated_duration = if word_count > 0 {
-        (word_count as f32 / 150.0) * 60.0  // words per minute to seconds
+        (word_count as f32 / 150.0) * 60.0 // words per minute to seconds
     } else {
         0.0
     };
-    
+
     SynthesisResult {
         audio_data,
         metadata: SynthesisMetadata {
@@ -433,12 +457,10 @@ pub fn create_voice_request_from_samples(
     samples: Vec<AudioSample>,
 ) -> CreateVoiceRequest {
     use crate::client::AudioFile;
-    
+
     let files = samples
         .into_iter()
-        .map(|sample| AudioFile {
-            data: sample.data,
-        })
+        .map(|sample| AudioFile { data: sample.data })
         .collect();
 
     CreateVoiceRequest {
@@ -461,10 +483,13 @@ pub fn voice_design_params_to_create_request(params: VoiceDesignParams) -> Creat
         AgeCategory::MiddleAged => "middle_aged",
         AgeCategory::Elderly => "elderly",
     };
-    
+
     CreateVoiceRequest {
         name: format!("Generated_{}_{}_{}", gender_str, age_str, params.accent),
-        description: Some(format!("Generated voice with traits: {:?}", params.personality_traits)),
+        description: Some(format!(
+            "Generated voice with traits: {:?}",
+            params.personality_traits
+        )),
         files: vec![], // Voice design would generate files programmatically
         labels: None,
     }
@@ -504,28 +529,28 @@ pub fn create_validation_result(is_valid: bool, message: Option<String>) -> Vali
 pub fn models_to_language_info(models: Vec<Model>) -> Vec<LanguageInfo> {
     // Extract languages from ElevenLabs models for accurate language support
     let mut language_map = std::collections::HashMap::new();
-    
+
     // Parse languages from models
     for model in models {
         for lang in model.languages {
-            let entry = language_map.entry(lang.language_id.clone()).or_insert_with(|| {
-                LanguageInfo {
+            let entry = language_map
+                .entry(lang.language_id.clone())
+                .or_insert_with(|| LanguageInfo {
                     code: lang.language_id.clone(),
                     name: lang.name.clone(),
                     native_name: get_native_language_name(&lang.language_id),
                     voice_count: 0,
-                }
-            });
+                });
             // Increment voice count based on model support
             entry.voice_count += 1;
         }
     }
-    
+
     // If models don't provide languages, fall back to comprehensive list
     if language_map.is_empty() {
         return get_default_language_info();
     }
-    
+
     let mut languages: Vec<LanguageInfo> = language_map.into_values().collect();
     languages.sort_by(|a, b| b.voice_count.cmp(&a.voice_count)); // Sort by voice count descending
     languages
@@ -663,16 +688,30 @@ mod tests {
 
     #[test]
     fn test_gender_inference() {
-        assert_eq!(infer_gender_from_name("Sarah Female Voice"), Some(VoiceGender::Female));
-        assert_eq!(infer_gender_from_name("John Male Voice"), Some(VoiceGender::Male));
+        assert_eq!(
+            infer_gender_from_name("Sarah Female Voice"),
+            Some(VoiceGender::Female)
+        );
+        assert_eq!(
+            infer_gender_from_name("John Male Voice"),
+            Some(VoiceGender::Male)
+        );
         assert_eq!(infer_gender_from_name("Alex"), None);
     }
 
     #[test]
     fn test_quality_inference() {
-        assert_eq!(infer_quality_from_category("premade"), Some(VoiceQuality::Standard));
-        assert_eq!(infer_quality_from_category("cloned"), Some(VoiceQuality::Premium));
-        assert_eq!(infer_quality_from_category("professional"), Some(VoiceQuality::Studio));
+        assert_eq!(
+            infer_quality_from_category("premade"),
+            Some(VoiceQuality::Standard)
+        );
+        assert_eq!(
+            infer_quality_from_category("cloned"),
+            Some(VoiceQuality::Premium)
+        );
+        assert_eq!(
+            infer_quality_from_category("professional"),
+            Some(VoiceQuality::Studio)
+        );
     }
 }
-

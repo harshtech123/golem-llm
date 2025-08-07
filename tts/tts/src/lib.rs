@@ -22,7 +22,6 @@ pub use __export_tts_library_impl as export_tts;
 use std::cell::RefCell;
 use std::str::FromStr;
 
-
 struct LoggingState {
     logging_initialized: bool,
 }

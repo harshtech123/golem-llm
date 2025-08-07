@@ -1,23 +1,25 @@
 use crate::client::{
-    AudioConfig, AudioEncoding, SsmlVoiceGender, SynthesisInput, 
+    AudioConfig, AudioEncoding, BatchSynthesisParams, SsmlVoiceGender, SynthesisInput,
     SynthesizeSpeechRequest, Voice as GoogleVoice, VoiceSelectionParams,
-    BatchSynthesisParams
 };
+use golem_tts::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
 use golem_tts::golem::tts::types::{
-    AudioFormat, SynthesisResult, SynthesisMetadata, VoiceGender,
-    VoiceQuality, VoiceSettings, TextInput,
+    AudioFormat, SynthesisMetadata, SynthesisResult, TextInput, VoiceGender, VoiceQuality,
+    VoiceSettings,
 };
 use golem_tts::golem::tts::voices::{LanguageInfo, VoiceFilter, VoiceInfo};
-use golem_tts::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
-use uuid;
 
 /// Estimate audio duration in seconds based on audio data size
 /// This is a rough estimation for different audio formats
-pub fn estimate_audio_duration(audio_data: &[u8], sample_rate: u32, encoding: &AudioEncoding) -> f32 {
+pub fn estimate_audio_duration(
+    audio_data: &[u8],
+    sample_rate: u32,
+    encoding: &AudioEncoding,
+) -> f32 {
     if audio_data.is_empty() {
         return 0.0;
     }
-    
+
     match encoding {
         AudioEncoding::Linear16 | AudioEncoding::Pcm => {
             // For LINEAR16: 16 bits per sample * 1 channel
@@ -52,22 +54,25 @@ pub fn voice_filter_to_language_code(filter: Option<VoiceFilter>) -> Option<Stri
 pub fn google_voice_to_voice_info(voice: GoogleVoice) -> VoiceInfo {
     let gender = ssml_gender_to_voice_gender(&voice.ssml_gender);
     let quality = infer_quality_from_voice(&voice);
-    
+
     // Extract primary language from language codes
-    let language = voice.language_codes.first()
+    let language = voice
+        .language_codes
+        .first()
         .map(|code| normalize_language_code(code))
         .unwrap_or_else(|| "en-US".to_string());
-    
-    let additional_languages = voice.language_codes
+
+    let additional_languages = voice
+        .language_codes
         .iter()
         .skip(1)
         .map(|code| normalize_language_code(code))
         .collect();
-    
+
     let use_cases = infer_use_cases_from_voice_name(&voice.name);
     let voice_type = extract_voice_type_from_name(&voice.name);
     let description = generate_voice_description(&voice);
-    
+
     VoiceInfo {
         id: voice.name.clone(),
         name: extract_display_name(&voice.name),
@@ -79,7 +84,7 @@ pub fn google_voice_to_voice_info(voice: GoogleVoice) -> VoiceInfo {
         provider: "google".to_string(),
         sample_rate: voice.natural_sample_rate_hertz as u32,
         is_custom: voice_type.contains("Custom"),
-        is_cloned: false, // Google doesn't have voice cloning like ElevenLabs
+        is_cloned: false,  // Google doesn't have voice cloning like ElevenLabs
         preview_url: None, // Google doesn't provide preview URLs
         use_cases,
     }
@@ -108,17 +113,14 @@ pub fn voice_gender_to_ssml_gender(gender: &VoiceGender) -> SsmlVoiceGender {
 /// Infer voice quality from Google voice characteristics
 pub fn infer_quality_from_voice(voice: &GoogleVoice) -> VoiceQuality {
     let voice_name = voice.name.to_lowercase();
-    
-    if voice_name.contains("wavenet") {
+
+    if voice_name.contains("wavenet")
+        || voice_name.contains("neural2")
+        || voice_name.contains("journey")
+        || voice_name.contains("polyglot")
+        || voice_name.contains("studio")
+    {
         VoiceQuality::Premium
-    } else if voice_name.contains("neural2") || voice_name.contains("journey") {
-        VoiceQuality::Premium
-    } else if voice_name.contains("polyglot") {
-        VoiceQuality::Premium
-    } else if voice_name.contains("studio") {
-        VoiceQuality::Premium
-    } else if voice_name.contains("standard") {
-        VoiceQuality::Standard
     } else {
         VoiceQuality::Standard
     }
@@ -165,10 +167,10 @@ pub fn generate_voice_description(voice: &GoogleVoice) -> String {
         SsmlVoiceGender::Neutral => "neutral",
         SsmlVoiceGender::SsmlVoiceGenderUnspecified => "unspecified gender",
     };
-    
+
     let languages = voice.language_codes.join(", ");
     let sample_rate = voice.natural_sample_rate_hertz;
-    
+
     format!(
         "Google Cloud {} voice with {} gender, supporting languages: {}. Natural sample rate: {} Hz.",
         voice_type, gender, languages, sample_rate
@@ -179,44 +181,41 @@ pub fn generate_voice_description(voice: &GoogleVoice) -> String {
 fn infer_use_cases_from_voice_name(name: &str) -> Vec<String> {
     let mut use_cases = Vec::new();
     let name_lower = name.to_lowercase();
-    
+
     if name_lower.contains("wavenet") {
         use_cases.extend_from_slice(&[
             "high-quality speech synthesis".to_string(),
             "audiobooks".to_string(),
-            "voice assistants".to_string()
+            "voice assistants".to_string(),
         ]);
     } else if name_lower.contains("neural2") {
         use_cases.extend_from_slice(&[
             "conversational AI".to_string(),
             "customer service".to_string(),
-            "interactive voice response".to_string()
+            "interactive voice response".to_string(),
         ]);
     } else if name_lower.contains("journey") {
         use_cases.extend_from_slice(&[
             "conversational AI".to_string(),
             "dynamic responses".to_string(),
-            "context-aware synthesis".to_string()
+            "context-aware synthesis".to_string(),
         ]);
     } else if name_lower.contains("polyglot") {
         use_cases.extend_from_slice(&[
             "multilingual applications".to_string(),
             "global content".to_string(),
-            "cross-language synthesis".to_string()
+            "cross-language synthesis".to_string(),
         ]);
     } else if name_lower.contains("studio") {
         use_cases.extend_from_slice(&[
             "professional audio production".to_string(),
             "media content".to_string(),
-            "high-fidelity synthesis".to_string()
+            "high-fidelity synthesis".to_string(),
         ]);
     } else {
-        use_cases.extend_from_slice(&[
-            "general purpose".to_string(),
-            "text-to-speech".to_string()
-        ]);
+        use_cases.extend_from_slice(&["general purpose".to_string(), "text-to-speech".to_string()]);
     }
-    
+
     use_cases.sort();
     use_cases.dedup();
     use_cases
@@ -272,10 +271,10 @@ pub fn synthesis_options_to_tts_request(
         match input.text_type {
             golem_tts::golem::tts::types::TextType::Plain => {
                 request.input.text = Some(input.content.clone());
-            },
+            }
             golem_tts::golem::tts::types::TextType::Ssml => {
                 request.input.ssml = Some(input.content.clone());
-            },
+            }
         }
 
         // Map audio config
@@ -302,17 +301,17 @@ pub fn synthesis_options_to_tts_request(
         (request, Some(params))
     } else {
         let mut request = default_request;
-        
+
         // Set input based on text input type
         match input.text_type {
             golem_tts::golem::tts::types::TextType::Plain => {
                 request.input.text = Some(input.content.clone());
-            },
+            }
             golem_tts::golem::tts::types::TextType::Ssml => {
                 request.input.ssml = Some(input.content.clone());
-            },
+            }
         }
-        
+
         (request, Some(default_params))
     }
 }
@@ -362,10 +361,10 @@ pub fn audio_data_to_synthesis_result(
 ) -> SynthesisResult {
     let audio_size = audio_data.len() as u32;
     let duration = estimate_audio_duration(&audio_data, sample_rate, encoding);
-    
+
     // Estimate word count for metadata
     let word_count = text.split_whitespace().count() as u32;
-    
+
     SynthesisResult {
         audio_data,
         metadata: SynthesisMetadata {
@@ -385,35 +384,39 @@ pub fn create_validation_result(is_valid: bool, message: Option<String>) -> Vali
         character_count: 0,
         estimated_duration: None,
         warnings: vec![],
-        errors: if let Some(msg) = message { vec![msg] } else { vec![] },
+        errors: if let Some(msg) = message {
+            vec![msg]
+        } else {
+            vec![]
+        },
     }
 }
 
 pub fn google_voices_to_language_info(voices: Vec<GoogleVoice>) -> Vec<LanguageInfo> {
     use std::collections::HashMap;
-    
+
     let mut language_map = HashMap::new();
-    
+
     // Count voices per language
     for voice in voices {
         for lang_code in voice.language_codes {
-            let entry = language_map.entry(lang_code.clone()).or_insert_with(|| {
-                LanguageInfo {
+            let entry = language_map
+                .entry(lang_code.clone())
+                .or_insert_with(|| LanguageInfo {
                     code: lang_code.clone(),
                     name: get_language_name(&lang_code),
                     native_name: get_native_language_name(&lang_code),
                     voice_count: 0,
-                }
-            });
+                });
             entry.voice_count += 1;
         }
     }
-    
+
     // If no voices found, provide default comprehensive list
     if language_map.is_empty() {
         return get_default_google_language_info();
     }
-    
+
     let mut languages: Vec<LanguageInfo> = language_map.into_values().collect();
     languages.sort_by(|a, b| b.voice_count.cmp(&a.voice_count));
     languages
@@ -541,16 +544,34 @@ mod tests {
 
     #[test]
     fn test_voice_gender_conversion() {
-        assert_eq!(ssml_gender_to_voice_gender(&SsmlVoiceGender::Male), VoiceGender::Male);
-        assert_eq!(ssml_gender_to_voice_gender(&SsmlVoiceGender::Female), VoiceGender::Female);
-        assert_eq!(ssml_gender_to_voice_gender(&SsmlVoiceGender::Neutral), VoiceGender::Neutral);
+        assert_eq!(
+            ssml_gender_to_voice_gender(&SsmlVoiceGender::Male),
+            VoiceGender::Male
+        );
+        assert_eq!(
+            ssml_gender_to_voice_gender(&SsmlVoiceGender::Female),
+            VoiceGender::Female
+        );
+        assert_eq!(
+            ssml_gender_to_voice_gender(&SsmlVoiceGender::Neutral),
+            VoiceGender::Neutral
+        );
     }
 
     #[test]
     fn test_audio_format_conversion() {
-        assert_eq!(audio_format_to_encoding(AudioFormat::Mp3), AudioEncoding::Mp3);
-        assert_eq!(audio_format_to_encoding(AudioFormat::Wav), AudioEncoding::Linear16);
-        assert_eq!(encoding_to_audio_format(AudioEncoding::Mp3), AudioFormat::Mp3);
+        assert_eq!(
+            audio_format_to_encoding(AudioFormat::Mp3),
+            AudioEncoding::Mp3
+        );
+        assert_eq!(
+            audio_format_to_encoding(AudioFormat::Wav),
+            AudioEncoding::Linear16
+        );
+        assert_eq!(
+            encoding_to_audio_format(AudioEncoding::Mp3),
+            AudioFormat::Mp3
+        );
     }
 
     #[test]
@@ -561,7 +582,10 @@ mod tests {
             ssml_gender: SsmlVoiceGender::Female,
             natural_sample_rate_hertz: 24000,
         };
-        assert_eq!(infer_quality_from_voice(&wavenet_voice), VoiceQuality::Premium);
+        assert_eq!(
+            infer_quality_from_voice(&wavenet_voice),
+            VoiceQuality::Premium
+        );
 
         let standard_voice = GoogleVoice {
             name: "en-US-Standard-A".to_string(),
@@ -569,7 +593,10 @@ mod tests {
             ssml_gender: SsmlVoiceGender::Male,
             natural_sample_rate_hertz: 22050,
         };
-        assert_eq!(infer_quality_from_voice(&standard_voice), VoiceQuality::Standard);
+        assert_eq!(
+            infer_quality_from_voice(&standard_voice),
+            VoiceQuality::Standard
+        );
     }
 
     #[test]

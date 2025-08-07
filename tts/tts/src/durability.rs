@@ -1,24 +1,24 @@
 use crate::exports::golem::tts::advanced::Guest as AdvancedGuest;
+#[allow(unused_imports)]
+use crate::exports::golem::tts::advanced::{
+    AudioSample, LongFormOperation, LongFormResult, OperationStatus, PronunciationEntry,
+    PronunciationLexicon, VoiceDesignParams,
+};
 use crate::exports::golem::tts::streaming::Guest as StreamingGuest;
+#[allow(unused_imports)]
+use crate::exports::golem::tts::streaming::{StreamStatus, SynthesisStream, VoiceConversionStream};
 use crate::exports::golem::tts::synthesis::Guest as SynthesisGuest;
-use crate::exports::golem::tts::voices::Guest as VoicesGuest;
-#[allow(unused_imports)]
-use crate::exports::golem::tts::types::{
-    AudioChunk, AudioConfig, AudioEffects, AudioFormat, LanguageCode, SynthesisResult,
-    TextInput, TimingInfo, TtsError, VoiceGender, VoiceQuality, VoiceSettings,
-};
-#[allow(unused_imports)]
-use crate::exports::golem::tts::voices::{
-    LanguageInfo, Voice, VoiceFilter, VoiceInfo, VoiceResults,
-};
 #[allow(unused_imports)]
 use crate::exports::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
 #[allow(unused_imports)]
-use crate::exports::golem::tts::streaming::{StreamStatus, SynthesisStream, VoiceConversionStream};
+use crate::exports::golem::tts::types::{
+    AudioChunk, AudioConfig, AudioEffects, AudioFormat, LanguageCode, SynthesisResult, TextInput,
+    TimingInfo, TtsError, VoiceGender, VoiceQuality, VoiceSettings,
+};
+use crate::exports::golem::tts::voices::Guest as VoicesGuest;
 #[allow(unused_imports)]
-use crate::exports::golem::tts::advanced::{
-    AudioSample, VoiceDesignParams, PronunciationLexicon, PronunciationEntry,
-    LongFormOperation, LongFormResult, OperationStatus,
+use crate::exports::golem::tts::voices::{
+    LanguageInfo, Voice, VoiceFilter, VoiceInfo, VoiceResults,
 };
 use std::marker::PhantomData;
 
@@ -28,7 +28,9 @@ pub struct DurableTts<Impl> {
 }
 
 /// Trait to be implemented in addition to the TTS `Guest` traits when wrapping it with `DurableTts`.
-pub trait ExtendedGuest: VoicesGuest + SynthesisGuest + StreamingGuest + AdvancedGuest + 'static {
+pub trait ExtendedGuest:
+    VoicesGuest + SynthesisGuest + StreamingGuest + AdvancedGuest + 'static
+{
     /// Creates the unwrapped synthesis stream for durability
     fn unwrapped_synthesis_stream(
         voice: crate::exports::golem::tts::voices::VoiceBorrow<'_>,
@@ -42,10 +44,13 @@ pub trait ExtendedGuest: VoicesGuest + SynthesisGuest + StreamingGuest + Advance
     ) -> Self::VoiceConversionStream;
 
     /// Subscribe to synthesis stream events
-    fn subscribe_synthesis_stream(stream: &Self::SynthesisStream) -> golem_rust::wasm_rpc::Pollable;
+    fn subscribe_synthesis_stream(stream: &Self::SynthesisStream)
+        -> golem_rust::wasm_rpc::Pollable;
 
     /// Subscribe to voice conversion stream events
-    fn subscribe_voice_conversion_stream(stream: &Self::VoiceConversionStream) -> golem_rust::wasm_rpc::Pollable;
+    fn subscribe_voice_conversion_stream(
+        stream: &Self::VoiceConversionStream,
+    ) -> golem_rust::wasm_rpc::Pollable;
 }
 
 /// When the durability feature flag is off, wrapping with `DurableTts` is just a passthrough
@@ -53,21 +58,23 @@ pub trait ExtendedGuest: VoicesGuest + SynthesisGuest + StreamingGuest + Advance
 mod passthrough_impl {
     use crate::durability::{DurableTts, ExtendedGuest};
     use crate::exports::golem::tts::advanced::Guest as AdvancedGuest;
+    use crate::exports::golem::tts::advanced::{
+        AudioSample, LongFormOperation, LongFormResult, OperationStatus, PronunciationEntry,
+        PronunciationLexicon, VoiceDesignParams,
+    };
     use crate::exports::golem::tts::streaming::Guest as StreamingGuest;
+    use crate::exports::golem::tts::streaming::{
+        StreamStatus, SynthesisStream, VoiceConversionStream,
+    };
     use crate::exports::golem::tts::synthesis::Guest as SynthesisGuest;
-    use crate::exports::golem::tts::voices::Guest as VoicesGuest;
+    use crate::exports::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
     use crate::exports::golem::tts::types::{
         AudioChunk, AudioConfig, AudioEffects, AudioFormat, LanguageCode, SynthesisResult,
         TextInput, TimingInfo, TtsError, VoiceGender, VoiceQuality, VoiceSettings,
     };
+    use crate::exports::golem::tts::voices::Guest as VoicesGuest;
     use crate::exports::golem::tts::voices::{
         LanguageInfo, Voice, VoiceFilter, VoiceInfo, VoiceResults,
-    };
-    use crate::exports::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
-    use crate::exports::golem::tts::streaming::{StreamStatus, SynthesisStream, VoiceConversionStream};
-    use crate::exports::golem::tts::advanced::{
-        AudioSample, VoiceDesignParams, PronunciationLexicon, PronunciationEntry,
-        LongFormOperation, LongFormResult, OperationStatus,
     };
     use crate::init_logging;
 
@@ -228,26 +235,28 @@ mod passthrough_impl {
 mod durable_impl {
     use crate::durability::{DurableTts, ExtendedGuest};
     use crate::exports::golem::tts::advanced::Guest as AdvancedGuest;
-    use crate::exports::golem::tts::advanced::{GuestPronunciationLexicon, GuestLongFormOperation};
+    #[allow(unused_imports)]
+    use crate::exports::golem::tts::advanced::{
+        AudioSample, LongFormOperation, LongFormResult, OperationStatus, PronunciationEntry,
+        PronunciationLexicon, VoiceDesignParams,
+    };
+    use crate::exports::golem::tts::advanced::{GuestLongFormOperation, GuestPronunciationLexicon};
     use crate::exports::golem::tts::streaming::Guest as StreamingGuest;
+    #[allow(unused_imports)]
+    use crate::exports::golem::tts::streaming::{
+        StreamStatus, SynthesisStream, VoiceConversionStream,
+    };
     use crate::exports::golem::tts::synthesis::Guest as SynthesisGuest;
-    use crate::exports::golem::tts::voices::Guest as VoicesGuest;
-    use crate::exports::golem::tts::voices::GuestVoice;
+    use crate::exports::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
     #[allow(unused_imports)]
     use crate::exports::golem::tts::types::{
         AudioChunk, AudioConfig, AudioEffects, AudioFormat, LanguageCode, SynthesisResult,
         TextInput, TimingInfo, TtsError, VoiceGender, VoiceQuality, VoiceSettings,
     };
+    use crate::exports::golem::tts::voices::Guest as VoicesGuest;
+    use crate::exports::golem::tts::voices::GuestVoice;
     use crate::exports::golem::tts::voices::{
         LanguageInfo, Voice, VoiceFilter, VoiceInfo, VoiceResults,
-    };
-    use crate::exports::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
-    #[allow(unused_imports)]
-    use crate::exports::golem::tts::streaming::{StreamStatus, SynthesisStream, VoiceConversionStream};
-    #[allow(unused_imports)]
-    use crate::exports::golem::tts::advanced::{
-        AudioSample, VoiceDesignParams, PronunciationLexicon, PronunciationEntry,
-        LongFormOperation, LongFormResult, OperationStatus,
     };
     use crate::init_logging;
     use golem_rust::bindings::golem::durability::durability::{
@@ -464,7 +473,7 @@ mod durable_impl {
 
         fn get_voice(voice_id: String) -> Result<Voice, TtsError> {
             init_logging();
-            
+
             let durability = Durability::<NoOutput, UnusedError>::new(
                 "golem_tts",
                 "get_voice",
@@ -521,10 +530,13 @@ mod durable_impl {
             if durability.is_live() {
                 let result = Impl::search_voices(query.clone(), filter.clone());
                 let result = result.map(|v| VoiceInfoListOutput { voices: v });
-                durability.persist(SearchVoicesInput { query, filter }, result)
+                durability
+                    .persist(SearchVoicesInput { query, filter }, result)
                     .map(|output| output.voices)
             } else {
-                durability.replay().map(|output: VoiceInfoListOutput| output.voices)
+                durability
+                    .replay()
+                    .map(|output: VoiceInfoListOutput| output.voices)
             }
         }
 
@@ -539,10 +551,13 @@ mod durable_impl {
             if durability.is_live() {
                 let result = Impl::list_languages();
                 let result = result.map(|l| LanguageInfoListOutput { languages: l });
-                durability.persist(NoInput, result)
+                durability
+                    .persist(NoInput, result)
                     .map(|output| output.languages)
             } else {
-                durability.replay().map(|output: LanguageInfoListOutput| output.languages)
+                durability
+                    .replay()
+                    .map(|output: LanguageInfoListOutput| output.languages)
             }
         }
     }
@@ -563,10 +578,13 @@ mod durable_impl {
             if durability.is_live() {
                 let result = Impl::synthesize(input.clone(), voice, options.clone());
                 let result = result.map(|r| SynthesisResultOutput { result: r });
-                durability.persist(SynthesizeInput { input, options }, result)
+                durability
+                    .persist(SynthesizeInput { input, options }, result)
                     .map(|output| output.result)
             } else {
-                durability.replay().map(|output: SynthesisResultOutput| output.result)
+                durability
+                    .replay()
+                    .map(|output: SynthesisResultOutput| output.result)
             }
         }
 
@@ -585,10 +603,13 @@ mod durable_impl {
             if durability.is_live() {
                 let result = Impl::synthesize_batch(inputs.clone(), voice, options.clone());
                 let result = result.map(|r| SynthesisResultListOutput { results: r });
-                durability.persist(SynthesizeBatchInput { inputs, options }, result)
+                durability
+                    .persist(SynthesizeBatchInput { inputs, options }, result)
                     .map(|output| output.results)
             } else {
-                durability.replay().map(|output: SynthesisResultListOutput| output.results)
+                durability
+                    .replay()
+                    .map(|output: SynthesisResultListOutput| output.results)
             }
         }
 
@@ -606,10 +627,13 @@ mod durable_impl {
             if durability.is_live() {
                 let result = Impl::get_timing_marks(input.clone(), voice);
                 let result = result.map(|t| TimingInfoListOutput { timing: t });
-                durability.persist(GetTimingMarksInput { input }, result)
+                durability
+                    .persist(GetTimingMarksInput { input }, result)
                     .map(|output| output.timing)
             } else {
-                durability.replay().map(|output: TimingInfoListOutput| output.timing)
+                durability
+                    .replay()
+                    .map(|output: TimingInfoListOutput| output.timing)
             }
         }
 
@@ -627,10 +651,13 @@ mod durable_impl {
             if durability.is_live() {
                 let result = Impl::validate_input(input.clone(), voice);
                 let result = result.map(|v| ValidationResultOutput { result: v });
-                durability.persist(ValidateInputInput { input }, result)
+                durability
+                    .persist(ValidateInputInput { input }, result)
                     .map(|output| output.result)
             } else {
-                durability.replay().map(|output: ValidationResultOutput| output.result)
+                durability
+                    .replay()
+                    .map(|output: ValidationResultOutput| output.result)
             }
         }
     }
@@ -652,18 +679,17 @@ mod durable_impl {
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    SynthesisStream::new(DurableSynthesisStream::<Impl>::live(Impl::unwrapped_synthesis_stream(
-                        voice,
-                        options.clone(),
-                    )))
+                    SynthesisStream::new(DurableSynthesisStream::<Impl>::live(
+                        Impl::unwrapped_synthesis_stream(voice, options.clone()),
+                    ))
                 });
                 let _ = durability.persist_infallible(CreateStreamInput { options }, NoOutput);
                 Ok(result)
             } else {
                 let _: NoOutput = durability.replay_infallible();
-                Ok(SynthesisStream::new(DurableSynthesisStream::<Impl>::replay(
-                    options,
-                )))
+                Ok(SynthesisStream::new(
+                    DurableSynthesisStream::<Impl>::replay(options),
+                ))
             }
         }
 
@@ -680,17 +706,19 @@ mod durable_impl {
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    VoiceConversionStream::new(DurableVoiceConversionStream::<Impl>::live(Impl::unwrapped_voice_conversion_stream(
-                        target_voice,
-                        options.clone(),
-                    )))
+                    VoiceConversionStream::new(DurableVoiceConversionStream::<Impl>::live(
+                        Impl::unwrapped_voice_conversion_stream(target_voice, options.clone()),
+                    ))
                 });
-                let _ = durability.persist_infallible(CreateVoiceConversionStreamInput { options }, NoOutput);
+                let _ = durability
+                    .persist_infallible(CreateVoiceConversionStreamInput { options }, NoOutput);
                 Ok(result)
             } else {
                 let _: NoOutput = durability.replay_infallible();
-                Ok(VoiceConversionStream::new(DurableVoiceConversionStream::<Impl>::replay(
-                    options,
+                Ok(VoiceConversionStream::new(DurableVoiceConversionStream::<
+                    Impl,
+                >::replay(
+                    options
                 )))
             }
         }
@@ -714,7 +742,7 @@ mod durable_impl {
         },
         Replay {
             #[allow(dead_code)]
-            options: Option<SynthesisOptions>,
+            options: Box<Option<SynthesisOptions>>,
             pollables: Vec<LazyInitializedPollable>,
             partial_result: Vec<AudioChunk>,
             #[allow(dead_code)]
@@ -741,7 +769,7 @@ mod durable_impl {
         fn replay(options: Option<SynthesisOptions>) -> Self {
             Self {
                 state: RefCell::new(Some(DurableSynthesisStreamState::Replay {
-                    options,
+                    options: Box::new(options),
                     pollables: Vec::new(),
                     partial_result: Vec::new(),
                     finished: false,
@@ -754,7 +782,9 @@ mod durable_impl {
         fn subscribe(&self) -> Pollable {
             let mut state = self.state.borrow_mut();
             match &mut *state {
-                Some(DurableSynthesisStreamState::Live { stream, .. }) => Impl::subscribe_synthesis_stream(stream),
+                Some(DurableSynthesisStreamState::Live { stream, .. }) => {
+                    Impl::subscribe_synthesis_stream(stream)
+                }
                 Some(DurableSynthesisStreamState::Replay { pollables, .. }) => {
                     let lazy_pollable = LazyInitializedPollable::new();
                     let pollable = lazy_pollable.subscribe();
@@ -797,7 +827,7 @@ mod durable_impl {
         },
         Replay {
             #[allow(dead_code)]
-            options: Option<SynthesisOptions>,
+            options: Box<Option<SynthesisOptions>>,
             pollables: Vec<LazyInitializedPollable>,
             partial_result: Vec<AudioChunk>,
             #[allow(dead_code)]
@@ -824,7 +854,7 @@ mod durable_impl {
         fn replay(options: Option<SynthesisOptions>) -> Self {
             Self {
                 state: RefCell::new(Some(DurableVoiceConversionStreamState::Replay {
-                    options,
+                    options: Box::new(options),
                     pollables: Vec::new(),
                     partial_result: Vec::new(),
                     finished: false,
@@ -837,7 +867,9 @@ mod durable_impl {
         fn subscribe(&self) -> Pollable {
             let mut state = self.state.borrow_mut();
             match &mut *state {
-                Some(DurableVoiceConversionStreamState::Live { stream, .. }) => Impl::subscribe_voice_conversion_stream(stream),
+                Some(DurableVoiceConversionStreamState::Live { stream, .. }) => {
+                    Impl::subscribe_voice_conversion_stream(stream)
+                }
                 Some(DurableVoiceConversionStreamState::Replay { pollables, .. }) => {
                     let lazy_pollable = LazyInitializedPollable::new();
                     let pollable = lazy_pollable.subscribe();
@@ -890,10 +922,19 @@ mod durable_impl {
                             stream.send_text(input.clone())
                         })
                     }
-                    _ => Err(TtsError::InternalError("Stream not in live mode".to_string())),
+                    _ => Err(TtsError::InternalError(
+                        "Stream not in live mode".to_string(),
+                    )),
                 };
                 let result = result.map(|_| NoOutput);
-                durability.persist(SynthesizeInput { input, options: None }, result)
+                durability
+                    .persist(
+                        SynthesizeInput {
+                            input,
+                            options: None,
+                        },
+                        result,
+                    )
                     .map(|_| ())
             } else {
                 let _: NoOutput = durability.replay::<NoOutput, TtsError>()?;
@@ -911,15 +952,12 @@ mod durable_impl {
                 let state = self.state.borrow();
                 let result = match &*state {
                     Some(DurableSynthesisStreamState::Live { stream, .. }) => {
-                        with_persistence_level(PersistenceLevel::PersistNothing, || {
-                            stream.finish()
-                        })
+                        with_persistence_level(PersistenceLevel::PersistNothing, || stream.finish())
                     }
                     _ => Ok(()),
                 };
                 let result = result.map(|_| NoOutput);
-                durability.persist(NoInput, result)
-                    .map(|_| ())
+                durability.persist(NoInput, result).map(|_| ())
             } else {
                 let _: NoOutput = durability.replay::<NoOutput, TtsError>()?;
                 Ok(())
@@ -961,9 +999,11 @@ mod durable_impl {
                 Some(DurableSynthesisStreamState::Live { stream, .. }) => {
                     stream.has_pending_audio()
                 }
-                Some(DurableSynthesisStreamState::Replay { partial_result, finished, .. }) => {
-                    !partial_result.is_empty() || !*finished
-                }
+                Some(DurableSynthesisStreamState::Replay {
+                    partial_result,
+                    finished,
+                    ..
+                }) => !partial_result.is_empty() || !*finished,
                 _ => false,
             }
         }
@@ -971,9 +1011,7 @@ mod durable_impl {
         fn get_status(&self) -> StreamStatus {
             let state = self.state.borrow();
             match &*state {
-                Some(DurableSynthesisStreamState::Live { stream, .. }) => {
-                    stream.get_status()
-                }
+                Some(DurableSynthesisStreamState::Live { stream, .. }) => stream.get_status(),
                 Some(DurableSynthesisStreamState::Replay { finished, .. }) => {
                     if *finished {
                         StreamStatus::Finished
@@ -988,7 +1026,10 @@ mod durable_impl {
         fn close(&self) {
             let mut state = self.state.borrow_mut();
             match state.take() {
-                Some(DurableSynthesisStreamState::Live { mut pollables, stream }) => {
+                Some(DurableSynthesisStreamState::Live {
+                    mut pollables,
+                    stream,
+                }) => {
                     with_persistence_level(PersistenceLevel::PersistNothing, move || {
                         pollables.clear();
                         stream.close();
@@ -1017,10 +1058,13 @@ mod durable_impl {
                             stream.send_audio(audio_data.clone())
                         })
                     }
-                    _ => Err(TtsError::InternalError("Stream not in live mode".to_string())),
+                    _ => Err(TtsError::InternalError(
+                        "Stream not in live mode".to_string(),
+                    )),
                 };
                 let result = result.map(|_| NoOutput);
-                durability.persist(AudioDataOutput { audio: audio_data }, result)
+                durability
+                    .persist(AudioDataOutput { audio: audio_data }, result)
                     .map(|_| ())
             } else {
                 let _: NoOutput = durability.replay::<NoOutput, TtsError>()?;
@@ -1067,15 +1111,12 @@ mod durable_impl {
                 let state = self.state.borrow();
                 let result = match &*state {
                     Some(DurableVoiceConversionStreamState::Live { stream, .. }) => {
-                        with_persistence_level(PersistenceLevel::PersistNothing, || {
-                            stream.finish()
-                        })
+                        with_persistence_level(PersistenceLevel::PersistNothing, || stream.finish())
                     }
                     _ => Ok(()),
                 };
                 let result = result.map(|_| NoOutput);
-                durability.persist(NoInput, result)
-                    .map(|_| ())
+                durability.persist(NoInput, result).map(|_| ())
             } else {
                 let _: NoOutput = durability.replay::<NoOutput, TtsError>()?;
                 Ok(())
@@ -1085,7 +1126,10 @@ mod durable_impl {
         fn close(&self) {
             let mut state = self.state.borrow_mut();
             match state.take() {
-                Some(DurableVoiceConversionStreamState::Live { mut pollables, stream }) => {
+                Some(DurableVoiceConversionStreamState::Live {
+                    mut pollables,
+                    stream,
+                }) => {
                     with_persistence_level(PersistenceLevel::PersistNothing, move || {
                         pollables.clear();
                         stream.close();
@@ -1154,9 +1198,13 @@ mod durable_impl {
                     let voices = underlying_results.get::<Impl::VoiceResults>().get_next()?;
                     Ok(VoiceInfoListOutput { voices })
                 });
-                durability.persist(NoInput, result).map(|output| output.voices)
+                durability
+                    .persist(NoInput, result)
+                    .map(|output| output.voices)
             } else {
-                durability.replay().map(|output: VoiceInfoListOutput| output.voices)
+                durability
+                    .replay()
+                    .map(|output: VoiceInfoListOutput| output.voices)
             }
         }
 
@@ -1181,7 +1229,7 @@ mod durable_impl {
             }
         }
     }
-    
+
     // Durable Voice resource
     pub struct DurableVoice<Impl> {
         id: String,
@@ -1199,6 +1247,7 @@ mod durable_impl {
     }
 
     impl<Impl: ExtendedGuest> DurableVoice<Impl> {
+        #[allow(clippy::too_many_arguments)]
         pub fn new(
             id: String,
             name: String,
@@ -1251,11 +1300,11 @@ mod durable_impl {
         }
 
         fn get_gender(&self) -> VoiceGender {
-            self.gender.clone()
+            self.gender
         }
 
         fn get_quality(&self) -> VoiceQuality {
-            self.quality.clone()
+            self.quality
         }
 
         fn get_description(&self) -> Option<String> {
@@ -1283,7 +1332,8 @@ mod durable_impl {
             if durability.is_live() {
                 // For simulation purposes, we just persist the input
                 let result = Ok(NoOutput);
-                durability.persist(UpdateVoiceSettingsInput { settings }, result)
+                durability
+                    .persist(UpdateVoiceSettingsInput { settings }, result)
                     .map(|_| ())
             } else {
                 durability.replay().map(|_: NoOutput| ())
@@ -1299,8 +1349,7 @@ mod durable_impl {
             if durability.is_live() {
                 // For simulation purposes, we just persist the operation
                 let result = Ok(NoOutput);
-                durability.persist(NoInput, result)
-                    .map(|_| ())
+                durability.persist(NoInput, result).map(|_| ())
             } else {
                 durability.replay().map(|_: NoOutput| ())
             }
@@ -1320,8 +1369,8 @@ mod durable_impl {
                         self.provider_id.clone(),
                         self.language.clone(),
                         self.additional_languages.clone(),
-                        self.gender.clone(),
-                        self.quality.clone(),
+                        self.gender,
+                        self.quality,
                         self.description.clone(),
                         self.supports_ssml,
                         self.sample_rates.clone(),
@@ -1338,8 +1387,8 @@ mod durable_impl {
                     self.provider_id.clone(),
                     self.language.clone(),
                     self.additional_languages.clone(),
-                    self.gender.clone(),
-                    self.quality.clone(),
+                    self.gender,
+                    self.quality,
                     self.description.clone(),
                     self.supports_ssml,
                     self.sample_rates.clone(),
@@ -1359,10 +1408,13 @@ mod durable_impl {
                 let result = Ok(AudioDataOutput {
                     audio: vec![0x52, 0x49, 0x46, 0x46, 0x24, 0x08, 0x00, 0x00], // Mock WAV header
                 });
-                durability.persist(PreviewVoiceInput { text }, result)
+                durability
+                    .persist(PreviewVoiceInput { text }, result)
                     .map(|output| output.audio)
             } else {
-                durability.replay().map(|output: AudioDataOutput| output.audio)
+                durability
+                    .replay()
+                    .map(|output: AudioDataOutput| output.audio)
             }
         }
     }
@@ -1376,7 +1428,11 @@ mod durable_impl {
     }
 
     impl<Impl: ExtendedGuest> DurablePronunciationLexicon<Impl> {
-        pub fn new(name: String, language: LanguageCode, entries: Option<Vec<PronunciationEntry>>) -> Self {
+        pub fn new(
+            name: String,
+            language: LanguageCode,
+            entries: Option<Vec<PronunciationEntry>>,
+        ) -> Self {
             Self {
                 name,
                 language,
@@ -1420,7 +1476,14 @@ mod durable_impl {
             if durability.is_live() {
                 // For simulation purposes, we just persist the input
                 let result = Ok(NoOutput);
-                durability.persist(PronunciationEntryInput { word, pronunciation }, result)
+                durability
+                    .persist(
+                        PronunciationEntryInput {
+                            word,
+                            pronunciation,
+                        },
+                        result,
+                    )
                     .map(|_| ())
             } else {
                 durability.replay().map(|_: NoOutput| ())
@@ -1436,7 +1499,8 @@ mod durable_impl {
             if durability.is_live() {
                 // For simulation purposes, we just persist the input
                 let result = Ok(NoOutput);
-                durability.persist(RemoveEntryInput { word }, result)
+                durability
+                    .persist(RemoveEntryInput { word }, result)
                     .map(|_| ())
             } else {
                 durability.replay().map(|_: NoOutput| ())
@@ -1469,7 +1533,11 @@ mod durable_impl {
     }
 
     impl<Impl: ExtendedGuest> DurableLongFormOperation<Impl> {
-        pub fn new(content: String, output_location: String, chapter_breaks: Option<Vec<u32>>) -> Self {
+        pub fn new(
+            content: String,
+            output_location: String,
+            chapter_breaks: Option<Vec<u32>>,
+        ) -> Self {
             Self {
                 content,
                 output_location,
@@ -1520,8 +1588,7 @@ mod durable_impl {
             );
             if durability.is_live() {
                 let result = Ok(NoOutput);
-                durability.persist(NoInput, result)
-                    .map(|_| ())
+                durability.persist(NoInput, result).map(|_| ())
             } else {
                 durability.replay().map(|_: NoOutput| ())
             }
@@ -1564,7 +1631,7 @@ mod durable_impl {
             description: Option<String>,
         ) -> Result<Voice, TtsError> {
             init_logging();
-            
+
             let durability = Durability::<NoOutput, UnusedError>::new(
                 "golem_tts",
                 "create_voice_clone",
@@ -1586,7 +1653,14 @@ mod durable_impl {
                         vec![AudioFormat::Mp3, AudioFormat::Wav],
                     ))
                 });
-                let _ = durability.persist_infallible(CreateVoiceCloneInput { name, audio_samples, description }, NoOutput);
+                let _ = durability.persist_infallible(
+                    CreateVoiceCloneInput {
+                        name,
+                        audio_samples,
+                        description,
+                    },
+                    NoOutput,
+                );
                 Ok(result)
             } else {
                 let _: NoOutput = durability.replay_infallible();
@@ -1611,7 +1685,7 @@ mod durable_impl {
             characteristics: VoiceDesignParams,
         ) -> Result<Voice, TtsError> {
             init_logging();
-            
+
             let durability = Durability::<NoOutput, UnusedError>::new(
                 "golem_tts",
                 "design_voice",
@@ -1633,7 +1707,13 @@ mod durable_impl {
                         vec![AudioFormat::Mp3, AudioFormat::Wav],
                     ))
                 });
-                let _ = durability.persist_infallible(DesignVoiceInput { name, characteristics }, NoOutput);
+                let _ = durability.persist_infallible(
+                    DesignVoiceInput {
+                        name,
+                        characteristics,
+                    },
+                    NoOutput,
+                );
                 Ok(result)
             } else {
                 let _: NoOutput = durability.replay_infallible();
@@ -1652,7 +1732,6 @@ mod durable_impl {
                 )))
             }
         }
-        
 
         fn convert_voice(
             input_audio: Vec<u8>,
@@ -1667,12 +1746,22 @@ mod durable_impl {
                 DurableFunctionType::WriteRemote,
             );
             if durability.is_live() {
-                let result = Impl::convert_voice(input_audio.clone(), target_voice, preserve_timing);
+                let result =
+                    Impl::convert_voice(input_audio.clone(), target_voice, preserve_timing);
                 let result = result.map(|a| AudioDataOutput { audio: a });
-                durability.persist(ConvertVoiceInput { input_audio, preserve_timing }, result)
+                durability
+                    .persist(
+                        ConvertVoiceInput {
+                            input_audio,
+                            preserve_timing,
+                        },
+                        result,
+                    )
                     .map(|output| output.audio)
             } else {
-                durability.replay().map(|output: AudioDataOutput| output.audio)
+                durability
+                    .replay()
+                    .map(|output: AudioDataOutput| output.audio)
             }
         }
 
@@ -1689,12 +1778,26 @@ mod durable_impl {
                 DurableFunctionType::WriteRemote,
             );
             if durability.is_live() {
-                let result = Impl::generate_sound_effect(description.clone(), duration_seconds, style_influence);
+                let result = Impl::generate_sound_effect(
+                    description.clone(),
+                    duration_seconds,
+                    style_influence,
+                );
                 let result = result.map(|a| AudioDataOutput { audio: a });
-                durability.persist(GenerateSoundEffectInput { description, duration_seconds, style_influence }, result)
+                durability
+                    .persist(
+                        GenerateSoundEffectInput {
+                            description,
+                            duration_seconds,
+                            style_influence,
+                        },
+                        result,
+                    )
                     .map(|output| output.audio)
             } else {
-                durability.replay().map(|output: AudioDataOutput| output.audio)
+                durability
+                    .replay()
+                    .map(|output: AudioDataOutput| output.audio)
             }
         }
 
@@ -1718,13 +1821,20 @@ mod durable_impl {
                         entries.clone(),
                     ))
                 });
-                let _ = durability.persist_infallible(CreateLexiconInput { name, language, entries }, NoOutput);
+                let _ = durability.persist_infallible(
+                    CreateLexiconInput {
+                        name,
+                        language,
+                        entries,
+                    },
+                    NoOutput,
+                );
                 Ok(result)
             } else {
                 let _: NoOutput = durability.replay_infallible();
-                Ok(PronunciationLexicon::new(DurablePronunciationLexicon::<Impl>::new(
-                    name, language, entries,
-                )))
+                Ok(PronunciationLexicon::new(
+                    DurablePronunciationLexicon::<Impl>::new(name, language, entries),
+                ))
             }
         }
 
@@ -1749,13 +1859,20 @@ mod durable_impl {
                         chapter_breaks.clone(),
                     ))
                 });
-                let _ = durability.persist_infallible(SynthesizeLongFormInput { content, output_location, chapter_breaks }, NoOutput);
+                let _ = durability.persist_infallible(
+                    SynthesizeLongFormInput {
+                        content,
+                        output_location,
+                        chapter_breaks,
+                    },
+                    NoOutput,
+                );
                 Ok(result)
             } else {
                 let _: NoOutput = durability.replay_infallible();
-                Ok(LongFormOperation::new(DurableLongFormOperation::<Impl>::new(
-                    content, output_location, chapter_breaks,
-                )))
+                Ok(LongFormOperation::new(
+                    DurableLongFormOperation::<Impl>::new(content, output_location, chapter_breaks),
+                ))
             }
         }
     }
@@ -1763,7 +1880,9 @@ mod durable_impl {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use crate::exports::golem::tts::types::{TextType, VoiceGender, VoiceQuality, AudioFormat, AudioEffects};
+        use crate::exports::golem::tts::types::{
+            AudioEffects, AudioFormat, TextType, VoiceGender, VoiceQuality,
+        };
         use golem_rust::value_and_type::{FromValueAndType, IntoValueAndType};
 
         fn roundtrip_test<T>(value: T) -> T
@@ -1894,7 +2013,10 @@ mod durable_impl {
                         similarity: Some(0.9),
                         style: Some(0.2),
                     }),
-                    audio_effects: Some(vec![AudioEffects::NoiseReduction, AudioEffects::BassBoost]),
+                    audio_effects: Some(vec![
+                        AudioEffects::NoiseReduction,
+                        AudioEffects::BassBoost,
+                    ]),
                     enable_timing: Some(false),
                     enable_word_timing: Some(false),
                     seed: Some(123),
@@ -2044,8 +2166,8 @@ mod durable_impl {
 
         #[test]
         fn synthesis_result_output_roundtrip() {
-            use crate::exports::golem::tts::types::{SynthesisMetadata};
-            
+            use crate::exports::golem::tts::types::SynthesisMetadata;
+
             roundtrip_test(SynthesisResultOutput {
                 result: SynthesisResult {
                     audio_data: vec![0x00, 0xFF, 0x80, 0x7F],
@@ -2064,7 +2186,7 @@ mod durable_impl {
         #[test]
         fn timing_info_list_output_roundtrip() {
             use crate::exports::golem::tts::types::TimingMarkType;
-            
+
             roundtrip_test(TimingInfoListOutput {
                 timing: vec![
                     TimingInfo {
@@ -2099,15 +2221,15 @@ mod durable_impl {
         #[test]
         fn audio_data_output_roundtrip() {
             roundtrip_test(AudioDataOutput {
-                audio: vec![0x52, 0x49, 0x46, 0x46, 0x24, 0x08, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45],
+                audio: vec![
+                    0x52, 0x49, 0x46, 0x46, 0x24, 0x08, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45,
+                ],
             });
         }
 
         #[test]
         fn empty_audio_data_output_roundtrip() {
-            roundtrip_test(AudioDataOutput {
-                audio: vec![],
-            });
+            roundtrip_test(AudioDataOutput { audio: vec![] });
         }
 
         #[test]
@@ -2117,16 +2239,12 @@ mod durable_impl {
 
         #[test]
         fn empty_voice_info_list_output_roundtrip() {
-            roundtrip_test(VoiceInfoListOutput {
-                voices: vec![],
-            });
+            roundtrip_test(VoiceInfoListOutput { voices: vec![] });
         }
 
         #[test]
         fn empty_language_info_list_output_roundtrip() {
-            roundtrip_test(LanguageInfoListOutput {
-                languages: vec![],
-            });
+            roundtrip_test(LanguageInfoListOutput { languages: vec![] });
         }
 
         #[test]

@@ -1,4 +1,4 @@
-use crate::exports::golem::tts::types::{TtsError, QuotaInfo, QuotaUnit};
+use crate::exports::golem::tts::types::{QuotaInfo, QuotaUnit, TtsError};
 use reqwest::StatusCode;
 
 pub fn unsupported(_what: impl AsRef<str>) -> TtsError {
@@ -81,9 +81,7 @@ pub fn tts_error_from_status(status: StatusCode) -> TtsError {
         StatusCode::SERVICE_UNAVAILABLE => {
             TtsError::ServiceUnavailable("Service temporarily unavailable".to_string())
         }
-        _ if status.is_client_error() => {
-            TtsError::InvalidText(format!("Client error: {status}"))
-        }
+        _ if status.is_client_error() => TtsError::InvalidText(format!("Client error: {status}")),
         _ => TtsError::InternalError(format!("Server error: {status}")),
     }
 }
