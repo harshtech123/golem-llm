@@ -80,11 +80,6 @@ impl ElevenLabsTtsApi {
         std::env::var("ELEVENLABS_MODEL_VERSION").unwrap_or_else(|_| "eleven_monolingual_v1".to_string())
     }
 
-    pub fn with_rate_limit_config(mut self, config: RateLimitConfig) -> Self {
-        self.rate_limit_config = config;
-        self
-    }
-
     fn create_request(&self, method: Method, url: &str) -> RequestBuilder {
         self.client
             .request(method, url)

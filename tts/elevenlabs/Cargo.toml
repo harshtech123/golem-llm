@@ -38,6 +38,11 @@ package = "golem:tts-elevenlabs"
 generate_unused_types = true
 
 [package.metadata.component.bindings.with]
+"golem:tts/types@1.0.0" = "golem_tts::golem::tts::types"
+"golem:tts/voices@1.0.0" = "golem_tts::golem::tts::voices"
+"golem:tts/synthesis@1.0.0" = "golem_tts::golem::tts::synthesis"
+"golem:tts/streaming@1.0.0" = "golem_tts::golem::tts::streaming"
+"golem:tts/advanced@1.0.0" = "golem_tts::golem::tts::advanced"
 
 [package.metadata.component.target]
 path = "wit"

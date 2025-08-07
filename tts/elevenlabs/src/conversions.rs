@@ -469,60 +469,6 @@ pub fn voice_design_params_to_create_request(params: VoiceDesignParams) -> Creat
     }
 }
 
-pub fn elevenlabs_voice_to_voice_resource(_voice: ElevenLabsVoice, _client: ElevenLabsTtsApi) -> Voice {
-    // This will need to be implemented properly when we have the resource implementation
-    // For now, return a placeholder - this will be fixed in lib.rs
-    todo!("Voice resource implementation needed")
-}
-
-pub struct ElevenLabsVoiceResource {
-    pub voice_data: ElevenLabsVoice,
-    pub client: ElevenLabsTtsApi,
-}
-
-impl ElevenLabsVoiceResource {
-    pub fn get_info(&self) -> VoiceInfo {
-        elevenlabs_voice_to_voice_info(self.voice_data.clone())
-    }
-
-    pub fn get_id(&self) -> String {
-        self.voice_data.voice_id.clone()
-    }
-
-    pub fn get_name(&self) -> String {
-        self.voice_data.name.clone()
-    }
-
-    pub fn get_description(&self) -> Option<String> {
-        self.voice_data.description.clone()
-    }
-
-    pub fn get_settings(&self) -> Option<VoiceSettings> {
-        self.voice_data.settings.as_ref().map(|s| VoiceSettings {
-            speed: s.speed,  // ElevenLabs supports speed
-            pitch: None,  // ElevenLabs doesn't directly support pitch
-            volume: None, // ElevenLabs doesn't directly support volume
-            stability: s.stability,
-            similarity: s.similarity_boost,
-            style: s.style,
-        })
-    }
-
-    pub fn synthesize(&self, text: String, options: Option<SynthesisOptions>) -> Result<SynthesisResult, TtsError> {
-        let (mut request, params) = synthesis_options_to_tts_request(options);
-        request.text = text;
-
-        let audio_data = self.client
-            .text_to_speech(&self.voice_data.voice_id, &request, params)
-            .map_err(|e| e)?;
-
-        Ok(audio_data_to_synthesis_result(
-            audio_data,
-            &request.text,
-        ))
-    }
-}
-
 // Helper functions
 pub fn infer_gender_from_name(name: &str) -> Option<VoiceGender> {
     let name_lower = name.to_lowercase();

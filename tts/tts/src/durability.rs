@@ -1463,6 +1463,7 @@ mod durable_impl {
     pub struct DurableLongFormOperation<Impl> {
         content: String,
         output_location: String,
+        #[allow(dead_code)]
         chapter_breaks: Option<Vec<u32>>,
         _phantom: PhantomData<Impl>,
     }
@@ -1729,7 +1730,7 @@ mod durable_impl {
 
         fn synthesize_long_form(
             content: String,
-            voice: crate::exports::golem::tts::voices::VoiceBorrow<'_>,
+            _voice: crate::exports::golem::tts::voices::VoiceBorrow<'_>,
             output_location: String,
             chapter_breaks: Option<Vec<u32>>,
         ) -> Result<LongFormOperation, TtsError> {
