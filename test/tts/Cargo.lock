@@ -875,7 +875,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "test_search"
+name = "test_tts"
 version = "0.0.0"
 dependencies = [
  "golem-rust",

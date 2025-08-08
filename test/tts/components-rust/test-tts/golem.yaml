@@ -6,7 +6,7 @@
 # See https://learn.golem.cloud/docs/app-manifest#field-reference for field reference
 
 components:
-  test:search:
+  test:tts:
     profiles:
       # DEBUG PROFILES
       elevenlabs-debug:
@@ -190,6 +190,6 @@ components:
     defaultProfile: elevenlabs-debug
 
 dependencies:
-  test:search:
+  test:tts:
     - target: test:helper
       type: wasm-rpc
