@@ -1,12 +1,31 @@
 #[allow(static_mut_refs)]
 mod bindings;
 
-use crate::bindings::exports::test::tts::test_tts_api::*;
-use crate::bindings::golem::tts::types::*;
-use crate::bindings::golem::tts::voices::*;
-use crate::bindings::golem::tts::synthesis::*;
-use crate::bindings::golem::tts::streaming::*;
-use crate::bindings::golem::tts::advanced::*;
+use crate::bindings::exports::test::tts_exports::test_tts_api::*;
+// Import specific types to avoid conflicts
+use crate::bindings::golem::tts::types::{
+    TtsError, TextInput, AudioConfig, VoiceSettings, AudioFormat, AudioEffects,
+    TextType, VoiceGender, VoiceQuality, TimingInfo,
+    SynthesisResult, SynthesisMetadata, QuotaInfo
+};
+use crate::bindings::golem::tts::voices::{
+    Voice, VoiceFilter, VoiceInfo, VoiceResults, LanguageInfo,
+    list_voices, get_voice, search_voices, list_languages
+};
+use crate::bindings::golem::tts::synthesis::{
+    SynthesisOptions, SynthesisContext, ValidationResult,
+    synthesize, synthesize_batch, validate_input, get_timing_marks
+};
+use crate::bindings::golem::tts::streaming::{
+    SynthesisStream, StreamStatus, VoiceConversionStream,
+    create_stream, create_voice_conversion_stream
+};
+use crate::bindings::golem::tts::advanced::{
+    AudioSample, VoiceDesignParams, AgeCategory, PronunciationEntry,
+    PronunciationLexicon, LongFormOperation, OperationStatus, LongFormResult,
+    create_voice_clone, design_voice, convert_voice, generate_sound_effect,
+    create_lexicon, synthesize_long_form
+};
 use crate::bindings::test::helper_client::test_helper_client::TestHelperApi;
 use golem_rust::atomically;
 use std::fs;
@@ -76,7 +95,7 @@ impl Guest for Component {
             search_query: None,
         };
 
-        match list_voices(Some(filter)) {
+        match list_voices(Some(&filter)) {
             Ok(filtered_results) => {
                 results.push("✓ Voice filtering successful".to_string());
                 if let Some(total) = filtered_results.get_total_count() {
@@ -100,7 +119,7 @@ impl Guest for Component {
 
         // Test voice search
         println!("Testing voice search...");
-        match search_voices("natural".to_string(), None) {
+        match search_voices("natural", None) {
             Ok(search_results) => {
                 results.push(format!("✓ Voice search found {} results", search_results.len()));
             }
@@ -129,7 +148,7 @@ impl Guest for Component {
             language: Some("en-US".to_string()),
         };
 
-        match synthesize(text_input.clone(), &voice, None) {
+        match synthesize(&text_input, &voice, None) {
             Ok(result) => {
                 results.push("✓ Basic synthesis successful".to_string());
                 results.push(format!("✓ Audio duration: {:.2}s", result.metadata.duration_seconds));
@@ -162,7 +181,7 @@ impl Guest for Component {
             context: None,
         };
 
-        match synthesize(text_input.clone(), &voice, Some(options)) {
+        match synthesize(&text_input, &voice, Some(&options)) {
             Ok(result) => {
                 results.push("✓ Synthesis with audio config successful".to_string());
                 save_audio_result(&result.audio_data, "test2-config", "wav");
@@ -192,7 +211,7 @@ impl Guest for Component {
             context: None,
         };
 
-        match synthesize(text_input, &voice, Some(voice_options)) {
+        match synthesize(&text_input, &voice, Some(&voice_options)) {
             Ok(result) => {
                 results.push("✓ Synthesis with voice settings successful".to_string());
                 save_audio_result(&result.audio_data, "test2-voice-settings", "mp3");
@@ -221,7 +240,7 @@ impl Guest for Component {
             language: Some("en-US".to_string()),
         };
 
-        match synthesize(ssml_input.clone(), &voice, None) {
+        match synthesize(&ssml_input.clone(), &voice, None) {
             Ok(result) => {
                 results.push("✓ SSML synthesis successful".to_string());
                 results.push(format!("✓ SSML audio duration: {:.2}s", result.metadata.duration_seconds));
@@ -232,7 +251,7 @@ impl Guest for Component {
 
         // Test input validation
         println!("Testing input validation...");
-        match validate_input(ssml_input.clone(), &voice) {
+        match validate_input(&ssml_input.clone(), &voice) {
             Ok(validation) => {
                 results.push(format!("✓ Input validation: valid={}", validation.is_valid));
                 results.push(format!("✓ Character count: {}", validation.character_count));
@@ -248,7 +267,7 @@ impl Guest for Component {
 
         // Test timing marks
         println!("Testing timing marks extraction...");
-        match get_timing_marks(ssml_input, &voice) {
+        match get_timing_marks(&ssml_input, &voice) {
             Ok(timing_marks) => {
                 results.push(format!("✓ Retrieved {} timing marks", timing_marks.len()));
                 for (i, mark) in timing_marks.iter().take(3).enumerate() {
@@ -274,7 +293,7 @@ impl Guest for Component {
             },
         ];
 
-        match synthesize_batch(batch_inputs, &voice, None) {
+        match synthesize_batch(&batch_inputs, &voice, None) {
             Ok(batch_results) => {
                 results.push(format!("✓ Batch synthesis completed: {} items", batch_results.len()));
                 for (i, result) in batch_results.iter().enumerate() {
@@ -315,7 +334,7 @@ impl Guest for Component {
             context: None,
         };
 
-        match create_stream(&voice, Some(stream_options)) {
+        match create_stream(&voice, Some(&stream_options)) {
             Ok(stream) => {
                 results.push("✓ Streaming session created".to_string());
                 
@@ -333,7 +352,7 @@ impl Guest for Component {
                         language: Some("en-US".to_string()),
                     };
 
-                    match stream.send_text(text_input) {
+                    match stream.send_text(&text_input) {
                         Ok(_) => println!("Sent chunk {}", i + 1),
                         Err(e) => {
                             results.push(format!("✗ Failed to send chunk {}: {:?}", i + 1, e));
@@ -416,9 +435,9 @@ impl Guest for Component {
         ];
 
         match create_voice_clone(
-            "test-clone-voice".to_string(),
-            audio_samples,
-            Some("A test cloned voice".to_string())
+            "test-clone-voice",
+            &audio_samples,
+            Some("A test cloned voice")
         ) {
             Ok(cloned_voice) => {
                 results.push("✓ Voice cloning successful".to_string());
@@ -432,7 +451,7 @@ impl Guest for Component {
                     language: Some("en-US".to_string()),
                 };
 
-                match synthesize(text_input, &cloned_voice, None) {
+                match synthesize(&text_input, &cloned_voice, None) {
                     Ok(result) => {
                         results.push("✓ Synthesis with cloned voice successful".to_string());
                         save_audio_result(&result.audio_data, "test5-cloned", "mp3");
@@ -462,7 +481,7 @@ impl Guest for Component {
             reference_voice: None,
         };
 
-        match design_voice("test-designed-voice".to_string(), design_params) {
+        match design_voice("test-designed-voice", &design_params) {
             Ok(designed_voice) => {
                 results.push("✓ Voice design successful".to_string());
                 results.push(format!("✓ Designed voice ID: {}", designed_voice.get_id()));
@@ -474,7 +493,7 @@ impl Guest for Component {
                     language: Some("en-US".to_string()),
                 };
 
-                match synthesize(text_input, &designed_voice, None) {
+                match synthesize(&text_input, &designed_voice, None) {
                     Ok(result) => {
                         results.push("✓ Synthesis with designed voice successful".to_string());
                         save_audio_result(&result.audio_data, "test5-designed", "mp3");
@@ -508,7 +527,7 @@ impl Guest for Component {
         let formats = vec![
             (AudioFormat::Mp3, "mp3"),
             (AudioFormat::Wav, "wav"),
-            (AudioFormat::Ogg, "ogg"),
+            (AudioFormat::OggOpus, "oggopus"),
             (AudioFormat::Aac, "aac"),
         ];
 
@@ -538,7 +557,7 @@ impl Guest for Component {
                 context: None,
             };
 
-            match synthesize(text_input.clone(), &voice, Some(options)) {
+            match synthesize(&text_input, &voice, Some(&options)) {
                 Ok(result) => {
                     results.push(format!("✓ {} format synthesis successful", extension.to_uppercase()));
                     results.push(format!("  Audio size: {} bytes", result.audio_data.len()));
@@ -571,7 +590,7 @@ impl Guest for Component {
                 context: None,
             };
 
-            match synthesize(text_input.clone(), &voice, Some(options)) {
+            match synthesize(&text_input, &voice, Some(&options)) {
                 Ok(result) => {
                     results.push(format!("✓ {}Hz sample rate successful", rate));
                     save_audio_result(&result.audio_data, &format!("test6-{}hz", rate), "wav");
@@ -604,9 +623,9 @@ impl Guest for Component {
         ];
 
         match create_lexicon(
-            "test-lexicon".to_string(),
-            "en-US".to_string(),
-            Some(pronunciation_entries)
+            "test-lexicon",
+            &"en-US".to_string(),
+            Some(&pronunciation_entries)
         ) {
             Ok(lexicon) => {
                 results.push("✓ Lexicon creation successful".to_string());
@@ -615,7 +634,7 @@ impl Guest for Component {
                 results.push(format!("✓ Entry count: {}", lexicon.get_entry_count()));
 
                 // Test adding entries
-                match lexicon.add_entry("synthesis".to_string(), "SIN-thuh-sis".to_string()) {
+                match lexicon.add_entry("synthesis", "SIN-thuh-sis") {
                     Ok(_) => results.push("✓ Entry addition successful".to_string()),
                     Err(e) => results.push(format!("✗ Entry addition failed: {:?}", e)),
                 }
@@ -630,7 +649,7 @@ impl Guest for Component {
                 }
 
                 // Test removing entries
-                match lexicon.remove_entry("API".to_string()) {
+                match lexicon.remove_entry("API") {
                     Ok(_) => results.push("✓ Entry removal successful".to_string()),
                     Err(e) => results.push(format!("✗ Entry removal failed: {:?}", e)),
                 }
@@ -644,7 +663,7 @@ impl Guest for Component {
         // Test sound effect generation
         println!("Testing sound effect generation...");
         match generate_sound_effect(
-            "Ocean waves gently lapping against the shore".to_string(),
+            "Ocean waves gently lapping against the shore",
             Some(5.0),
             Some(0.7)
         ) {
@@ -697,7 +716,7 @@ impl Guest for Component {
             language: Some("en-US".to_string()),
         };
 
-        match synthesize(text_input, &voice, None) {
+        match synthesize(&text_input, &voice, None) {
             Ok(result) => {
                 results.push("✓ Large text synthesis successful".to_string());
                 results.push(format!("  Characters: {}", result.metadata.character_count));
@@ -738,7 +757,7 @@ impl Guest for Component {
             language: Some("en-US".to_string()),
         };
 
-        match synthesize(empty_input, &voice, None) {
+        match synthesize(&empty_input, &voice, None) {
             Ok(_) => results.push("✓ Empty text handled gracefully".to_string()),
             Err(TtsError::InvalidText(msg)) => {
                 results.push(format!("✓ Empty text properly rejected: {}", msg));
@@ -754,7 +773,7 @@ impl Guest for Component {
             language: Some("en-US".to_string()),
         };
 
-        match synthesize(bad_ssml, &voice, None) {
+        match synthesize(&bad_ssml, &voice, None) {
             Ok(_) => results.push("⚠ Malformed SSML was accepted".to_string()),
             Err(TtsError::InvalidSsml(msg)) => {
                 results.push(format!("✓ Malformed SSML properly rejected: {}", msg));
@@ -770,7 +789,7 @@ impl Guest for Component {
             language: Some("xx-XX".to_string()), // Invalid language code
         };
 
-        match synthesize(unsupported_lang, &voice, None) {
+        match synthesize(&unsupported_lang, &voice, None) {
             Ok(_) => results.push("⚠ Unsupported language was accepted".to_string()),
             Err(TtsError::UnsupportedLanguage(msg)) => {
                 results.push(format!("✓ Unsupported language properly rejected: {}", msg));
@@ -806,7 +825,7 @@ impl Guest for Component {
             language: Some("en-US".to_string()),
         };
 
-        match synthesize(test_input, &voice, Some(options)) {
+        match synthesize(&test_input, &voice, Some(&options)) {
             Ok(_) => results.push("⚠ Invalid voice settings were accepted (may be clamped)".to_string()),
             Err(TtsError::InvalidConfiguration(msg)) => {
                 results.push(format!("✓ Invalid settings properly rejected: {}", msg));
@@ -816,7 +835,7 @@ impl Guest for Component {
 
         // Test with non-existent voice
         println!("Testing non-existent voice handling...");
-        match get_voice("non-existent-voice-id-12345".to_string()) {
+        match get_voice("non-existent-voice-id-12345") {
             Ok(_) => results.push("⚠ Non-existent voice was found".to_string()),
             Err(TtsError::VoiceNotFound(msg)) => {
                 results.push(format!("✓ Non-existent voice properly rejected: {}", msg));
@@ -849,7 +868,7 @@ impl Guest for Component {
             language: Some("en-US".to_string()),
         };
 
-        match synthesize(text_input, &voice, None) {
+        match synthesize(&text_input, &voice, None) {
             Ok(result) => {
                 results.push("✓ Long-form synthesis successful".to_string());
                 results.push(format!("✓ Audio duration: {:.2}s", result.metadata.duration_seconds));
@@ -867,10 +886,10 @@ impl Guest for Component {
         let chapter_breaks = Some(vec![1000, 2000, 3000, 4000]); // Break points
         
         match synthesize_long_form(
-            long_content,
+            &long_content,
             &voice,
-            "/output/test10-long-form.mp3".to_string(),
-            chapter_breaks
+            "/output/test10-long-form.mp3",
+            chapter_breaks.as_deref()
         ) {
             Ok(operation) => {
                 results.push("✓ Long-form operation started".to_string());
@@ -960,7 +979,7 @@ impl Guest for Component {
                     language: Some("en-US".to_string()),
                 };
 
-                match stream.send_text(text_input) {
+                match stream.send_text(&text_input) {
                     Ok(_) => results.push("✓ Initial text sent".to_string()),
                     Err(e) => {
                         results.push(format!("✗ Failed to send initial text: {:?}", e));
@@ -988,7 +1007,7 @@ impl Guest for Component {
                     language: Some("en-US".to_string()),
                 };
 
-                match stream.send_text(text_input2) {
+                match stream.send_text(&text_input2) {
                     Ok(_) => results.push("✓ Text sent after recovery successful".to_string()),
                     Err(e) => results.push(format!("⚠ Text after recovery failed: {:?}", e)),
                 }
@@ -1060,7 +1079,7 @@ impl Guest for Component {
 
         // Test voice preview
         println!("Testing voice preview...");
-        match voice.preview("This is a voice preview sample.".to_string()) {
+        match voice.preview("This is a voice preview sample.") {
             Ok(preview_audio) => {
                 results.push("✓ Voice preview successful".to_string());
                 results.push(format!("✓ Preview audio size: {} bytes", preview_audio.len()));
@@ -1086,7 +1105,7 @@ impl Guest for Component {
         // Test voice-to-voice conversion
         println!("Testing voice-to-voice conversion...");
         let input_audio = create_dummy_audio_data();
-        match convert_voice(input_audio, &voice, Some(true)) {
+        match convert_voice(&input_audio, &voice, Some(true)) {
             Ok(converted_audio) => {
                 results.push("✓ Voice conversion successful".to_string());
                 results.push(format!("✓ Converted audio size: {} bytes", converted_audio.len()));
@@ -1110,7 +1129,7 @@ impl Guest for Component {
                 ];
 
                 for (i, chunk) in audio_chunks.iter().enumerate() {
-                    match conversion_stream.send_audio(chunk.clone()) {
+                    match conversion_stream.send_audio(&chunk.clone()) {
                         Ok(_) => println!("Sent audio chunk {}", i + 1),
                         Err(e) => {
                             results.push(format!("✗ Failed to send audio chunk {}: {:?}", i + 1, e));
@@ -1195,7 +1214,7 @@ impl Guest for Component {
             }),
         };
 
-        match synthesize(comprehensive_text, &voice, Some(comprehensive_options)) {
+        match synthesize(&comprehensive_text, &voice, Some(&comprehensive_options)) {
             Ok(result) => {
                 results.push("✓ Comprehensive synthesis successful".to_string());
                 results.push(format!("✓ Duration: {:.2}s", result.metadata.duration_seconds));
@@ -1221,7 +1240,7 @@ fn get_test_voice() -> Result<Voice, String> {
                 match voice_results.get_next() {
                     Ok(voices) => {
                         if let Some(voice_info) = voices.first() {
-                            match get_voice(voice_info.id.clone()) {
+                            match get_voice(&voice_info.id.clone()) {
                                 Ok(voice) => Ok(voice),
                                 Err(e) => Err(format!("Failed to get voice {}: {:?}", voice_info.id, e)),
                             }
