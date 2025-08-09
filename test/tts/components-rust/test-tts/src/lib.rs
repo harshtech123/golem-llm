@@ -34,6 +34,15 @@ use std::time::Duration;
 
 struct Component;
 
+#[cfg(feature = "elevenlabs")]
+const TEST_PROVIDER: &'static str = "ELEVENLABS";
+#[cfg(feature = "deepgram")]
+const TEST_PROVIDER: &'static str = "DEEPGRAM";
+#[cfg(feature = "google")]
+const TEST_PROVIDER: &'static str = "GOOGLE";
+#[cfg(feature = "aws")]
+const TEST_PROVIDER: &'static str = "AWS";
+
 // Test constants
 const SHORT_TEXT: &str = "Hello, this is a test of text-to-speech synthesis.";
 const MEDIUM_TEXT: &str = "This is a longer text for testing TTS functionality. It contains multiple sentences. Each sentence should be synthesized clearly and with proper pronunciation.";
@@ -621,6 +630,8 @@ impl Guest for Component {
                 part_of_speech: Some("noun".to_string()),
             },
         ];
+
+        results.push(TEST_PROVIDER.to_string());
 
         match create_lexicon(
             "test-lexicon",
