@@ -2,13 +2,26 @@ use chrono::{DateTime, Utc};
 use golem_tts::config::{get_max_retries_config, get_timeout_config};
 use golem_tts::error::{from_reqwest_error, internal_error, tts_error_from_status};
 use golem_tts::golem::tts::types::TtsError;
-use log::trace;
+use log::{trace, error};
 use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::time::Duration;
+use sha2::{Digest, Sha256};
+use hmac_sha256::HMAC;
+
+/// Helper function to calculate HMAC-SHA256 using hmac_sha256 crate (like Kling auth)
+fn hmac_sha256(key: &[u8], data: &str) -> Vec<u8> {
+    HMAC::mac(data.as_bytes(), key).to_vec()
+}
+
+/// Simple hex encoding function
+fn hex_encode(data: &[u8]) -> String {
+    data.iter().map(|byte| format!("{:02x}", byte)).collect()
+}
+
 
 /// Rate limiting configuration for AWS Polly
 #[derive(Debug, Clone)]
@@ -102,16 +115,15 @@ impl AwsPollyTtsApi {
         secret_access_key: String,
         region: String,
         session_token: Option<String>,
-    ) -> Self {
+    ) -> Result<Self, TtsError> {
         let base_url = format!("https://polly.{}.amazonaws.com", region);
-        let timeout = Duration::from_secs(get_timeout_config());
 
         let client = Client::builder()
-            .timeout(timeout)
+            .timeout(Duration::from_secs(get_timeout_config()))
             .build()
-            .expect("Failed to create HTTP client");
+            .map_err(|err| from_reqwest_error("Failed to create HTTP client", err))?;
 
-        Self {
+        Ok(Self {
             client,
             access_key_id,
             secret_access_key,
@@ -119,58 +131,140 @@ impl AwsPollyTtsApi {
             region: region.clone(),
             base_url,
             rate_limit_config: RateLimitConfig::default(),
-        }
+        })
     }
 
     /// Create an authenticated request with AWS Signature Version 4
-    fn create_request(&self, method: Method, url: &str, body: Option<&str>) -> RequestBuilder {
-        let mut request = self.client.request(method.clone(), url);
-
-        // Add AWS signature headers
-        let datetime = Utc::now();
-        let headers = self.create_aws_headers(&method, url, body, &datetime);
-
-        for (key, value) in headers {
-            request = request.header(key, value);
-        }
-
-        request
+    fn create_request(&self, method: Method, url: &str, _body: Option<&str>) -> RequestBuilder {
+        self.client.request(method, url)
+            .header("User-Agent", "golem-aws-polly-client/1.0")
     }
 
     /// Create AWS Signature Version 4 headers
     fn create_aws_headers(
         &self,
-        _method: &Method,
-        _url: &str,
-        _body: Option<&str>,
+        method: &str,
+        url: &str,
+        body: Option<&str>,
         datetime: &DateTime<Utc>,
     ) -> HashMap<String, String> {
         let mut headers = HashMap::new();
 
-        // Basic headers
-        headers.insert(
-            "Content-Type".to_string(),
-            "application/x-amz-json-1.0".to_string(),
-        );
-        headers.insert(
-            "X-Amz-Date".to_string(),
-            datetime.format("%Y%m%dT%H%M%SZ").to_string(),
-        );
+        // Simple URL parsing without url crate
+        let url_parts: Vec<&str> = url.split("://").collect();
+        if url_parts.len() != 2 {
+            panic!("Invalid URL format");
+        }
+        
+        let after_protocol = url_parts[1];
+        let host_and_path: Vec<&str> = after_protocol.splitn(2, '/').collect();
+        let host = host_and_path[0];
+        let path = if host_and_path.len() > 1 {
+            format!("/{}", host_and_path[1])
+        } else {
+            "/".to_string()
+        };
+
+        // Split path and query
+        let path_parts: Vec<&str> = path.splitn(2, '?').collect();
+        let path_only = path_parts[0];
+        let query = if path_parts.len() > 1 { path_parts[1] } else { "" };
+
+        // Basic headers that will be signed
+        let content_type = "application/x-amz-json-1.0";
+        let amz_date = datetime.format("%Y%m%dT%H%M%SZ").to_string();
+        let date_stamp = datetime.format("%Y%m%d").to_string();
+        
+        headers.insert("Content-Type".to_string(), content_type.to_string());
+        headers.insert("Host".to_string(), host.to_string());
+        headers.insert("X-Amz-Date".to_string(), amz_date.clone());
 
         if let Some(ref token) = self.session_token {
             headers.insert("X-Amz-Security-Token".to_string(), token.clone());
+         }
+
+        // Create the canonical request
+        let payload_hash = if let Some(body_str) = body {
+            let mut hasher = Sha256::new();
+            hasher.update(body_str.as_bytes());
+            hex_encode(&hasher.finalize())
+        } else {
+            let mut hasher = Sha256::new();
+            hasher.update(b"");
+            hex_encode(&hasher.finalize())
+        };
+
+        // Create signed headers (sorted by header name)
+        let mut signed_headers_vec: Vec<_> = headers.keys().map(|k| k.to_lowercase()).collect();
+        signed_headers_vec.sort();
+        let signed_headers = signed_headers_vec.join(";");
+
+        // Create canonical headers
+        let mut canonical_headers = String::new();
+        for header_name in &signed_headers_vec {
+            let header_value = headers.iter()
+                .find(|(k, _)| k.to_lowercase() == *header_name)
+                .map(|(_, v)| v)
+                .unwrap();
+            canonical_headers.push_str(&format!("{}:{}\n", header_name, header_value.trim()));
         }
 
-        // For simplicity, we'll use basic auth header format
-        // In production, implement full AWS Signature Version 4
-        let auth_header = format!(
-            "AWS4-HMAC-SHA256 Credential={}/{}/polly/aws4_request",
-            self.access_key_id,
-            datetime.format("%Y%m%d")
+        let canonical_request = format!(
+            "{}\n{}\n{}\n{}\n{}\n{}",
+            method,
+            path,
+            query,
+            canonical_headers,
+            signed_headers,
+            payload_hash
         );
-        headers.insert("Authorization".to_string(), auth_header);
+
+
+        // Create the string to sign
+        let algorithm = "AWS4-HMAC-SHA256";
+        let credential_scope = format!("{}/{}/polly/aws4_request", date_stamp, self.region);
+        let string_to_sign = format!(
+            "{}\n{}\n{}\n{}",
+            algorithm,
+            amz_date,
+            credential_scope,
+            {
+                let mut hasher = Sha256::new();
+                hasher.update(canonical_request.as_bytes());
+                hex_encode(&hasher.finalize())
+            }
+        );
+
+
+        // Calculate the signature
+        let signature = self.calculate_signature(&string_to_sign, &date_stamp);
+
+        // Create authorization header
+        let authorization_header = format!(
+            "{} Credential={}/{}, SignedHeaders={}, Signature={}",
+            algorithm,
+            self.access_key_id,
+            credential_scope,
+            signed_headers,
+            signature
+        );
+
+        headers.insert("Authorization".to_string(), authorization_header);
 
         headers
+    }
+
+    /// Calculate AWS Signature Version 4 signature
+    fn calculate_signature(&self, string_to_sign: &str, date_stamp: &str) -> String {
+        // Step 1: Create the signing key
+        let k_date = hmac_sha256(format!("AWS4{}", self.secret_access_key).as_bytes(), date_stamp);
+        let k_region = hmac_sha256(&k_date, &self.region);
+        let k_service = hmac_sha256(&k_region, "polly");
+        let k_signing = hmac_sha256(&k_service, "aws4_request");
+
+        // Step 2: Calculate the signature
+        let signature = hmac_sha256(&k_signing, string_to_sign);
+        hex_encode(&signature)
     }
 
     /// Execute a request with retry logic for rate limiting
@@ -178,51 +272,62 @@ impl AwsPollyTtsApi {
     where
         F: Fn() -> Result<Response, TtsError>,
     {
-        let mut last_error = None;
         let mut delay = self.rate_limit_config.initial_delay;
+        let max_retries = self.rate_limit_config.max_retries;
 
-        for attempt in 0..=self.rate_limit_config.max_retries {
+        trace!("execute_with_retry - Starting with max_retries: {}", max_retries);
+
+        for attempt in 0..=max_retries {
+            trace!("execute_with_retry - Attempt {}/{}", attempt + 1, max_retries + 1);
+
             match operation() {
                 Ok(response) => {
-                    if response.status().is_success() {
-                        return Ok(response);
-                    } else if response.status().as_u16() == 429 || response.status().as_u16() == 503
-                    {
-                        // Rate limited or service unavailable, retry
-                        if attempt < self.rate_limit_config.max_retries {
-                            trace!("Rate limited, retrying in {:?}", delay);
+                    let status = response.status();
+                    trace!("execute_with_retry - Response status: {}", status);
+
+                    if status.as_u16() < 200 || status.as_u16() >= 300 {
+                        if (status.as_u16() == 429 || status.as_u16() == 503) && attempt < max_retries {
+                            // Rate limited or service unavailable, retry
+                            trace!("execute_with_retry - Rate limited ({}), retrying in {:?}", status, delay);
                             std::thread::sleep(delay);
                             delay = std::cmp::min(
                                 Duration::from_millis(
-                                    (delay.as_millis() as f64
-                                        * self.rate_limit_config.backoff_multiplier)
-                                        as u64,
+                                    (delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64,
                                 ),
                                 self.rate_limit_config.max_delay,
                             );
                             continue;
+                        } else {
+                            trace!("execute_with_retry - Non-retryable error or max retries reached: {}", status);
+                            return Err(tts_error_from_status(status));
                         }
                     }
-                    return Err(tts_error_from_status(response.status()));
+
+                    trace!("execute_with_retry - Success on attempt {}", attempt + 1);
+                    return Ok(response);
                 }
                 Err(e) => {
-                    last_error = Some(e);
-                    if attempt < self.rate_limit_config.max_retries {
+                    error!("execute_with_retry - Error on attempt {}: {:?}", attempt + 1, e);
+
+                    if attempt < max_retries {
+                        trace!("execute_with_retry - Retrying after error in {:?}", delay);
                         std::thread::sleep(delay);
                         delay = std::cmp::min(
                             Duration::from_millis(
-                                (delay.as_millis() as f64
-                                    * self.rate_limit_config.backoff_multiplier)
-                                    as u64,
+                                (delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64,
                             ),
                             self.rate_limit_config.max_delay,
                         );
+                    } else {
+                        trace!("execute_with_retry - Max retries exceeded with error: {:?}", e);
+                        return Err(e);
                     }
                 }
             }
         }
 
-        Err(last_error.unwrap_or_else(|| internal_error("Max retries exceeded")))
+        trace!("execute_with_retry - Max retries exceeded");
+        Err(TtsError::InternalError("Max retries exceeded".to_string()))
     }
 
     /// Describe available voices
@@ -230,7 +335,9 @@ impl AwsPollyTtsApi {
         &self,
         params: Option<DescribeVoicesParams>,
     ) -> Result<DescribeVoicesResponse, TtsError> {
-        let url = format!("{}/v1/voices", self.base_url);
+        trace!("Describing voices");
+
+        let mut url = format!("{}/v1/voices", self.base_url);
         let mut query_params = Vec::new();
 
         if let Some(p) = params {
@@ -256,45 +363,79 @@ impl AwsPollyTtsApi {
             }
         }
 
-        let final_url = if query_params.is_empty() {
-            url
-        } else {
-            format!("{}?{}", url, query_params.join("&"))
-        };
+        if !query_params.is_empty() {
+            url = format!("{}?{}", url, query_params.join("&"));
+        }
 
-        let operation = || {
-            self.create_request(Method::GET, &final_url, None)
-                .send()
-                .map_err(|e| from_reqwest_error("Failed to send request", e))
-        };
 
-        let response = self.execute_with_retry(operation)?;
+        let response = self.execute_with_retry(|| {
+            let datetime = Utc::now();
+            let headers = self.create_aws_headers("GET", &url, None, &datetime);
+                        
+            let mut request = self.create_request(Method::GET, &url, None);
+            for (key, value) in &headers {
+                request = request.header(key, value);
+            }
+            
+            request.send().map_err(|e| {
+                let request_details = format!(
+                    "GET {} with headers: {:?}", 
+                    url, 
+                    headers.iter().map(|(k, v)| format!("{}={}", k, v)).collect::<Vec<_>>().join(", ")
+                );
+                from_reqwest_error(&format!("Failed to send describe_voices request: {}", request_details), e)
+            })
+        })?;
+
         parse_response(response)
     }
 
     /// Synthesize speech from text
     pub fn synthesize_speech(&self, params: SynthesizeSpeechParams) -> Result<Vec<u8>, TtsError> {
+        trace!("Synthesizing speech");
+        println!("[DEBUG] AWS Polly synthesize_speech - Starting with params: voice_id={}, text_len={}, format={:?}", 
+                params.voice_id, params.text.len(), params.output_format);
+
         let url = format!("{}/v1/speech", self.base_url);
         let body = serde_json::to_string(&params)
             .map_err(|e| internal_error(format!("Failed to serialize request: {}", e)))?;
 
-        let operation = || {
-            self.create_request(Method::POST, &url, Some(&body))
-                .body(body.clone())
-                .send()
-                .map_err(|e| from_reqwest_error("Failed to send request", e))
-        };
+        println!("[DEBUG] AWS Polly synthesize_speech - Request body: {}", body);
 
-        let response = self.execute_with_retry(operation)?;
+        let response = self.execute_with_retry(|| {
+            let datetime = Utc::now();
+            let headers = self.create_aws_headers("POST", &url, Some(&body), &datetime);
+            
+            println!("[DEBUG] AWS Polly synthesize_speech - Request headers: {:?}", headers);
+            
+            let mut request = self.create_request(Method::POST, &url, Some(&body));
+            for (key, value) in &headers {
+                request = request.header(key, value);
+            }
+            
+            request.body(body.clone()).send().map_err(|e| {
+                println!("[DEBUG] AWS Polly synthesize_speech - Request failed: {:?}", e);
+                from_reqwest_error("Failed to send synthesize_speech request", e)
+            })
+        })?;
 
-        if response.status().is_success() {
-            response
-                .bytes()
-                .map_err(|e| from_reqwest_error("Failed to read response", e))
-                .map(|bytes| bytes.to_vec())
-        } else {
-            Err(tts_error_from_status(response.status()))
+        // Check if response is successful
+        let status = response.status();
+        println!("[DEBUG] AWS Polly synthesize_speech - Final response status: {}", status);
+        
+        if status.as_u16() < 200 || status.as_u16() >= 300 {
+            return Err(tts_error_from_status(status));
         }
+
+        // Get the audio data
+        let audio_data = response.bytes().map_err(|e| {
+            println!("[DEBUG] AWS Polly synthesize_speech - Failed to read audio data: {}", e);
+            TtsError::InternalError(format!("Failed to read audio data: {}", e))
+        })?;
+            
+        println!("[DEBUG] AWS Polly synthesize_speech - Successfully read {} bytes of audio data", audio_data.len());
+        trace!("synthesize_speech - Audio data size: {} bytes", audio_data.len());
+        Ok(audio_data.to_vec())
     }
 
     /// Start speech synthesis task (for long-form content)
@@ -302,18 +443,29 @@ impl AwsPollyTtsApi {
         &self,
         params: StartSpeechSynthesisTaskParams,
     ) -> Result<SpeechSynthesisTask, TtsError> {
+        trace!("Starting speech synthesis task");
+
         let url = format!("{}/v1/synthesisTasks", self.base_url);
         let body = serde_json::to_string(&params)
             .map_err(|e| internal_error(format!("Failed to serialize request: {}", e)))?;
 
-        let operation = || {
-            self.create_request(Method::POST, &url, Some(&body))
-                .body(body.clone())
-                .send()
-                .map_err(|e| from_reqwest_error("Failed to send request", e))
-        };
+        let response = self.execute_with_retry(|| {
+            let datetime = Utc::now();
+            let headers = self.create_aws_headers("POST", &url, Some(&body), &datetime);
+            
+            println!("[DEBUG] AWS Polly start_speech_synthesis_task - Request headers: {:?}", headers);
+            
+            let mut request = self.create_request(Method::POST, &url, Some(&body));
+            for (key, value) in &headers {
+                request = request.header(key, value);
+            }
+            
+            request.body(body.clone()).send().map_err(|e| {
+                println!("[DEBUG] AWS Polly start_speech_synthesis_task - Request failed: {:?}", e);
+                from_reqwest_error("Failed to send start_speech_synthesis_task request", e)
+            })
+        })?;
 
-        let response = self.execute_with_retry(operation)?;
         parse_response(response)
     }
 
@@ -322,15 +474,27 @@ impl AwsPollyTtsApi {
         &self,
         task_id: &str,
     ) -> Result<SpeechSynthesisTask, TtsError> {
+       trace!("Getting speech synthesis task: {}", task_id);
+
         let url = format!("{}/v1/synthesisTasks/{}", self.base_url, task_id);
 
-        let operation = || {
-            self.create_request(Method::GET, &url, None)
-                .send()
-                .map_err(|e| from_reqwest_error("Failed to send request", e))
-        };
+        let response = self.execute_with_retry(|| {
+            let datetime = Utc::now();
+            let headers = self.create_aws_headers("GET", &url, None, &datetime);
+            
+            println!("[DEBUG] AWS Polly get_speech_synthesis_task - Request headers: {:?}", headers);
+            
+            let mut request = self.create_request(Method::GET, &url, None);
+            for (key, value) in &headers {
+                request = request.header(key, value);
+            }
+            
+            request.send().map_err(|e| {
+                println!("[DEBUG] AWS Polly get_speech_synthesis_task - Request failed: {:?}", e);
+                from_reqwest_error("Failed to send get_speech_synthesis_task request", e)
+            })
+        })?;
 
-        let response = self.execute_with_retry(operation)?;
         parse_response(response)
     }
 
@@ -339,7 +503,9 @@ impl AwsPollyTtsApi {
         &self,
         params: Option<ListSpeechSynthesisTasksParams>,
     ) -> Result<ListSpeechSynthesisTasksResponse, TtsError> {
-        let url = format!("{}/v1/synthesisTasks", self.base_url);
+        trace!("Listing speech synthesis tasks");
+
+        let mut url = format!("{}/v1/synthesisTasks", self.base_url);
         let mut query_params = Vec::new();
 
         if let Some(p) = params {
@@ -354,40 +520,59 @@ impl AwsPollyTtsApi {
             }
         }
 
-        let final_url = if query_params.is_empty() {
-            url
-        } else {
-            format!("{}?{}", url, query_params.join("&"))
-        };
+        if !query_params.is_empty() {
+            url = format!("{}?{}", url, query_params.join("&"));
+        }
 
-        let operation = || {
-            self.create_request(Method::GET, &final_url, None)
-                .send()
-                .map_err(|e| from_reqwest_error("Failed to send request", e))
-        };
+        let response = self.execute_with_retry(|| {
+            let datetime = Utc::now();
+            let headers = self.create_aws_headers("GET", &url, None, &datetime);
+            
+            println!("[DEBUG] AWS Polly list_speech_synthesis_tasks - Request headers: {:?}", headers);
+            
+            let mut request = self.create_request(Method::GET, &url, None);
+            for (key, value) in &headers {
+                request = request.header(key, value);
+            }
+            
+            request.send().map_err(|e| {
+                println!("[DEBUG] AWS Polly list_speech_synthesis_tasks - Request failed: {:?}", e);
+                from_reqwest_error("Failed to send list_speech_synthesis_tasks request", e)
+            })
+        })?;
 
-        let response = self.execute_with_retry(operation)?;
         parse_response(response)
     }
 
     /// Put lexicon for custom pronunciations
     pub fn put_lexicon(&self, name: &str, content: &str) -> Result<(), TtsError> {
+        trace!("Putting lexicon: {}", name);
+
         let url = format!("{}/v1/lexicons/{}", self.base_url, name);
-        let request = PutLexiconRequest {
+        let request_body = PutLexiconRequest {
             content: content.to_string(),
         };
-        let body = serde_json::to_string(&request)
+        let body = serde_json::to_string(&request_body)
             .map_err(|e| internal_error(format!("Failed to serialize request: {}", e)))?;
 
-        let operation = || {
-            self.create_request(Method::PUT, &url, Some(&body))
-                .body(body.clone())
-                .send()
-                .map_err(|e| from_reqwest_error("Failed to send request", e))
-        };
+        let response = self.execute_with_retry(|| {
+            let datetime = Utc::now();
+            let headers = self.create_aws_headers("PUT", &url, Some(&body), &datetime);
+            
+            println!("[DEBUG] AWS Polly put_lexicon - Request headers: {:?}", headers);
+            
+            let mut request = self.create_request(Method::PUT, &url, Some(&body));
+            for (key, value) in &headers {
+                request = request.header(key, value);
+            }
+            
+            request.body(body.clone()).send().map_err(|e| {
+                println!("[DEBUG] AWS Polly put_lexicon - Request failed: {:?}", e);
+                from_reqwest_error("Failed to send put_lexicon request", e)
+            })
+        })?;
 
-        let response = self.execute_with_retry(operation)?;
-        if response.status().is_success() {
+        if response.status().as_u16() >= 200 && response.status().as_u16() < 300 {
             Ok(())
         } else {
             Err(tts_error_from_status(response.status()))

@@ -3,7 +3,7 @@ package test:tts;
 // See https://component-model.bytecodealliance.org/design/wit.html for more details about the WIT syntax
 
 interface test-tts-api {
-  test1: func() -> string;
+  test0: func() -> string;
   test2: func() -> string;
   test3: func() -> string;
   test4: func() -> string;
@@ -15,6 +15,7 @@ interface test-tts-api {
   test10: func() -> string;
   test11: func() -> string;
   test12: func() -> string;
+  test13: func() -> string;
 }
 
 world test-tts {

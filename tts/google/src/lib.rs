@@ -619,6 +619,183 @@ impl GoogleComponent {
 
         GoogleTtsApi::new(credentials_path, project_id)
     }
+
+    /// Validate synthesis input and options for proper error handling
+    fn validate_synthesis_input(
+        input: &TextInput,
+        options: Option<&SynthesisOptions>,
+    ) -> Result<(), TtsError> {
+        // Validate empty text
+        if input.content.trim().is_empty() {
+            return Err(TtsError::InvalidText("Text content cannot be empty".to_string()));
+        }
+
+        // Validate text length (Google Cloud TTS has limits)
+        if input.content.len() > 5000 {
+            return Err(TtsError::InvalidText("Text exceeds Google Cloud TTS limit of 5000 bytes".to_string()));
+        }
+
+        // Validate SSML content if specified
+        if input.text_type == golem_tts::golem::tts::types::TextType::Ssml {
+            if let Err(msg) = Self::validate_ssml_content(&input.content) {
+                return Err(TtsError::InvalidSsml(msg));
+            }
+        }
+
+        // Validate language code if specified
+        if let Some(ref language) = input.language {
+            if !Self::is_supported_language(language) {
+                return Err(TtsError::UnsupportedLanguage(format!(
+                    "Language '{}' is not supported by Google Cloud TTS", language
+                )));
+            }
+        }
+
+        // Validate voice settings if specified
+        if let Some(opts) = options {
+            if let Some(ref voice_settings) = opts.voice_settings {
+                if let Err(msg) = Self::validate_voice_settings(voice_settings) {
+                    return Err(TtsError::InvalidConfiguration(msg));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validate SSML content for basic structure
+    fn validate_ssml_content(content: &str) -> Result<(), String> {
+        // Basic SSML validation - check for unmatched tags
+        let mut tag_stack = Vec::new();
+        let mut chars = content.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '<' {
+                // Parse tag
+                let mut tag = String::new();
+                let mut is_closing = false;
+                let mut is_self_closing = false;
+                
+                // Check if it's a closing tag
+                if chars.peek() == Some(&'/') {
+                    is_closing = true;
+                    chars.next(); // consume '/'
+                }
+
+                // Read tag name and attributes
+                let mut full_tag_content = String::new();
+                while let Some(&ch) = chars.peek() {
+                    if ch == '>' {
+                        break;
+                    }
+                    if ch == ' ' && tag.is_empty() {
+                        // We've read the tag name, now read the rest
+                        tag = full_tag_content.clone();
+                    }
+                    full_tag_content.push(chars.next().unwrap());
+                }
+
+                // If we didn't hit a space, the entire content is the tag name
+                if tag.is_empty() {
+                    tag = full_tag_content.clone();
+                }
+
+                // Check if it's self-closing (ends with '/')
+                if full_tag_content.ends_with('/') {
+                    is_self_closing = true;
+                    // Remove the trailing '/' from tag name if it got included
+                    if tag.ends_with('/') {
+                        tag = tag[..tag.len()-1].to_string();
+                    }
+                }
+
+                // Skip to end of tag
+                while let Some(ch) = chars.next() {
+                    if ch == '>' {
+                        break;
+                    }
+                }
+
+                if is_closing {
+                    if let Some(expected_tag) = tag_stack.pop() {
+                        if expected_tag != tag {
+                            return Err(format!("Unmatched closing tag: </{}>", tag));
+                        }
+                    } else {
+                        return Err(format!("Unmatched closing tag: </{}>", tag));
+                    }
+                } else if !tag.is_empty() && !tag.starts_with('!') && !tag.starts_with('?') {
+                    // Only track opening tags that aren't self-closing, XML declarations, or comments
+                    if !is_self_closing {
+                        tag_stack.push(tag);
+                    }
+                }
+            }
+        }
+
+        if !tag_stack.is_empty() {
+            return Err(format!("Unclosed tags: {:?}", tag_stack));
+        }
+
+        Ok(())
+    }
+
+    /// Check if a language is supported by Google Cloud TTS
+    fn is_supported_language(language: &str) -> bool {
+        let supported_languages = [
+            "ar", "ar-XA", "bg", "bg-BG", "ca", "ca-ES", "cs", "cs-CZ", "da", "da-DK",
+            "de", "de-DE", "de-AT", "de-CH", "el", "el-GR", "en", "en-AU", "en-GB", "en-US",
+            "es", "es-ES", "es-US", "fi", "fi-FI", "fil", "fil-PH", "fr", "fr-CA", "fr-FR",
+            "he", "he-IL", "hi", "hi-IN", "hr", "hr-HR", "hu", "hu-HU", "id", "id-ID",
+            "is", "is-IS", "it", "it-IT", "ja", "ja-JP", "ko", "ko-KR", "lt", "lt-LT",
+            "lv", "lv-LV", "ms", "ms-MY", "nb", "nb-NO", "nl", "nl-BE", "nl-NL", "pl", "pl-PL",
+            "pt", "pt-BR", "pt-PT", "ro", "ro-RO", "ru", "ru-RU", "sk", "sk-SK", "sl", "sl-SI",
+            "sr", "sr-RS", "sv", "sv-SE", "ta", "ta-IN", "te", "te-IN", "th", "th-TH",
+            "tr", "tr-TR", "uk", "uk-UA", "vi", "vi-VN", "zh", "zh-CN", "zh-TW", "zh-HK",
+            "af-ZA", "bn-IN", "cy-GB", "gu-IN", "kn-IN", "ml-IN", "mr-IN", "pa-IN", "yue-HK"
+        ];
+
+        supported_languages.contains(&language)
+    }
+
+    /// Validate voice settings parameters
+    fn validate_voice_settings(settings: &golem_tts::golem::tts::types::VoiceSettings) -> Result<(), String> {
+        // Check speed (should be between 0.25 and 4.0 for Google Cloud TTS)
+        if let Some(speed) = settings.speed {
+            if speed < 0.25 || speed > 4.0 {
+                return Err(format!("Speed value {} is out of valid range (0.25-4.0)", speed));
+            }
+        }
+
+        // Check pitch (Google Cloud TTS accepts -20.0 to +20.0 semitones)
+        if let Some(pitch) = settings.pitch {
+            if pitch < -20.0 || pitch > 20.0 {
+                return Err(format!("Pitch value {} is out of valid range (-20.0 to +20.0)", pitch));
+            }
+        }
+
+        // Check volume (Google Cloud TTS accepts -96.0 to +16.0 dB)
+        if let Some(volume) = settings.volume {
+            if volume < -96.0 || volume > 16.0 {
+                return Err(format!("Volume value {} is out of valid range (-96.0 to +16.0)", volume));
+            }
+        }
+
+        // Google Cloud TTS doesn't use stability/similarity, but we can check they're in reasonable range
+        if let Some(stability) = settings.stability {
+            if stability < 0.0 || stability > 1.0 {
+                return Err(format!("Stability value {} is out of valid range (0.0-1.0)", stability));
+            }
+        }
+
+        if let Some(similarity) = settings.similarity {
+            if similarity < 0.0 || similarity > 1.0 {
+                return Err(format!("Similarity value {} is out of valid range (0.0-1.0)", similarity));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl VoicesGuest for GoogleComponent {
@@ -699,6 +876,9 @@ impl SynthesisGuest for GoogleComponent {
         voice: golem_tts::golem::tts::voices::VoiceBorrow<'_>,
         options: Option<SynthesisOptions>,
     ) -> Result<SynthesisResult, TtsError> {
+        // Validate input before processing
+        Self::validate_synthesis_input(&input, options.as_ref())?;
+
         let client = Self::create_client()?;
         let voice_impl = voice.get::<GoogleVoiceImpl>();
         let voice_name = voice_impl.get_id();
@@ -729,6 +909,11 @@ impl SynthesisGuest for GoogleComponent {
         voice: golem_tts::golem::tts::voices::VoiceBorrow<'_>,
         options: Option<SynthesisOptions>,
     ) -> Result<Vec<SynthesisResult>, TtsError> {
+        // Validate all inputs first
+        for input in &inputs {
+            Self::validate_synthesis_input(input, options.as_ref())?;
+        }
+
         let client = Self::create_client()?;
         let mut results = Vec::new();
 
@@ -777,19 +962,18 @@ impl SynthesisGuest for GoogleComponent {
         input: TextInput,
         _voice: golem_tts::golem::tts::voices::VoiceBorrow<'_>,
     ) -> Result<ValidationResult, TtsError> {
-        // Basic validation for Google Cloud TTS limits
-        if input.content.len() > 5000 {
-            Ok(create_validation_result(
-                false,
-                Some("Text exceeds Google Cloud TTS limit of 5000 bytes".to_string()),
-            ))
-        } else if input.content.is_empty() {
-            Ok(create_validation_result(
-                false,
-                Some("Text cannot be empty".to_string()),
-            ))
-        } else {
-            Ok(create_validation_result(true, None))
+        match Self::validate_synthesis_input(&input, None) {
+            Ok(_) => Ok(create_validation_result(true, None)),
+            Err(e) => {
+                let message = match e {
+                    TtsError::InvalidText(msg) => msg,
+                    TtsError::InvalidSsml(msg) => msg,
+                    TtsError::UnsupportedLanguage(msg) => msg,
+                    TtsError::InvalidConfiguration(msg) => msg,
+                    _ => "Validation failed".to_string(),
+                };
+                Ok(create_validation_result(false, Some(message)))
+            }
         }
     }
 }

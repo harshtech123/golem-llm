@@ -204,8 +204,11 @@ impl DeepgramTtsApi {
 
         trace!("Making TTS request to: {}", url);
 
+        // Clone the request data to avoid borrowing issues in the retry closure
+        let request_clone = request.clone();
+        
         let operation = || {
-            let req = self.create_request(Method::POST, &url).json(request);
+            let req = self.create_request(Method::POST, &url).json(&request_clone);
 
             match req.send() {
                 Ok(response) => Ok(response),
@@ -255,8 +258,10 @@ impl DeepgramTtsApi {
 
         trace!("Making streaming TTS request to: {}", url);
 
+        let request_clone = request.clone();
+        
         let operation = || {
-            let req = self.create_request(Method::POST, &url).json(request);
+            let req = self.create_request(Method::POST, &url).json(&request_clone);
 
             match req.send() {
                 Ok(response) => Ok(response),

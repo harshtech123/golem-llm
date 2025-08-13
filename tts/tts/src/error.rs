@@ -67,7 +67,6 @@ pub fn tts_error_from_status(status: StatusCode) -> TtsError {
         StatusCode::UNAUTHORIZED => TtsError::Unauthorized("Authentication failed".to_string()),
         StatusCode::FORBIDDEN => TtsError::AccessDenied("Access denied".to_string()),
         StatusCode::PAYMENT_REQUIRED => {
-            // Default quota info when we don't have details
             TtsError::QuotaExceeded(QuotaInfo {
                 used: 0,
                 limit: 0,

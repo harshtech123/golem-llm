@@ -358,10 +358,13 @@ impl ElevenLabsTtsApi {
                 chunk.len()
             );
 
+            // Check if model supports language_code parameter
+            let supports_language_code = !self.model_version.contains("multilingual");
+
             let request = TextToSpeechRequest {
                 text: chunk.clone(),
                 model_id: Some(self.model_version.clone()),
-                language_code: None,
+                language_code: if supports_language_code { Some("en".to_string()) } else { None }, // Only set for models that support it
                 voice_settings: None,
                 pronunciation_dictionary_locators: None,
                 seed: None,
@@ -378,8 +381,8 @@ impl ElevenLabsTtsApi {
                 previous_request_ids: None,
                 next_request_ids: None,
                 apply_text_normalization: Some("auto".to_string()),
-                apply_language_text_normalization: Some(true),
-                use_pvc_as_ivc: Some(true), // Use previous voice context for continuity
+                apply_language_text_normalization: Some(false), // Disable to avoid compatibility issues
+                use_pvc_as_ivc: Some(false), // Disable for compatibility
             };
 
             let audio_data = self.text_to_speech(voice_id, &request, options.cloned())?;
@@ -579,28 +582,77 @@ impl ElevenLabsTtsApi {
 
         let url = format!("{}/v1/voices/add", self.base_url);
 
-        // Convert audio files to base64 for JSON submission
-        let files_base64: Vec<String> = request
-            .files
-            .iter()
-            .map(|file| {
-                use base64::Engine;
-                base64::engine::general_purpose::STANDARD.encode(&file.data)
-            })
-            .collect();
+        // ElevenLabs voice cloning requires multipart/form-data, not JSON
+        // Let's use the manual multipart implementation we created earlier
+  
+        // Create multipart form data manually
+        let boundary = format!("----elevenlabs-{}", uuid::Uuid::new_v4());
+        let mut form_data = Vec::new();
 
-        let json_request = CreateVoiceJsonRequest {
-            name: request.name.clone(),
-            description: request.description.clone(),
-            files: files_base64,
-            labels: request.labels.clone(),
-        };
+        // Add name field
+        form_data.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+        form_data.extend_from_slice(b"Content-Disposition: form-data; name=\"name\"\r\n\r\n");
+        form_data.extend_from_slice(request.name.as_bytes());
+        form_data.extend_from_slice(b"\r\n");
+
+        // Add description field if present
+        if let Some(ref description) = request.description {
+            form_data.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+            form_data.extend_from_slice(b"Content-Disposition: form-data; name=\"description\"\r\n\r\n");
+            form_data.extend_from_slice(description.as_bytes());
+            form_data.extend_from_slice(b"\r\n");
+        }
+
+        // Add labels field if present
+        if let Some(ref labels) = request.labels {
+            form_data.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+            form_data.extend_from_slice(b"Content-Disposition: form-data; name=\"labels\"\r\n\r\n");
+            form_data.extend_from_slice(labels.as_bytes());
+            form_data.extend_from_slice(b"\r\n");
+        }
+
+        // Add audio files
+        for (i, file) in request.files.iter().enumerate() {
+            form_data.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+            form_data.extend_from_slice(
+                format!("Content-Disposition: form-data; name=\"files\"; filename=\"audio_{}.wav\"\r\n", i).as_bytes()
+            );
+            form_data.extend_from_slice(b"Content-Type: audio/wav\r\n\r\n");
+            form_data.extend(file.data.iter());
+            form_data.extend_from_slice(b"\r\n");
+        }
+
+        // Close the form
+        form_data.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
+
 
         let response = self.execute_with_retry(|| {
-            self.create_request(Method::POST, &url)
-                .json(&json_request)
-                .send()
-                .map_err(|e| internal_error(format!("Failed to create voice: {e}")))
+            let request = self.client
+                .post(&url)
+                .header("xi-api-key", &self.api_key)
+                .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
+                .body(form_data.clone());
+
+            match request.send() {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        Ok(response)
+                    } else {
+                        let status = response.status();
+                        match response.text() {
+                            Ok(error_body) => {
+                                Err(internal_error(format!("Failed to create voice: status code {} - {}", status, error_body)))
+                            }
+                            Err(_) => {
+                                Err(internal_error(format!("Failed to create voice: status code {}", status)))
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    Err(internal_error(format!("Failed to create voice: {e}")))
+                }
+            }
         })?;
 
         parse_response(response)
@@ -886,8 +938,10 @@ pub struct Model {
     pub serves_pro_voices: bool,
     pub token_cost_factor: f32,
     pub languages: Vec<LanguageInfo>,
-    pub max_characters_request_free_tier: u32,
-    pub max_characters_request_subscribed_tier: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_characters_request_free_tier: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_characters_request_subscribed_tier: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
