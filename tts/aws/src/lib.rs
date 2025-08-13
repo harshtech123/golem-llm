@@ -107,15 +107,8 @@ impl GuestVoice for PollyVoiceImpl {
     }
 
     fn get_sample_rates(&self) -> Vec<u32> {
-        if self
-            .voice_data
-            .supported_engines
-            .contains(&"neural".to_string())
-        {
-            vec![8000, 16000, 22050, 24000]
-        } else {
-            vec![8000, 16000, 22050]
-        }
+        // AWS Polly supports these specific sample rates for all engines
+        vec![8000, 16000, 22050]
     }
 
     fn get_supported_formats(&self) -> Vec<AudioFormat> {
@@ -168,10 +161,11 @@ struct PollyVoiceResults {
 
 impl PollyVoiceResults {
     fn new(voices: Vec<VoiceInfo>, total_count: Option<u32>) -> Self {
+        let has_voices = !voices.is_empty();
         Self {
             voices: RefCell::new(voices),
             current_index: Cell::new(0),
-            has_more: Cell::new(false),
+            has_more: Cell::new(has_voices), // Set to true if we have voices to return
             total_count,
         }
     }
@@ -188,11 +182,16 @@ impl GuestVoiceResults for PollyVoiceResults {
         let batch_size = 10; // Return 10 voices at a time
         let end_index = std::cmp::min(start_index + batch_size, voices.len());
 
+        trace!("PollyVoiceResults::get_next - start: {}, end: {}, total: {}", start_index, end_index, voices.len());
+
         if start_index >= voices.len() {
+            trace!("No more voices to return");
             return Ok(Vec::new());
         }
 
         let batch = voices[start_index..end_index].to_vec();
+        trace!("Returning batch of {} voices", batch.len());
+        
         self.current_index.set(end_index);
         self.has_more.set(end_index < voices.len());
 
@@ -576,9 +575,205 @@ impl AwsPollyComponent {
                     secret_access_key.to_string(),
                     region,
                     session_token,
-                ))
+                )?)
             })
         })
+    }
+
+    /// Validate synthesis input and options for proper error handling
+    fn validate_synthesis_input(
+        input: &TextInput,
+        options: Option<&SynthesisOptions>,
+    ) -> Result<(), TtsError> {
+        use golem_tts::golem::tts::types::TextType;
+        
+        // Validate empty text
+        if input.content.trim().is_empty() {
+            return Err(TtsError::InvalidText("Text content cannot be empty".to_string()));
+        }
+
+        // Validate text length (AWS Polly has limits)
+        if input.content.len() > 3000 {
+            return Err(TtsError::InvalidText("Text exceeds AWS Polly limit of 3000 characters".to_string()));
+        }
+
+        // Validate SSML content if specified
+        if input.text_type == TextType::Ssml {
+            if let Err(msg) = Self::validate_ssml_content(&input.content) {
+                return Err(TtsError::InvalidSsml(msg));
+            }
+        }
+
+        // Validate language code if specified
+        if let Some(ref language) = input.language {
+            if !Self::is_supported_language(language) {
+                return Err(TtsError::UnsupportedLanguage(format!(
+                    "Language '{}' is not supported by AWS Polly", language
+                )));
+            }
+        }
+
+        // Validate voice settings if specified
+        if let Some(opts) = options {
+            if let Some(ref voice_settings) = opts.voice_settings {
+                Self::validate_voice_settings(voice_settings)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Validate SSML content for basic structure
+    fn validate_ssml_content(content: &str) -> Result<(), String> {
+        // Basic SSML validation - check for unmatched tags
+        let mut tag_stack = Vec::new();
+        let mut chars = content.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            if ch == '<' {
+                // Parse tag
+                let mut tag = String::new();
+                let mut is_closing = false;
+                let mut is_self_closing = false;
+                
+                // Check if it's a closing tag
+                if chars.peek() == Some(&'/') {
+                    is_closing = true;
+                    chars.next(); // consume '/'
+                }
+
+                // Read tag name and attributes
+                let mut full_tag_content = String::new();
+                while let Some(&ch) = chars.peek() {
+                    if ch == '>' {
+                        break;
+                    }
+                    if ch == ' ' && tag.is_empty() {
+                        // We've read the tag name, now read the rest
+                        tag = full_tag_content.clone();
+                    }
+                    full_tag_content.push(chars.next().unwrap());
+                }
+
+                // If we didn't hit a space, the entire content is the tag name
+                if tag.is_empty() {
+                    tag = full_tag_content.clone();
+                }
+
+                // Check if it's self-closing (ends with '/')
+                if full_tag_content.ends_with('/') {
+                    is_self_closing = true;
+                    // Remove the trailing '/' from tag name if it got included
+                    if tag.ends_with('/') {
+                        tag = tag[..tag.len()-1].to_string();
+                    }
+                }
+
+                // Skip to end of tag
+                while let Some(ch) = chars.next() {
+                    if ch == '>' {
+                        break;
+                    }
+                }
+
+                if is_closing {
+                    if let Some(expected_tag) = tag_stack.pop() {
+                        if expected_tag != tag {
+                            return Err(format!("Unmatched closing tag: </{}>", tag));
+                        }
+                    } else {
+                        return Err(format!("Unmatched closing tag: </{}>", tag));
+                    }
+                } else if !tag.is_empty() && !tag.starts_with('!') && !tag.starts_with('?') {
+                    // Only track opening tags that aren't self-closing, XML declarations, or comments
+                    if !is_self_closing {
+                        tag_stack.push(tag);
+                    }
+                }
+            }
+        }
+
+        if !tag_stack.is_empty() {
+            return Err(format!("Unclosed tags: {:?}", tag_stack));
+        }
+
+        Ok(())
+    }
+    /// Check if a language is supported by AWS Polly
+    fn is_supported_language(language: &str) -> bool {
+        let supported_languages = [
+            "en-US", "en-GB", "en-AU", "en-IN",
+            "es-ES", "es-MX", "es-US",
+            "fr-FR", "fr-CA",
+            "de-DE", "it-IT",
+            "pt-PT", "pt-BR",
+            "ja-JP", "ko-KR",
+            "zh-CN", "cmn-CN",
+            "ar", "hi-IN", "ru-RU",
+            "nl-NL", "pl-PL", "sv-SE",
+            "nb-NO", "da-DK", "tr-TR",
+            "ro-RO", "cy-GB", "is-IS"
+        ];
+        supported_languages.contains(&language)
+    }
+
+    /// Validate voice settings for AWS Polly limits
+    fn validate_voice_settings(settings: &VoiceSettings) -> Result<(), TtsError> {
+        // Validate speed (0.25x to 4.0x)
+        if let Some(speed) = settings.speed {
+            if speed < 0.25 || speed > 4.0 {
+                return Err(TtsError::InvalidConfiguration(
+                    "Speed must be between 0.25 and 4.0".to_string()
+                ));
+            }
+        }
+
+        // Validate pitch (-20dB to +20dB in semitones, roughly -10.0 to +10.0)
+        if let Some(pitch) = settings.pitch {
+            if pitch < -10.0 || pitch > 10.0 {
+                return Err(TtsError::InvalidConfiguration(
+                    "Pitch must be between -10.0 and +10.0".to_string()
+                ));
+            }
+        }
+
+        // Validate volume (-20dB to +20dB, roughly -20.0 to +20.0)
+        if let Some(volume) = settings.volume {
+            if volume < -20.0 || volume > 20.0 {
+                return Err(TtsError::InvalidConfiguration(
+                    "Volume must be between -20.0 and +20.0".to_string()
+                ));
+            }
+        }
+
+        // Validate stability (0.0 to 1.0) - AWS Polly doesn't directly support this
+        if let Some(stability) = settings.stability {
+            if stability < 0.0 || stability > 1.0 {
+                return Err(TtsError::InvalidConfiguration(
+                    "Stability must be between 0.0 and 1.0".to_string()
+                ));
+            }
+        }
+
+        // Validate similarity (0.0 to 1.0) - AWS Polly doesn't directly support this
+        if let Some(similarity) = settings.similarity {
+            if similarity < 0.0 || similarity > 1.0 {
+                return Err(TtsError::InvalidConfiguration(
+                    "Similarity must be between 0.0 and 1.0".to_string()
+                ));
+            }
+        }
+
+        // Validate style (0.0 to 1.0) - AWS Polly doesn't directly support this
+        if let Some(style) = settings.style {
+            if style < 0.0 || style > 1.0 {
+                return Err(TtsError::InvalidConfiguration(
+                    "Style must be between 0.0 and 1.0".to_string()
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -591,12 +786,19 @@ impl VoicesGuest for AwsPollyComponent {
         let params = voice_filter_to_describe_params(filter);
 
         let response = client.describe_voices(params)?;
+        trace!("AWS describe_voices returned {} voices", response.voices.len());
+        
         let voice_infos: Vec<VoiceInfo> = response
             .voices
             .into_iter()
-            .map(aws_voice_to_voice_info)
+            .enumerate()
+            .map(|(i, voice)| {
+                trace!("Converting voice {}: {} ({})", i, voice.name, voice.id);
+                aws_voice_to_voice_info(voice)
+            })
             .collect();
 
+        trace!("Converted to {} VoiceInfo objects", voice_infos.len());
         let total_count = Some(voice_infos.len() as u32);
         Ok(VoiceResults::new(PollyVoiceResults::new(
             voice_infos,
@@ -656,6 +858,9 @@ impl SynthesisGuest for AwsPollyComponent {
         voice: golem_tts::golem::tts::voices::VoiceBorrow<'_>,
         options: Option<SynthesisOptions>,
     ) -> Result<SynthesisResult, TtsError> {
+        // Validate input before processing
+        Self::validate_synthesis_input(&input, options.as_ref())?;
+        
         let client = Self::create_client()?;
         let voice_id = voice.get::<PollyVoiceImpl>().get_id();
 
@@ -686,6 +891,9 @@ impl SynthesisGuest for AwsPollyComponent {
         let mut results = Vec::new();
 
         for input in inputs {
+            // Validate each input before processing
+            Self::validate_synthesis_input(&input, options.as_ref())?;
+            
             let params = synthesis_options_to_polly_params(
                 options.clone(),
                 voice_id.clone(),
@@ -879,7 +1087,7 @@ impl ExtendedGuest for AwsPollyComponent {
                 "dummy".to_string(),
                 "us-east-1".to_string(),
                 None,
-            )
+            ).unwrap_or_else(|_| panic!("Failed to create fallback client"))
         });
         let voice_id = voice.get::<PollyVoiceImpl>().get_id();
 
@@ -897,7 +1105,7 @@ impl ExtendedGuest for AwsPollyComponent {
                 "dummy".to_string(),
                 "us-east-1".to_string(),
                 None,
-            )
+            ).unwrap_or_else(|_| panic!("Failed to create fallback client"))
         });
         let voice_id = target_voice.get::<PollyVoiceImpl>().get_id();
 

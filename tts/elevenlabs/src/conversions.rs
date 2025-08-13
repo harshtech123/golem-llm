@@ -683,60 +683,60 @@ fn get_default_language_info() -> Vec<LanguageInfo> {
     ]
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     #[test]
-//     fn test_voice_filter_conversion() {
-//         let filter = VoiceFilter {
-//             gender: Some(VoiceGender::Female),
-//             quality: Some(VoiceQuality::Premium),
-//             language: Some("en".to_string()),
-//             supports_ssml: Some(true),
-//             provider: Some("ElevenLabs".to_string()),
-//             search_query: Some("narrator".to_string()),
-//         };
+    #[test]
+    fn test_voice_filter_conversion() {
+        let filter = VoiceFilter {
+            gender: Some(VoiceGender::Female),
+            quality: Some(VoiceQuality::Premium),
+            language: Some("en".to_string()),
+            supports_ssml: Some(true),
+            provider: Some("ElevenLabs".to_string()),
+            search_query: Some("narrator".to_string()),
+        };
 
-//         let params = voice_filter_to_list_params(Some(filter)).unwrap();
-//         assert_eq!(params.voice_type, Some("female".to_string()));
-//         assert_eq!(params.category, Some("premium".to_string()));
-//         assert_eq!(params.search, Some("narrator".to_string()));
-//         assert_eq!(params.page_size, Some(10));
-//     }
+        let params = voice_filter_to_list_params(Some(filter)).unwrap();
+        assert_eq!(params.voice_type, Some("female".to_string()));
+        assert_eq!(params.category, Some("premium".to_string()));
+        assert_eq!(params.search, Some("narrator".to_string()));
+        assert_eq!(params.page_size, Some(10));
+    }
 
-//     #[test]
-//     fn test_audio_format_conversion() {
-//         assert_eq!(audio_format_to_string(AudioFormat::Mp3), "mp3_22050_32");
-//         assert_eq!(audio_format_to_string(AudioFormat::Wav), "pcm_22050");
-//     }
+    #[test]
+    fn test_audio_format_conversion() {
+        assert_eq!(audio_format_to_string(AudioFormat::Mp3), "mp3_22050_32");
+        assert_eq!(audio_format_to_string(AudioFormat::Wav), "pcm_22050");
+    }
 
-//     #[test]
-//     fn test_gender_inference() {
-//         assert_eq!(
-//             infer_gender_from_name("Sarah Female Voice"),
-//             Some(VoiceGender::Female)
-//         );
-//         assert_eq!(
-//             infer_gender_from_name("John Male Voice"),
-//             Some(VoiceGender::Male)
-//         );
-//         assert_eq!(infer_gender_from_name("Alex"), None);
-//     }
+    #[test]
+    fn test_gender_inference() {
+        assert_eq!(
+            infer_gender_from_name("Sarah Female Voice"),
+            Some(VoiceGender::Female)
+        );
+        assert_eq!(
+            infer_gender_from_name("John Male Voice"),
+            Some(VoiceGender::Male)
+        );
+        assert_eq!(infer_gender_from_name("Alex"), None);
+    }
 
-//     #[test]
-//     fn test_quality_inference() {
-//         assert_eq!(
-//             infer_quality_from_category("premade"),
-//             Some(VoiceQuality::Standard)
-//         );
-//         assert_eq!(
-//             infer_quality_from_category("cloned"),
-//             Some(VoiceQuality::Premium)
-//         );
-//         assert_eq!(
-//             infer_quality_from_category("professional"),
-//             Some(VoiceQuality::Studio)
-//         );
-//     }
-// }
+    #[test]
+    fn test_quality_inference() {
+        assert_eq!(
+            infer_quality_from_category("premade"),
+            Some(VoiceQuality::Standard)
+        );
+        assert_eq!(
+            infer_quality_from_category("cloned"),
+            Some(VoiceQuality::Premium)
+        );
+        assert_eq!(
+            infer_quality_from_category("professional"),
+            Some(VoiceQuality::Studio)
+        );
+    }
+}

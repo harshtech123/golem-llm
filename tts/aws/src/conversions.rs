@@ -7,6 +7,7 @@ use golem_tts::golem::tts::types::{
     AudioFormat, SynthesisMetadata, SynthesisResult, VoiceGender, VoiceQuality,
 };
 use golem_tts::golem::tts::voices::{LanguageInfo, VoiceFilter, VoiceInfo};
+use log::trace;
 
 /// Estimate audio duration in seconds based on audio data size and format
 pub fn estimate_audio_duration(audio_data: &[u8], sample_rate: u32, format: &AudioFormat) -> f32 {
@@ -55,6 +56,8 @@ pub fn voice_filter_to_describe_params(
 }
 
 pub fn aws_voice_to_voice_info(voice: AwsVoice) -> VoiceInfo {
+    trace!("Converting AWS voice: {} ({})", voice.name, voice.id);
+    
     let gender = match voice.gender.to_lowercase().as_str() {
         "male" => VoiceGender::Male,
         "female" => VoiceGender::Female,
@@ -77,11 +80,8 @@ pub fn aws_voice_to_voice_info(voice: AwsVoice) -> VoiceInfo {
     let use_cases = infer_use_cases_from_aws_voice(&voice);
 
     // Determine sample rate based on engine support
-    let sample_rate = if voice.supported_engines.contains(&"neural".to_string()) {
-        24000 // Neural voices support up to 24kHz
-    } else {
-        22050 // Standard voices typically use 22kHz
-    };
+    // AWS Polly supports 8000, 16000, and 22050 Hz for all engines
+    let sample_rate = 22050; // Use highest supported rate as default
 
     VoiceInfo {
         id: voice.id.clone(),
@@ -165,8 +165,28 @@ pub fn synthesis_options_to_polly_params(
         if let Some(audio_config) = opts.audio_config {
             params.output_format = audio_format_to_polly_format(audio_config.format);
 
-            if let Some(sample_rate) = audio_config.sample_rate {
-                params.sample_rate = Some(sample_rate.to_string());
+            // AWS Polly supports specific sample rates: 8000, 16000, 22050
+            if let Some(requested_rate) = audio_config.sample_rate {
+                let validated_rate = match (requested_rate, &params.output_format) {
+                    // For PCM, use more conservative sample rates
+                    (rate, OutputFormat::Pcm) if rate <= 8000 => 8000,
+                    (rate, OutputFormat::Pcm) if rate <= 16000 => 16000,
+                    (_rate, OutputFormat::Pcm) => 16000, // PCM works better at 16kHz
+                    // For other formats, use the full range
+                    (rate, _) if rate <= 8000 => 8000,
+                    (rate, _) if rate <= 16000 => 16000,
+                    (_, _) => 22050, // Default to highest supported rate
+                };
+                params.sample_rate = Some(validated_rate.to_string());
+            } else {
+                // Set default sample rate based on format and engine
+                let default_rate = match params.output_format {
+                    OutputFormat::Mp3 => "22050",
+                    OutputFormat::Pcm => "16000", // PCM often works better at 16kHz
+                    OutputFormat::OggVorbis => "22050",
+                    OutputFormat::Json => "22050",
+                };
+                params.sample_rate = Some(default_rate.to_string());
             }
         }
 
@@ -181,14 +201,23 @@ pub fn synthesis_options_to_polly_params(
             });
         }
 
-        // Enable timing marks if requested
+        // Enable timing marks if requested - but only for compatible formats
+        // AWS Polly only supports speech marks with JSON format
         if opts.enable_timing.unwrap_or(false) || opts.enable_word_timing.unwrap_or(false) {
-            let mut speech_marks = Vec::new();
-            if opts.enable_word_timing.unwrap_or(false) {
-                speech_marks.push(SpeechMarkType::Word);
+            match params.output_format {
+                OutputFormat::Json => {
+                    // Only enable speech marks for JSON format
+                    let mut speech_marks = Vec::new();
+                    if opts.enable_word_timing.unwrap_or(false) {
+                        speech_marks.push(SpeechMarkType::Word);
+                    }
+                    speech_marks.push(SpeechMarkType::Sentence);
+                    params.speech_mark_types = Some(speech_marks);
+                }
+                _ => {
+                    trace!("Timing marks requested but not supported for format {:?}, ignoring", params.output_format);
+                }
             }
-            speech_marks.push(SpeechMarkType::Sentence);
-            params.speech_mark_types = Some(speech_marks);
         }
     }
 

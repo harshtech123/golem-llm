@@ -603,42 +603,42 @@ pub fn validate_synthesis_request(
     Ok(())
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     #[test]
-//     fn test_parse_gender() {
-//         assert_eq!(parse_gender("feminine"), VoiceGender::Female);
-//         assert_eq!(parse_gender("masculine"), VoiceGender::Male);
-//         assert_eq!(parse_gender("neutral"), VoiceGender::Neutral);
-//     }
+    #[test]
+    fn test_parse_gender() {
+        assert_eq!(parse_gender("feminine"), VoiceGender::Female);
+        assert_eq!(parse_gender("masculine"), VoiceGender::Male);
+        assert_eq!(parse_gender("neutral"), VoiceGender::Neutral);
+    }
 
-//     #[test]
-//     fn test_normalize_language_code() {
-//         assert_eq!(normalize_language_code("en-us"), "en");
-//         assert_eq!(normalize_language_code("es-mx"), "es");
-//         assert_eq!(normalize_language_code("en-gb"), "en");
-//     }
+    #[test]
+    fn test_normalize_language_code() {
+        assert_eq!(normalize_language_code("en-us"), "en");
+        assert_eq!(normalize_language_code("es-mx"), "es");
+        assert_eq!(normalize_language_code("en-gb"), "en");
+    }
 
-//     #[test]
-//     fn test_audio_format_conversion() {
-//         let (encoding, container, sample_rate, _) =
-//             audio_format_to_deepgram_params(AudioFormat::Mp3);
-//         assert_eq!(encoding, "mp3");
-//         assert_eq!(container, None);
-//         assert_eq!(sample_rate, 22050);
-//     }
+    #[test]
+    fn test_audio_format_conversion() {
+        let (encoding, container, sample_rate, _) =
+            audio_format_to_deepgram_params(AudioFormat::Mp3);
+        assert_eq!(encoding, "mp3");
+        assert_eq!(container, None);
+        assert_eq!(sample_rate, 22050);
+    }
 
-//     #[test]
-//     fn test_validate_text_input() {
-//         let result = validate_text_input("Hello, world!", Some("aura-2-thalia-en"));
-//         assert!(result.is_valid);
-//         assert_eq!(result.character_count, 13);
+    #[test]
+    fn test_validate_text_input() {
+        let result = validate_text_input("Hello, world!", Some("aura-2-thalia-en"));
+        assert!(result.is_valid);
+        assert_eq!(result.character_count, 13);
 
-//         let long_text = "a".repeat(1001);
-//         let result = validate_text_input(&long_text, Some("aura-2-thalia-en"));
-//         assert!(!result.is_valid);
-//         assert!(!result.errors.is_empty());
-//     }
-// }
+        let long_text = "a".repeat(1001);
+        let result = validate_text_input(&long_text, Some("aura-2-thalia-en"));
+        assert!(!result.is_valid);
+        assert!(!result.errors.is_empty());
+    }
+}

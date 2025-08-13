@@ -27,7 +27,10 @@ base64 = { workspace = true }
 reqwest = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
 hmac-sha256 = "1.1"
-sha2 = { version = "0.10", features = ["std"] }
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+url = "2.5.4"
 
 [package.metadata.component]
 package = "golem:tts-aws"
