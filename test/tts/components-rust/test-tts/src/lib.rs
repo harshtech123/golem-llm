@@ -2,7 +2,6 @@
 mod bindings;
 
 use crate::bindings::exports::test::tts_exports::test_tts_api::*;
-// Import specific types to avoid conflicts
 use crate::bindings::golem::tts::types::{
     TtsError, TextInput, AudioConfig, VoiceSettings, AudioFormat, AudioEffects,
     TextType, VoiceGender, VoiceQuality, TimingInfo,
@@ -60,13 +59,13 @@ impl Guest for Component {
         println!("Test0: Voice discovery and metadata retrieval");
         let mut results = Vec::new();
 
-        // Test voice listing with no filters
+        // Testing voice listing with no filters
         println!("Listing all available voices...");
         match list_voices(None) {
             Ok(voice_results) => {
                 results.push("✓ Voice listing successful".to_string());
                 
-                // Test voice results iteration
+                // Testing voice results iteration
                 let mut voice_count = 0;
                 while voice_results.has_more() {
                     match voice_results.get_next() {
@@ -75,7 +74,7 @@ impl Guest for Component {
                             for voice_info in voices.iter() {
                                 println!("Found voice: {} ({})", voice_info.name, voice_info.language);
                             }
-                            if voices.len() < 10 { break; } // Prevent too much output
+                            if voices.len() < 10 { break; } 
                         }
                         Err(e) => {
                             results.push(format!("✗ Error getting voice batch: {:?}", e));
@@ -85,7 +84,6 @@ impl Guest for Component {
                 }
                 results.push(format!("✓ Found {} voices total", voice_count));
                 
-                // Test total count if available
                 if let Some(total) = voice_results.get_total_count() {
                     results.push(format!("✓ Total voice count: {}", total));
                 }
@@ -93,7 +91,6 @@ impl Guest for Component {
             Err(e) => results.push(format!("✗ Voice listing failed: {:?}", e)),
         }
 
-        // Test voice filtering
         println!("Testing voice filtering...");
         let filter = VoiceFilter {
             language: Some("en-US".to_string()),
@@ -114,7 +111,6 @@ impl Guest for Component {
             Err(e) => results.push(format!("✗ Voice filtering failed: {:?}", e)),
         }
 
-        // Test language listing
         println!("Testing language discovery...");
         match list_languages() {
             Ok(languages) => {
@@ -126,7 +122,6 @@ impl Guest for Component {
             Err(e) => results.push(format!("✗ Language listing failed: {:?}", e)),
         }
 
-        // Test voice search
         println!("Testing voice search...");
         match search_voices("natural", None) {
             Ok(search_results) => {
@@ -149,7 +144,6 @@ impl Guest for Component {
             Err(e) => return format!("Failed to get test voice: {}", e),
         };
 
-        // Test basic synthesis
         println!("Testing basic synthesis...");
         let text_input = TextInput {
             content: SHORT_TEXT.to_string(),
@@ -160,13 +154,11 @@ impl Guest for Component {
         match synthesize(&text_input, &voice, None) {
             Ok(result) => {
                 results.push("✓ Basic synthesis successful".to_string());
-                // Save audio for verification
                 save_audio_result(&result.audio_data, "test2-basic", "mp3");
             }
             Err(e) => results.push(format!("✗ Basic synthesis failed: {:?}", e)),
         }
 
-        // Test synthesis with custom audio configuration
         println!("Testing synthesis with audio configuration...");
         let audio_config = AudioConfig {
             format: AudioFormat::Wav,
@@ -194,7 +186,7 @@ impl Guest for Component {
             Err(e) => results.push(format!("✗ Synthesis with audio config failed: {:?}", e)),
         }
 
-        // Test synthesis with voice settings
+        // Testing synthesis with voice settings
         println!("Testing synthesis with voice settings...");
         let voice_settings = VoiceSettings {
             speed: Some(1.2),
@@ -375,7 +367,7 @@ impl Guest for Component {
                 // Collect streaming audio chunks
                 let mut audio_data = Vec::new();
                 let mut chunk_count = 0;
-                let max_attempts = 30; // Prevent infinite loop
+                let max_attempts = 30;
                 let mut attempts = 0;
 
                 while attempts < max_attempts {
@@ -712,7 +704,7 @@ impl Guest for Component {
             Err(e) => return format!("Failed to get test voice: {}", e),
         };
 
-        // Attempt synthesis that might hit quotas
+        // Attempting synthesis that might hit quotas
         let large_text = LONG_TEXT.repeat(10); // Very long text
         let text_input = TextInput {
             content: large_text,
@@ -837,7 +829,6 @@ impl Guest for Component {
             Err(e) => results.push(format!("⚠ Unexpected settings error: {:?}", e)),
         }
 
-        // Test with non-existent voice
         println!("Testing non-existent voice handling...");
         match get_voice("non-existent-voice-id-12345") {
             Ok(_) => results.push("⚠ Non-existent voice was found".to_string()),
@@ -855,8 +846,8 @@ impl Guest for Component {
         println!("Test10: Long-form content synthesis");
         let mut results = Vec::new();
 
-        // Create very long content (>5000 characters)
-        let long_content = LONG_TEXT.repeat(25); // Should be well over 5000 characters
+        // Creating very long content (>5000 characters)
+        let long_content = LONG_TEXT.repeat(25);
         results.push(format!("Testing with {} characters", long_content.len()));
 
         let voice = match get_test_voice() {
@@ -887,7 +878,7 @@ impl Guest for Component {
 
         // Test specialized long-form synthesis
         println!("Testing specialized long-form synthesis...");
-        let chapter_breaks = Some(vec![1000, 2000, 3000, 4000]); // Break points
+        let chapter_breaks = Some(vec![1000, 2000, 3000, 4000]); 
         
         match synthesize_long_form(
             &long_content,
@@ -1038,7 +1029,6 @@ impl Guest for Component {
                     Err(e) => results.push(format!("⚠ Stream finish after recovery failed: {:?}", e)),
                 }
 
-                // Collect audio
                 let mut audio_data = Vec::new();
                 let mut attempts = 0;
                 while attempts < 20 && (stream.has_pending_audio() || 
@@ -1137,7 +1127,6 @@ impl Guest for Component {
             Err(e) => results.push(format!("✗ Voice conversion failed: {:?}", e)),
         }
 
-        // Test voice conversion streaming
         println!("Testing voice conversion streaming...");
         match create_voice_conversion_stream(&voice, None) {
             Ok(conversion_stream) => {
@@ -1163,7 +1152,6 @@ impl Guest for Component {
                     Err(e) => results.push(format!("✗ Conversion stream finish failed: {:?}", e)),
                 }
 
-                // Collect converted audio
                 let mut converted_data = Vec::new();
                 let mut attempts = 0;
                 while attempts < 10 {
@@ -1194,7 +1182,6 @@ impl Guest for Component {
             Err(e) => results.push(format!("✗ Voice conversion stream failed: {:?}", e)),
         }
 
-        // Test comprehensive synthesis with all features
         println!("Testing comprehensive synthesis...");
         let comprehensive_text = TextInput {
             content: format!("{}\n\n{}", SSML_TEXT, MEDIUM_TEXT),
@@ -1248,362 +1235,11 @@ impl Guest for Component {
 
         results.join("\n")
     }
-
-    /// test13 demonstrates comprehensive list_voices functionality testing
-    fn test13() -> String {
-        println!("Test13:  list_voices functionality testing");
-        let mut results = Vec::new();
-
-        // Test 1: Basic list_voices without filters
-        println!("Testing  list_voices without filters...");
-        match list_voices(None) {
-            Ok(voice_results) => {
-                results.push("✓ Basic list_voices successful".to_string());
-                
-                // Test the VoiceResults object thoroughly
-                if voice_results.has_more() {
-                    results.push("✓ VoiceResults has more voices available".to_string());
-                    
-                    // Test getting voice batches
-                    let mut total_voices_found = 0;
-                    let mut batch_count = 0;
-                    let max_batches = 5; // Limit to prevent too much output
-                    
-                    while voice_results.has_more() && batch_count < max_batches {
-                        match voice_results.get_next() {
-                            Ok(voices) => {
-                                batch_count += 1;
-                                total_voices_found += voices.len();
-                                results.push(format!("✓ Batch {}: {} voices", batch_count, voices.len()));
-                                
-                                // Examine first voice in each batch for details
-                                if let Some(first_voice) = voices.first() {
-                                    results.push(format!("  First voice: {} ({})", first_voice.name, first_voice.id));
-                                    results.push(format!("  Language: {}, Gender: {:?}", 
-                                        first_voice.language, first_voice.gender));
-                                    results.push(format!("  Quality: {:?}, Provider: {}", 
-                                        first_voice.quality, first_voice.provider));
-                                    results.push(format!("  Custom: {}, Cloned: {}", 
-                                        first_voice.is_custom, first_voice.is_cloned));
-                                }
-                            }
-                            Err(e) => {
-                                results.push(format!("✗ Failed to  batch {}: {:?}", batch_count + 1, e));
-                                break;
-                            }
-                        }
-                    }
-                    
-                    results.push(format!("✓ Found {} voices across {} batches", total_voices_found, batch_count));
-                } else {
-                    results.push("⚠ No voices available from list_voices".to_string());
-                }
-                
-                // Test total count functionality
-                if let Some(total) = voice_results.get_total_count() {
-                    results.push(format!("✓ Total voice count available: {}", total));
-                } else {
-                    results.push("⚠ Total count not available".to_string());
-                }
-            }
-            Err(e) => results.push(format!("✗ Basic list_voices failed: {:?}", e)),
-        }
-
-        // Test 2: list_voices with language filter
-        println!("Testing list_voices with language filter...");
-        let language_filter = VoiceFilter {
-            language: Some("en-US".to_string()),
-            gender: None,
-            quality: None,
-            supports_ssml: None,
-            provider: None,
-            search_query: None,
-        };
-
-        match list_voices(Some(&language_filter)) {
-            Ok(filtered_results) => {
-                results.push("✓ Language-filtered list_voices successful".to_string());
-                
-                if let Some(total) = filtered_results.get_total_count() {
-                    results.push(format!("✓ English voices: {}", total));
-                }
-                
-                // Check first few voices to verify language filtering
-                if filtered_results.has_more() {
-                    match filtered_results.get_next() {
-                        Ok(voices) => {
-                            let en_voices = voices.iter()
-                                .filter(|v| v.language.starts_with("en"))
-                                .count();
-                            results.push(format!("✓ Verified {} English voices in first batch", en_voices));
-                        }
-                        Err(e) => results.push(format!("⚠ Failed to verify language filter: {:?}", e)),
-                    }
-                }
-            }
-            Err(e) => results.push(format!("✗ Language-filtered list_voices failed: {:?}", e)),
-        }
-
-        // Test 3: list_voices with gender filter
-        println!("Testing list_voices with gender filter...");
-        let gender_filter = VoiceFilter {
-            language: None,
-            gender: Some(VoiceGender::Female),
-            quality: None,
-            supports_ssml: None,
-            provider: None,
-            search_query: None,
-        };
-
-        match list_voices(Some(&gender_filter)) {
-            Ok(female_results) => {
-                results.push("✓ Gender-filtered list_voices successful".to_string());
-                
-                if let Some(total) = female_results.get_total_count() {
-                    results.push(format!("✓ Female voices: {}", total));
-                }
-                
-                // Verify gender filtering
-                if female_results.has_more() {
-                    match female_results.get_next() {
-                        Ok(voices) => {
-                            let female_count = voices.iter()
-                                .filter(|v| matches!(v.gender, VoiceGender::Female))
-                                .count();
-                            results.push(format!("✓ Verified {} female voices in first batch", female_count));
-                        }
-                        Err(e) => results.push(format!("⚠ Failed to verify gender filter: {:?}", e)),
-                    }
-                }
-            }
-            Err(e) => results.push(format!("✗ Gender-filtered list_voices failed: {:?}", e)),
-        }
-
-        // Test 4: list_voices with quality filter
-        println!("Testing list_voices with quality filter...");
-        let quality_filter = VoiceFilter {
-            language: None,
-            gender: None,
-            quality: Some(VoiceQuality::Neural),
-            supports_ssml: None,
-            provider: None,
-            search_query: None,
-        };
-
-        match list_voices(Some(&quality_filter)) {
-            Ok(neural_results) => {
-                results.push("✓ Quality-filtered list_voices successful".to_string());
-                
-                if let Some(total) = neural_results.get_total_count() {
-                    results.push(format!("✓ Neural quality voices: {}", total));
-                }
-                
-                // Verify quality filtering
-                if neural_results.has_more() {
-                    match neural_results.get_next() {
-                        Ok(voices) => {
-                            let neural_count = voices.iter()
-                                .filter(|v| matches!(v.quality, VoiceQuality::Neural))
-                                .count();
-                            results.push(format!("✓ Verified {} neural voices in first batch", neural_count));
-                        }
-                        Err(e) => results.push(format!("⚠ Failed to verify quality filter: {:?}", e)),
-                    }
-                }
-            }
-            Err(e) => results.push(format!("✗ Quality-filtered list_voices failed: {:?}", e)),
-        }
-
-        // Test 5: list_voices with SSML support filter
-        println!("Testing list_voices with SSML support filter...");
-        let ssml_filter = VoiceFilter {
-            language: None,
-            gender: None,
-            quality: None,
-            supports_ssml: Some(true),
-            provider: None,
-            search_query: None,
-        };
-
-        match list_voices(Some(&ssml_filter)) {
-            Ok(ssml_results) => {
-                results.push("✓ SSML-filtered list_voices successful".to_string());
-                
-                if let Some(total) = ssml_results.get_total_count() {
-                    results.push(format!("✓ SSML-supporting voices: {}", total));
-                }
-                
-                // Note: We can't verify SSML support directly from VoiceInfo
-                // as supports_ssml is a method on Voice resource, not VoiceInfo
-                if ssml_results.has_more() {
-                    match ssml_results.get_next() {
-                        Ok(voices) => {
-                            results.push(format!("✓ Retrieved {} voices in SSML filter batch", voices.len()));
-                        }
-                        Err(e) => results.push(format!("⚠ Failed to get SSML filter batch: {:?}", e)),
-                    }
-                }
-            }
-            Err(e) => results.push(format!("✗ SSML-filtered list_voices failed: {:?}", e)),
-        }
-
-        // Test 6: list_voices with combined filters
-        println!("Testing list_voices with combined filters...");
-        let combined_filter = VoiceFilter {
-            language: Some("en-US".to_string()),
-            gender: Some(VoiceGender::Female),
-            quality: Some(VoiceQuality::Neural),
-            supports_ssml: Some(true),
-            provider: None,
-            search_query: None,
-        };
-
-        match list_voices(Some(&combined_filter)) {
-            Ok(combined_results) => {
-                results.push("✓ Combined-filtered list_voices successful".to_string());
-                
-                if let Some(total) = combined_results.get_total_count() {
-                    results.push(format!("✓ Combined filter voices: {}", total));
-                } else {
-                    results.push("⚠ No total count for combined filter".to_string());
-                }
-                
-                // Verify combined filtering
-                if combined_results.has_more() {
-                    match combined_results.get_next() {
-                        Ok(voices) => {
-                            let matching_count = voices.iter()
-                                .filter(|v| {
-                                    v.language.starts_with("en") &&
-                                    matches!(v.gender, VoiceGender::Female) &&
-                                    matches!(v.quality, VoiceQuality::Neural)
-                                    // Note: supports_ssml check removed as it's not available on VoiceInfo
-                                })
-                                .count();
-                            results.push(format!("✓ Verified {} voices matching most filters", matching_count));
-                        }
-                        Err(e) => results.push(format!("⚠ Failed to verify combined filter: {:?}", e)),
-                    }
-                } else {
-                    results.push("⚠ No voices found with combined filters".to_string());
-                }
-            }
-            Err(e) => results.push(format!("✗ Combined-filtered list_voices failed: {:?}", e)),
-        }
-
-        // Test 7: Test provider-specific filtering (if supported)
-        println!("Testing list_voices with provider filter...");
-        let provider_filter = VoiceFilter {
-            language: None,
-            gender: None,
-            quality: None,
-            supports_ssml: None,
-            provider: Some(TEST_PROVIDER.to_string()),
-            search_query: None,
-        };
-
-        match list_voices(Some(&provider_filter)) {
-            Ok(provider_results) => {
-                results.push(format!("✓ Provider-filtered list_voices successful for {}", TEST_PROVIDER));
-                
-                if let Some(total) = provider_results.get_total_count() {
-                    results.push(format!("✓ {} provider voices: {}", TEST_PROVIDER, total));
-                }
-            }
-            Err(e) => results.push(format!("⚠ Provider-filtered list_voices failed: {:?}", e)),
-        }
-
-        // Test 8: Test search query filter
-        println!("Testing list_voices with search query filter...");
-        let search_filter = VoiceFilter {
-            language: None,
-            gender: None,
-            quality: None,
-            supports_ssml: None,
-            provider: None,
-            search_query: Some("natural".to_string()),
-        };
-
-        match list_voices(Some(&search_filter)) {
-            Ok(search_results) => {
-                results.push("✓ Search-filtered list_voices successful".to_string());
-                
-                if let Some(total) = search_results.get_total_count() {
-                    results.push(format!("✓ Voices matching 'natural': {}", total));
-                }
-                
-                // Check if voices contain search term
-                if search_results.has_more() {
-                    match search_results.get_next() {
-                        Ok(voices) => {
-                            let natural_count = voices.iter()
-                                .filter(|v| v.name.to_lowercase().contains("natural") || 
-                                           v.id.to_lowercase().contains("natural"))
-                                .count();
-                            if natural_count > 0 {
-                                results.push(format!("✓ Found {} voices with 'natural' in name/id", natural_count));
-                            } else {
-                                results.push("⚠ No voices explicitly contain 'natural' (may use other matching criteria)".to_string());
-                            }
-                        }
-                        Err(e) => results.push(format!("⚠ Failed to verify search filter: {:?}", e)),
-                    }
-                }
-            }
-            Err(e) => results.push(format!("✗ Search-filtered list_voices failed: {:?}", e)),
-        }
-
-        // Test 9: Test edge cases and error handling
-        println!("Testing list_voices edge cases...");
-        
-        // Test with empty language
-        let empty_lang_filter = VoiceFilter {
-            language: Some("".to_string()),
-            gender: None,
-            quality: None,
-            supports_ssml: None,
-            provider: None,
-            search_query: None,
-        };
-
-        match list_voices(Some(&empty_lang_filter)) {
-            Ok(_) => results.push("✓ Empty language filter handled gracefully".to_string()),
-            Err(e) => results.push(format!("⚠ Empty language filter error: {:?}", e)),
-        }
-
-        // Test with invalid language code
-        let invalid_lang_filter = VoiceFilter {
-            language: Some("xx-XX".to_string()),
-            gender: None,
-            quality: None,
-            supports_ssml: None,
-            provider: None,
-            search_query: None,
-        };
-
-        match list_voices(Some(&invalid_lang_filter)) {
-            Ok(invalid_results) => {
-                if let Some(total) = invalid_results.get_total_count() {
-                    if total == 0 {
-                        results.push("✓ Invalid language code properly returns no results".to_string());
-                    } else {
-                        results.push(format!("⚠ Invalid language code returned {} voices", total));
-                    }
-                } else {
-                    results.push("⚠ Invalid language code handled but no total count".to_string());
-                }
-            }
-            Err(e) => results.push(format!("⚠ Invalid language code error: {:?}", e)),
-        }
-
-        results.join("\n")
-    }
 }
 
 // Helper functions
 
 fn get_test_voice() -> Result<Voice, String> {
-    // Try to get any available voice for testing
     match list_voices(None) {
         Ok(voice_results) => {
             if voice_results.has_more() {

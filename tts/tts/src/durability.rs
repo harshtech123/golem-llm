@@ -33,7 +33,6 @@ pub trait ExtendedGuest:
         options: Option<SynthesisOptions>,
     ) -> Self::SynthesisStream;
 
-    /// Creates the unwrapped voice conversion stream for durability  
     fn unwrapped_voice_conversion_stream(
         target_voice: crate::exports::golem::tts::voices::VoiceBorrow<'_>,
         options: Option<SynthesisOptions>,
@@ -220,11 +219,6 @@ mod passthrough_impl {
 /// When the durability feature flag is on, wrapping with `DurableTts` adds custom durability
 /// on top of the provider-specific TTS implementation using Golem's special host functions and
 /// the `golem-rust` helper library.
-///
-/// There will be custom durability entries saved in the oplog, with the full TTS request and configuration
-/// stored as input, and the full response stored as output. To serialize these in a way it is
-/// observable by oplog consumers, each relevant data type has to be converted to/from `ValueAndType`
-/// which is implemented using the type classes and builder in the `golem-rust` library.
 #[cfg(feature = "durability")]
 mod durable_impl {
     use crate::durability::{DurableTts, ExtendedGuest};
@@ -1018,7 +1012,7 @@ mod durable_impl {
             );
             if durability.is_live() {
                 let result = Ok(AudioDataOutput {
-                    audio: vec![0x52, 0x49, 0x46, 0x46, 0x24, 0x08, 0x00, 0x00], // Mock WAV header
+                    audio: vec![0x52, 0x49, 0x46, 0x46, 0x24, 0x08, 0x00, 0x00],
                 });
                 durability
                     .persist(PreviewVoiceInput { text }, result)
@@ -1031,7 +1025,6 @@ mod durable_impl {
         }
     }
 
-    // Durable PronunciationLexicon resource
     pub struct DurablePronunciationLexicon<Impl> {
         name: String,
         language: LanguageCode,
@@ -1086,7 +1079,6 @@ mod durable_impl {
                 DurableFunctionType::WriteRemote,
             );
             if durability.is_live() {
-                // For simulation purposes, we just persist the input
                 let result = Ok(NoOutput);
                 durability
                     .persist(
@@ -1213,13 +1205,13 @@ mod durable_impl {
             if durability.is_live() {
                 let result = Ok(LongFormResult {
                     output_location: self.output_location.clone(),
-                    total_duration: 60.0, // Simulation value
+                    total_duration: 60.0,
                     chapter_durations: None,
                     metadata: crate::exports::golem::tts::types::SynthesisMetadata {
                         duration_seconds: 60.0,
                         character_count: self.content.len() as u32,
                         word_count: self.content.split_whitespace().count() as u32,
-                        audio_size_bytes: 1024000, // Simulation value
+                        audio_size_bytes: 1024000,
                         request_id: "long-form-simulation".to_string(),
                         provider_info: Some("durable-tts".to_string()),
                     },

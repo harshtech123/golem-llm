@@ -15,7 +15,6 @@ interface test-tts-api {
   test10: func() -> string;
   test11: func() -> string;
   test12: func() -> string;
-  test13: func() -> string;
 }
 
 world test-tts {
