@@ -1,5 +1,5 @@
 use chrono::Utc;
-use golem_tts::config::{get_max_retries_config, get_timeout_config};
+use golem_tts::config::{get_endpoint_config, get_max_retries_config, get_timeout_config};
 use golem_tts::error::{from_reqwest_error, internal_error, tts_error_from_status};
 use golem_tts::golem::tts::types::TtsError;
 use log::{error, trace};
@@ -14,7 +14,7 @@ use hex;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Helper function to calculate HMAC-SHA256 (same as STT client)
+/// Helper function to calculate HMAC-SHA256 (same as  client)
 fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
     let mut mac = HmacSha256::new_from_slice(key).expect("HMAC can take key of any size");
     mac.update(data);
@@ -105,7 +105,6 @@ pub enum SpeechMarkType {
 }
 
 /// AWS Polly API client for text-to-speech operations
-/// Based on the working client_stt.rs pattern
 #[derive(Debug)]
 pub struct AwsPollyTtsApi {
     access_key_id: String,
@@ -113,8 +112,7 @@ pub struct AwsPollyTtsApi {
     region: String,
     client: Client,
     base_url: String,
-    timeout: Duration,
-    max_retries: u32,
+    rate_limit_config: RateLimitConfig,
 }
 
 impl AwsPollyTtsApi {
@@ -124,26 +122,14 @@ impl AwsPollyTtsApi {
         region: String,
         session_token: Option<String>,
     ) -> Result<Self, TtsError> {
-        let timeout_str = std::env::var("TTS_PROVIDER_TIMEOUT").unwrap_or_else(|_| "30".to_string());
-        let timeout = Duration::from_secs(timeout_str.parse().unwrap_or(30));
-        
-        let max_retries_str = std::env::var("TTS_PROVIDER_MAX_RETRIES").unwrap_or_else(|_| "3".to_string());
-        let max_retries = max_retries_str.parse().unwrap_or(3);
-        
-        let base_url = std::env::var("TTS_PROVIDER_ENDPOINT")
-            .unwrap_or_else(|_| format!("https://polly.{}.amazonaws.com", region));
-        
-        // Initialize logging level if specified
-        if let Ok(log_level) = std::env::var("TTS_PROVIDER_LOG_LEVEL") {
-            trace!("TTS Provider log level set to: {}", log_level);
-        }
+        let timeout = Duration::from_secs(get_timeout_config());
+        let base_url = get_endpoint_config(format!("https://polly.{}.amazonaws.com", region));
 
         let client = Client::builder()
             .timeout(timeout)
             .build()
             .map_err(|err| from_reqwest_error("Failed to create HTTP client", err))?;
 
-        // Store session token in access_key_id if provided (following STT pattern)
         let final_access_key = if let Some(token) = session_token {
             format!("{}:{}", access_key_id, token)
         } else {
@@ -156,12 +142,10 @@ impl AwsPollyTtsApi {
             region,
             client,
             base_url,
-            timeout,
-            max_retries,
+            rate_limit_config: RateLimitConfig::default(),
         })
     }
 
-    /// Validate credentials (following STT pattern)
     fn validate_credentials(&self) -> Result<(), TtsError> {
         if self.access_key_id.is_empty() || self.secret_access_key.is_empty() {
             return Err(TtsError::Unauthorized(
@@ -171,6 +155,18 @@ impl AwsPollyTtsApi {
         
         trace!("AWS credentials basic validation passed");
         Ok(())
+    }
+
+    /// Create an authenticated request (following Google client pattern)
+    fn create_authenticated_request<T: Serialize>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&T>,
+        query_params: Option<&[(&str, &str)]>,
+    ) -> Result<Response, TtsError> {
+        self.make_rest_request(method, path, body, query_params)
+            .map_err(|e| from_reqwest_error("Failed to send request", e))
     }
 
     /// Make authenticated REST request with AWS Signature V4 for Polly
@@ -223,22 +219,21 @@ impl AwsPollyTtsApi {
         request_builder.send()
     }
 
-    /// Execute request with retry logic (following STT pattern)
-    #[allow(dead_code)]
+    /// Execute request with retry logic (following Google client pattern)
     fn execute_with_retry<F>(&self, operation: F) -> Result<Response, TtsError>
     where
         F: Fn() -> Result<Response, TtsError>,
     {
-        let mut delay = Duration::from_millis(1000);
+        let mut delay = self.rate_limit_config.initial_delay;
 
-        for attempt in 0..=self.max_retries {
+        for attempt in 0..=self.rate_limit_config.max_retries {
             match operation() {
                 Ok(response) => {
                     if response.status().is_success() {
                         return Ok(response);
                     } else if (response.status().as_u16() == 429
                         || response.status().as_u16() >= 500)
-                        && attempt < self.max_retries
+                        && attempt < self.rate_limit_config.max_retries
                     {
                         trace!(
                             "Request failed with status {}, retrying in {:?}",
@@ -247,17 +242,18 @@ impl AwsPollyTtsApi {
                         );
                         std::thread::sleep(delay);
                         delay = std::cmp::min(
-                            Duration::from_millis((delay.as_millis() as f64 * 2.0) as u64),
-                            Duration::from_secs(30),
+                            Duration::from_millis(
+                                (delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64,
+                            ),
+                            self.rate_limit_config.max_delay,
                         );
                         continue;
                     }
 
-                    let _status = response.status();
-                    return Err(self.handle_error_response(response));
+                    return Err(tts_error_from_status(response.status()));
                 }
                 Err(e) => {
-                    if self.should_retry(&e) && attempt < self.max_retries {
+                    if self.should_retry(&e) && attempt < self.rate_limit_config.max_retries {
                         trace!(
                             "Request failed with error: {:?}, retrying in {:?}",
                             e,
@@ -265,8 +261,10 @@ impl AwsPollyTtsApi {
                         );
                         std::thread::sleep(delay);
                         delay = std::cmp::min(
-                            Duration::from_millis((delay.as_millis() as f64 * 2.0) as u64),
-                            Duration::from_secs(30),
+                            Duration::from_millis(
+                                (delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64,
+                            ),
+                            self.rate_limit_config.max_delay,
                         );
                         continue;
                     }
@@ -275,7 +273,7 @@ impl AwsPollyTtsApi {
             }
         }
 
-        Err(TtsError::InternalError("Max retries exceeded".to_string()))
+        Err(internal_error("Max retries exceeded"))
     }
 
     /// Describe available voices using REST API
@@ -316,44 +314,15 @@ impl AwsPollyTtsApi {
             Some(query_params.as_slice()) 
         };
 
-        let mut attempts = 0;
-        loop {
-            let result = self.make_rest_request(
+        self.execute_with_retry(|| {
+            self.create_authenticated_request(
                 Method::GET,
                 "/v1/voices",
                 None::<&()>,
                 query_slice
-            );
-
-            match result {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        return parse_response::<DescribeVoicesResponse>(response);
-                    } else {
-                        let error = self.handle_error_response(response);
-                        if self.should_retry(&error) && attempts < self.max_retries {
-                            attempts += 1;
-                            let delay = Duration::from_secs(2_u64.pow(attempts.min(5)));
-                            trace!("Retrying describe_voices in {:?}", delay);
-                            std::thread::sleep(delay);
-                            continue;
-                        }
-                        return Err(error);
-                    }
-                }
-                Err(e) => {
-                    let tts_error = from_reqwest_error("Failed to send describe_voices request", e);
-                    if self.should_retry(&tts_error) && attempts < self.max_retries {
-                        attempts += 1;
-                        let delay = Duration::from_secs(2_u64.pow(attempts.min(5)));
-                        trace!("Retrying describe_voices request in {:?}", delay);
-                        std::thread::sleep(delay);
-                        continue;
-                    }
-                    return Err(tts_error);
-                }
-            }
-        }
+            )
+        })
+        .and_then(parse_response)
     }
 
     /// Synthesize speech from text using REST API
@@ -363,47 +332,18 @@ impl AwsPollyTtsApi {
         // Validate credentials first
         self.validate_credentials()?;
 
-        let mut attempts = 0;
-        loop {
-            let result = self.make_rest_request(
+        let response = self.execute_with_retry(|| {
+            self.create_authenticated_request(
                 Method::POST,
                 "/v1/speech",
                 Some(&params),
                 None
-            );
+            )
+        })?;
 
-            match result {
-                Ok(response) => {
-                    let status = response.status();
-                    if status.is_success() {
-                        return response.bytes()
-                            .map_err(|e| from_reqwest_error("Failed to read audio data", e))
-                            .map(|bytes| bytes.to_vec());
-                    } else {
-                        let error = self.handle_error_response(response);
-                        if self.should_retry(&error) && attempts < self.max_retries {
-                            attempts += 1;
-                            let delay = Duration::from_secs(2_u64.pow(attempts.min(5)));
-                            trace!("Retrying synthesize_speech in {:?}", delay);
-                            std::thread::sleep(delay);
-                            continue;
-                        }
-                        return Err(error);
-                    }
-                }
-                Err(e) => {
-                    let tts_error = from_reqwest_error("Failed to send synthesize_speech request", e);
-                    if self.should_retry(&tts_error) && attempts < self.max_retries {
-                        attempts += 1;
-                        let delay = Duration::from_secs(2_u64.pow(attempts.min(5)));
-                        trace!("Retrying synthesize_speech request in {:?}", delay);
-                        std::thread::sleep(delay);
-                        continue;
-                    }
-                    return Err(tts_error);
-                }
-            }
-        }
+        response.bytes()
+            .map_err(|e| from_reqwest_error("Failed to read audio data", e))
+            .map(|bytes| bytes.to_vec())
     }
 
     /// Start speech synthesis task (for long-form content) using REST API
@@ -416,44 +356,15 @@ impl AwsPollyTtsApi {
         // Validate credentials first
         self.validate_credentials()?;
 
-        let mut attempts = 0;
-        loop {
-            let result = self.make_rest_request(
+        self.execute_with_retry(|| {
+            self.create_authenticated_request(
                 Method::POST,
                 "/v1/synthesisTasks",
                 Some(&params),
                 None
-            );
-
-            match result {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        return parse_response::<SpeechSynthesisTask>(response);
-                    } else {
-                        let error = self.handle_error_response(response);
-                        if self.should_retry(&error) && attempts < self.max_retries {
-                            attempts += 1;
-                            let delay = Duration::from_secs(2_u64.pow(attempts.min(5)));
-                            trace!("Retrying start_speech_synthesis_task in {:?}", delay);
-                            std::thread::sleep(delay);
-                            continue;
-                        }
-                        return Err(error);
-                    }
-                }
-                Err(e) => {
-                    let tts_error = from_reqwest_error("Failed to send start_speech_synthesis_task request", e);
-                    if self.should_retry(&tts_error) && attempts < self.max_retries {
-                        attempts += 1;
-                        let delay = Duration::from_secs(2_u64.pow(attempts.min(5)));
-                        trace!("Retrying start_speech_synthesis_task request in {:?}", delay);
-                        std::thread::sleep(delay);
-                        continue;
-                    }
-                    return Err(tts_error);
-                }
-            }
-        }
+            )
+        })
+        .and_then(parse_response)
     }
 
     /// Get speech synthesis task status using REST API
@@ -466,44 +377,15 @@ impl AwsPollyTtsApi {
         // Validate credentials first
         self.validate_credentials()?;
 
-        let mut attempts = 0;
-        loop {
-            let result = self.make_rest_request(
+        self.execute_with_retry(|| {
+            self.create_authenticated_request(
                 Method::GET,
                 &format!("/v1/synthesisTasks/{}", task_id),
                 None::<&()>,
                 None
-            );
-
-            match result {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        return parse_response::<SpeechSynthesisTask>(response);
-                    } else {
-                        let error = self.handle_error_response(response);
-                        if self.should_retry(&error) && attempts < self.max_retries {
-                            attempts += 1;
-                            let delay = Duration::from_secs(2_u64.pow(attempts.min(5)));
-                            trace!("Retrying get_speech_synthesis_task in {:?}", delay);
-                            std::thread::sleep(delay);
-                            continue;
-                        }
-                        return Err(error);
-                    }
-                }
-                Err(e) => {
-                    let tts_error = from_reqwest_error("Failed to send get_speech_synthesis_task request", e);
-                    if self.should_retry(&tts_error) && attempts < self.max_retries {
-                        attempts += 1;
-                        let delay = Duration::from_secs(2_u64.pow(attempts.min(5)));
-                        trace!("Retrying get_speech_synthesis_task request in {:?}", delay);
-                        std::thread::sleep(delay);
-                        continue;
-                    }
-                    return Err(tts_error);
-                }
-            }
-        }
+            )
+        })
+        .and_then(parse_response)
     }
 
     /// Put lexicon for custom pronunciations using REST API
@@ -518,44 +400,15 @@ impl AwsPollyTtsApi {
             content: content.to_string(),
         };
 
-        let mut attempts = 0;
-        loop {
-            let result = self.make_rest_request(
+        self.execute_with_retry(|| {
+            self.create_authenticated_request(
                 Method::PUT,
                 &format!("/v1/lexicons/{}", name),
                 Some(&request),
                 None
-            );
-
-            match result {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        return Ok(());
-                    } else {
-                        let error = self.handle_error_response(response);
-                        if self.should_retry(&error) && attempts < self.max_retries {
-                            attempts += 1;
-                            let delay = Duration::from_secs(2_u64.pow(attempts.min(5)));
-                            trace!("Retrying put_lexicon in {:?}", delay);
-                            std::thread::sleep(delay);
-                            continue;
-                        }
-                        return Err(error);
-                    }
-                }
-                Err(e) => {
-                    let tts_error = from_reqwest_error("Failed to send put_lexicon request", e);
-                    if self.should_retry(&tts_error) && attempts < self.max_retries {
-                        attempts += 1;
-                        let delay = Duration::from_secs(2_u64.pow(attempts.min(5)));
-                        trace!("Retrying put_lexicon request in {:?}", delay);
-                        std::thread::sleep(delay);
-                        continue;
-                    }
-                    return Err(tts_error);
-                }
-            }
-        }
+            )
+        })
+        .map(|_| ())
     }
 
     /// Create AWS Signature V4 authorization header for REST API
@@ -619,9 +472,7 @@ impl AwsPollyTtsApi {
         )
     }
 
-    /// Calculate AWS Signature V4 signature (following STT pattern)
     fn calculate_signature(&self, string_to_sign: &str, date: &str) -> String {
-        // AWS V4 signature derivation
         let date_key = hmac_sha256(format!("AWS4{}", self.secret_access_key).as_bytes(), date.as_bytes());
         let date_region_key = hmac_sha256(&date_key, self.region.as_bytes());
         let date_region_service_key = hmac_sha256(&date_region_key, b"polly");
@@ -631,14 +482,12 @@ impl AwsPollyTtsApi {
         hex::encode(signature)
     }
 
-    /// Calculate SHA256 hash (following STT pattern)
     fn sha256_hex(&self, data: &[u8]) -> String {
         let mut hasher = Sha256::new();
         hasher.update(data);
         hex::encode(hasher.finalize())
     }
 
-    /// Determine if error should be retried (following STT pattern)
     fn should_retry(&self, error: &TtsError) -> bool {
         match error {
             TtsError::NetworkError(_) => true,
@@ -647,23 +496,6 @@ impl AwsPollyTtsApi {
                 msg.contains("timeout") || msg.contains("connection") || msg.contains("network")
             }
             _ => false,
-        }
-    }
-
-    /// Handle error response (following STT pattern)
-    fn handle_error_response(&self, response: Response) -> TtsError {
-        let status = response.status();
-        let error_text = response.text().unwrap_or_else(|_| "Unknown error".to_string());
-        
-        error!("AWS Polly error response ({}): {}", status, error_text);
-        
-        match status.as_u16() {
-            400 => TtsError::InvalidText(format!("Bad request: {}", error_text)),
-            401 | 403 => TtsError::Unauthorized(format!("Authentication failed: {}", error_text)),
-            404 => TtsError::VoiceNotFound(format!("Resource not found: {}", error_text)),
-            429 => TtsError::RateLimited(60), // Default 60 seconds wait time
-            500..=599 => TtsError::InternalError(format!("Server error: {}", error_text)),
-            _ => TtsError::InternalError(format!("HTTP {}: {}", status, error_text)),
         }
     }
 }
@@ -676,8 +508,7 @@ impl Clone for AwsPollyTtsApi {
             region: self.region.clone(),
             client: self.client.clone(),
             base_url: self.base_url.clone(),
-            timeout: self.timeout,
-            max_retries: self.max_retries,
+            rate_limit_config: self.rate_limit_config.clone(),
         }
     }
 }
@@ -903,18 +734,10 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, 
         .map_err(|e| from_reqwest_error("Failed to read response", e))?;
 
     trace!("AWS Polly API response: {}", response_text);
-    
-    // Add additional logging to help debug voice parsing
-    if response_text.contains("voice") || response_text.contains("Voice") {
-        error!("DEBUG - Raw response contains voice data: {}", response_text);
-    }
 
-    let parsed_result = serde_json::from_str(&response_text)
+    serde_json::from_str(&response_text)
         .map_err(|e| {
             error!("Failed to parse AWS Polly response: {}, Raw response: {}", e, response_text);
             internal_error(format!("Failed to parse AWS Polly response: {}", e))
-        })?;
-        
-    trace!("Parsed response: {:?}", parsed_result);
-    Ok(parsed_result)
+        })
 }

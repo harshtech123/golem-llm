@@ -4,12 +4,354 @@ use crate::client::{
 };
 use golem_tts::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
 use golem_tts::golem::tts::types::{
-    AudioFormat, SynthesisMetadata, SynthesisResult, VoiceGender, VoiceQuality,
+    AudioFormat, SynthesisMetadata, SynthesisResult, VoiceGender, VoiceQuality, TtsError, TextType as TtsTextType, VoiceSettings,
 };
 use golem_tts::golem::tts::voices::{LanguageInfo, VoiceFilter, VoiceInfo};
 use log::trace;
 
-/// Estimate audio duration in seconds based on audio data size and format
+/// Validate synthesis input and options for proper error handling
+pub fn validate_synthesis_input(
+    input: &golem_tts::golem::tts::types::TextInput,
+    options: Option<&SynthesisOptions>,
+) -> Result<(), TtsError> {
+    // Validate empty text
+    if input.content.trim().is_empty() {
+        return Err(TtsError::InvalidText("Text content cannot be empty".to_string()));
+    }
+
+    // Note: We no longer reject large text here - we'll chunk it in synthesis
+    // AWS Polly limit is 3000 characters, but we'll handle this by chunking
+
+    // Validate SSML content if specified
+    if input.text_type == TtsTextType::Ssml {
+        if let Err(msg) = validate_ssml_content(&input.content) {
+            return Err(TtsError::InvalidSsml(msg));
+        }
+    }
+
+    // Validate language code if specified
+    if let Some(ref language) = input.language {
+        if !is_supported_language(language) {
+            return Err(TtsError::UnsupportedLanguage(format!(
+                "Language '{}' is not supported by AWS Polly", language
+            )));
+        }
+    }
+
+    // Validate voice settings if specified
+    if let Some(opts) = options {
+        if let Some(ref voice_settings) = opts.voice_settings {
+            validate_voice_settings(voice_settings)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate SSML content for basic structure
+pub fn validate_ssml_content(content: &str) -> Result<(), String> {
+    // Basic SSML validation - check for unmatched tags
+    let mut tag_stack = Vec::new();
+    let mut chars = content.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '<' {
+            // Parse tag
+            let mut tag = String::new();
+            let mut is_closing = false;
+            let mut is_self_closing = false;
+            
+            // Check if it's a closing tag
+            if chars.peek() == Some(&'/') {
+                is_closing = true;
+                chars.next(); // consume '/'
+            }
+
+            // Read tag name and attributes
+            let mut full_tag_content = String::new();
+            while let Some(&ch) = chars.peek() {
+                if ch == '>' {
+                    break;
+                }
+                if ch == ' ' && tag.is_empty() {
+                    // We've read the tag name, now read the rest
+                    tag = full_tag_content.clone();
+                }
+                full_tag_content.push(chars.next().unwrap());
+            }
+
+            // If we didn't hit a space, the entire content is the tag name
+            if tag.is_empty() {
+                tag = full_tag_content.clone();
+            }
+
+            // Check if it's self-closing (ends with '/')
+            if full_tag_content.ends_with('/') {
+                is_self_closing = true;
+                // Remove the trailing '/' from tag name if it got included
+                if tag.ends_with('/') {
+                    tag = tag[..tag.len()-1].to_string();
+                }
+            }
+
+            // Skip to end of tag
+            while let Some(ch) = chars.next() {
+                if ch == '>' {
+                    break;
+                }
+            }
+
+            if is_closing {
+                if let Some(expected_tag) = tag_stack.pop() {
+                    if expected_tag != tag {
+                        return Err(format!("Unmatched closing tag: </{}>", tag));
+                    }
+                } else {
+                    return Err(format!("Unmatched closing tag: </{}>", tag));
+                }
+            } else if !tag.is_empty() && !tag.starts_with('!') && !tag.starts_with('?') {
+                // Only track opening tags that aren't self-closing, XML declarations, or comments
+                if !is_self_closing {
+                    tag_stack.push(tag);
+                }
+            }
+        }
+    }
+
+    if !tag_stack.is_empty() {
+        return Err(format!("Unclosed tags: {:?}", tag_stack));
+    }
+
+    Ok(())
+}
+
+/// Check if a language is supported by AWS Polly
+pub fn is_supported_language(language: &str) -> bool {
+    let supported_languages = [
+        "en-US", "en-GB", "en-AU", "en-IN",
+        "es-ES", "es-MX", "es-US",
+        "fr-FR", "fr-CA",
+        "de-DE", "it-IT",
+        "pt-PT", "pt-BR",
+        "ja-JP", "ko-KR",
+        "zh-CN", "cmn-CN",
+        "ar", "hi-IN", "ru-RU",
+        "nl-NL", "pl-PL", "sv-SE",
+        "nb-NO", "da-DK", "tr-TR",
+        "ro-RO", "cy-GB", "is-IS"
+    ];
+    supported_languages.contains(&language)
+}
+
+/// Validate voice settings for AWS Polly limits
+pub fn validate_voice_settings(settings: &VoiceSettings) -> Result<(), TtsError> {
+    // Validate speed (0.25x to 4.0x)
+    if let Some(speed) = settings.speed {
+        if speed < 0.25 || speed > 4.0 {
+            return Err(TtsError::InvalidConfiguration(
+                "Speed must be between 0.25 and 4.0".to_string()
+            ));
+        }
+    }
+
+    // Validate pitch (-20dB to +20dB in semitones, roughly -10.0 to +10.0)
+    if let Some(pitch) = settings.pitch {
+        if pitch < -10.0 || pitch > 10.0 {
+            return Err(TtsError::InvalidConfiguration(
+                "Pitch must be between -10.0 and +10.0".to_string()
+            ));
+        }
+    }
+
+    // Validate volume (-20dB to +20dB, roughly -20.0 to +20.0)
+    if let Some(volume) = settings.volume {
+        if volume < -20.0 || volume > 20.0 {
+            return Err(TtsError::InvalidConfiguration(
+                "Volume must be between -20.0 and +20.0".to_string()
+            ));
+        }
+    }
+
+    // Validate stability (0.0 to 1.0) - AWS Polly doesn't directly support this
+    if let Some(stability) = settings.stability {
+        if stability < 0.0 || stability > 1.0 {
+            return Err(TtsError::InvalidConfiguration(
+                "Stability must be between 0.0 and 1.0".to_string()
+            ));
+        }
+    }
+
+    // Validate similarity (0.0 to 1.0) - AWS Polly doesn't directly support this
+    if let Some(similarity) = settings.similarity {
+        if similarity < 0.0 || similarity > 1.0 {
+            return Err(TtsError::InvalidConfiguration(
+                "Similarity must be between 0.0 and 1.0".to_string()
+            ));
+        }
+    }
+
+    // Validate style (0.0 to 1.0) - AWS Polly doesn't directly support this
+    if let Some(style) = settings.style {
+        if style < 0.0 || style > 1.0 {
+            return Err(TtsError::InvalidConfiguration(
+                "Style must be between 0.0 and 1.0".to_string()
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Intelligently split text into chunks suitable for AWS Polly
+/// Following best practices for text chunking
+pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String> {
+    if text.len() <= max_chunk_size {
+        return vec![text.to_string()];
+    }
+
+    let mut chunks = Vec::new();
+    let mut current_chunk = String::new();
+    
+    // Split by sentence-ending punctuation, keeping the delimiter
+    let mut sentences = Vec::new();
+    let mut current_sentence = String::new();
+    let mut chars = text.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        current_sentence.push(ch);
+        
+        // Check for sentence endings
+        if matches!(ch, '.' | '!' | '?') {
+            // Check if it's really the end of a sentence (not an abbreviation)
+            if chars.peek().map(|c| c.is_whitespace()).unwrap_or(true) {
+                sentences.push(current_sentence.trim().to_string());
+                current_sentence.clear();
+            }
+        } else if ch == '\n' {
+            // Treat newlines as sentence boundaries
+            let sentence = current_sentence.trim();
+            if !sentence.is_empty() {
+                sentences.push(sentence.to_string());
+                current_sentence.clear();
+            }
+        }
+    }
+    
+    // Add any remaining text as a sentence
+    let remaining = current_sentence.trim();
+    if !remaining.is_empty() {
+        sentences.push(remaining.to_string());
+    }
+
+    // Now group sentences into chunks
+    for sentence in sentences {
+        if sentence.trim().is_empty() {
+            continue;
+        }
+
+        // If adding this sentence would exceed the limit, start a new chunk
+        if current_chunk.len() + sentence.len() + 1 > max_chunk_size {
+            if !current_chunk.is_empty() {
+                chunks.push(current_chunk.trim().to_string());
+                current_chunk.clear();
+            }
+
+            // If a single sentence is too long, split it by words
+            if sentence.len() > max_chunk_size {
+                let word_chunks = split_by_words(&sentence, max_chunk_size);
+                chunks.extend(word_chunks);
+            } else {
+                current_chunk = sentence;
+            }
+        } else {
+            if !current_chunk.is_empty() {
+                current_chunk.push(' ');
+            }
+            current_chunk.push_str(&sentence);
+        }
+    }
+
+    // Add the last chunk if it's not empty
+    if !current_chunk.is_empty() {
+        chunks.push(current_chunk.trim().to_string());
+    }
+
+    // Ensure we have at least one chunk
+    if chunks.is_empty() {
+        chunks.push(text.to_string());
+    }
+
+    chunks
+}
+
+/// Split text by words when a single sentence is too long
+pub fn split_by_words(text: &str, max_chunk_size: usize) -> Vec<String> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut chunks = Vec::new();
+    let mut current_chunk = String::new();
+
+    for word in words {
+        if current_chunk.len() + word.len() + 1 > max_chunk_size {
+            if !current_chunk.is_empty() {
+                chunks.push(current_chunk.trim().to_string());
+                current_chunk.clear();
+            }
+            
+            // If a single word is too long, truncate it (rare case)
+            if word.len() > max_chunk_size {
+                chunks.push(word[..max_chunk_size].to_string());
+            } else {
+                current_chunk = word.to_string();
+            }
+        } else {
+            if !current_chunk.is_empty() {
+                current_chunk.push(' ');
+            }
+            current_chunk.push_str(word);
+        }
+    }
+
+    if !current_chunk.is_empty() {
+        chunks.push(current_chunk);
+    }
+
+    chunks
+}
+
+/// Combine multiple audio chunks into a single audio result
+pub fn combine_audio_chunks(chunks: Vec<Vec<u8>>, format: &AudioFormat) -> Vec<u8> {
+    if chunks.is_empty() {
+        return Vec::new();
+    }
+
+    if chunks.len() == 1 {
+        return chunks.into_iter().next().unwrap();
+    }
+
+    // For MP3, we need to concatenate without headers (simplified approach)
+    // For PCM, we can directly concatenate
+    // For OGG, we need special handling
+    match format {
+        AudioFormat::Pcm => {
+            // Simple concatenation for PCM
+            chunks.into_iter().flatten().collect()
+        }
+        AudioFormat::Mp3 => {
+            // For MP3, we'll do simple concatenation
+            // Note: This is a simplified approach. For production, you'd want proper MP3 frame handling
+            chunks.into_iter().flatten().collect()
+        }
+        AudioFormat::OggOpus => {
+            // For OGG, simple concatenation may not work perfectly, but it's a start
+            chunks.into_iter().flatten().collect()
+        }
+        _ => {
+            // Fallback: simple concatenation
+            chunks.into_iter().flatten().collect()
+        }
+    }
+}
+
 pub fn estimate_audio_duration(audio_data: &[u8], sample_rate: u32, format: &AudioFormat) -> f32 {
     if audio_data.is_empty() {
         return 0.0;
