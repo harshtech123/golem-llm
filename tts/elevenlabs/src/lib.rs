@@ -1,9 +1,9 @@
 use crate::client::{ElevenLabsTtsApi, Voice as ElevenLabsVoice};
 use crate::conversions::{
     audio_data_to_synthesis_result, create_voice_request_from_samples,
-    elevenlabs_voice_to_voice_info, estimate_audio_duration, get_max_chars_for_model, models_to_language_info,
-    split_text_intelligently, synthesis_options_to_tts_request, validate_synthesis_input,
-    voice_design_params_to_create_request, voice_filter_to_list_params,
+    elevenlabs_voice_to_voice_info, estimate_audio_duration, get_max_chars_for_model,
+    models_to_language_info, split_text_intelligently, synthesis_options_to_tts_request,
+    validate_synthesis_input, voice_design_params_to_create_request, voice_filter_to_list_params,
 };
 use golem_rust::wasm_rpc::Pollable;
 use golem_tts::config::with_config_key;
@@ -63,7 +63,7 @@ impl GuestVoice for ElevenLabsVoiceImpl {
     }
 
     fn get_additional_languages(&self) -> Vec<LanguageCode> {
-        vec![] 
+        vec![]
     }
 
     fn get_gender(&self) -> VoiceGender {
@@ -123,7 +123,11 @@ impl GuestVoice for ElevenLabsVoiceImpl {
         let request = crate::client::TextToSpeechRequest {
             text,
             model_id: Some(model_version.to_string()),
-            language_code: if supports_language_code { Some("en".to_string()) } else { None },
+            language_code: if supports_language_code {
+                Some("en".to_string())
+            } else {
+                None
+            },
             voice_settings: self.voice_data.settings.clone(),
             pronunciation_dictionary_locators: None,
             seed: None,
@@ -236,12 +240,17 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
         {
             let mut request_ref = self.current_request.borrow_mut();
             if let Some(mut request) = request_ref.take() {
-                println!("[DEBUG] ElevenLabs send_text - Updating request with new text: '{}'", input.content);
+                println!(
+                    "[DEBUG] ElevenLabs send_text - Updating request with new text: '{}'",
+                    input.content
+                );
                 request.text = input.content;
                 *request_ref = Some(request);
                 println!("[DEBUG] ElevenLabs send_text - Successfully updated request");
             } else {
-                println!("[DEBUG] ElevenLabs send_text - Warning: No current request found to update");
+                println!(
+                    "[DEBUG] ElevenLabs send_text - Warning: No current request found to update"
+                );
             }
         }
 
@@ -279,7 +288,7 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
             match response.bytes() {
                 Ok(bytes) => {
                     if !bytes.is_empty() {
-                        const CHUNK_SIZE: usize = 4096; 
+                        const CHUNK_SIZE: usize = 4096;
                         let mut current_buffer = self.chunk_buffer.borrow_mut();
 
                         if current_buffer.is_empty() {
@@ -315,7 +324,6 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
                             };
 
                             if !is_final {
-                              
                             } else {
                                 self.finished.set(true);
                             }
@@ -563,7 +571,7 @@ impl ElevenLabsLongFormOperation {
     }
 
     fn process_long_form(&self) -> Result<(), TtsError> {
-        let max_chunk_size = 4500; 
+        let max_chunk_size = 4500;
         let chunks = self.client.synthesize_long_form_batch(
             &self.voice_id,
             &self.content,
@@ -732,7 +740,7 @@ impl SynthesisGuest for ElevenLabsComponent {
         let voice_id = voice.get::<ElevenLabsVoiceImpl>().get_id();
 
         let max_chunk_size = get_max_chars_for_model(client.get_model_version().into());
-        
+
         if input.content.len() > max_chunk_size {
             trace!(
                 "Using intelligent text chunking for content with {} characters (limit: {})",
@@ -751,7 +759,7 @@ impl SynthesisGuest for ElevenLabsComponent {
                 if let Some(language) = input.language.clone() {
                     let model_version = client.get_model_version();
                     let supports_language_code = !model_version.contains("multilingual");
-                    
+
                     if supports_language_code {
                         request.language_code = Some(language);
                     }
@@ -765,7 +773,10 @@ impl SynthesisGuest for ElevenLabsComponent {
                 }
             }
 
-            Ok(audio_data_to_synthesis_result(all_audio_data, &input.content))
+            Ok(audio_data_to_synthesis_result(
+                all_audio_data,
+                &input.content,
+            ))
         } else {
             let (mut request, params) =
                 synthesis_options_to_tts_request(options, client.get_model_version());
@@ -774,7 +785,7 @@ impl SynthesisGuest for ElevenLabsComponent {
             if let Some(language) = input.language {
                 let model_version = client.get_model_version();
                 let supports_language_code = !model_version.contains("multilingual");
-                
+
                 if supports_language_code {
                     request.language_code = Some(language);
                 }
@@ -802,7 +813,7 @@ impl SynthesisGuest for ElevenLabsComponent {
 
         for input in inputs {
             let max_chunk_size = get_max_chars_for_model(client.get_model_version().into());
-            
+
             if input.content.len() > max_chunk_size {
                 trace!(
                     "Using intelligent text chunking for content with {} characters (limit: {})",
@@ -814,14 +825,16 @@ impl SynthesisGuest for ElevenLabsComponent {
                 let mut all_audio_data = Vec::new();
 
                 for chunk in chunks {
-                    let (mut request, params) =
-                        synthesis_options_to_tts_request(options.clone(), client.get_model_version());
+                    let (mut request, params) = synthesis_options_to_tts_request(
+                        options.clone(),
+                        client.get_model_version(),
+                    );
                     request.text = chunk.clone();
 
                     if let Some(language) = input.language.clone() {
                         let model_version = client.get_model_version();
                         let supports_language_code = !model_version.contains("multilingual");
-                        
+
                         if supports_language_code {
                             request.language_code = Some(language);
                         }
@@ -845,7 +858,7 @@ impl SynthesisGuest for ElevenLabsComponent {
                 if let Some(language) = input.language.clone() {
                     let model_version = client.get_model_version();
                     let supports_language_code = !model_version.contains("multilingual");
-                    
+
                     if supports_language_code {
                         request.language_code = Some(language);
                     }
@@ -879,8 +892,11 @@ impl SynthesisGuest for ElevenLabsComponent {
     ) -> Result<ValidationResult, TtsError> {
         let client = Self::create_client()?;
         let model_version = client.get_model_version();
-        
-        Ok(crate::conversions::validate_text_input(&input.content, Some(model_version)))
+
+        Ok(crate::conversions::validate_text_input(
+            &input.content,
+            Some(model_version),
+        ))
     }
 }
 

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::time::Duration;
 
-/// Rate limiting configuration 
+/// Rate limiting configuration
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
     pub max_retries: u32,
@@ -37,7 +37,7 @@ pub struct AuthToken {
     pub expires_at: std::time::SystemTime,
 }
 
-/// The Google Cloud TTS API client 
+/// The Google Cloud TTS API client
 /// Based on https://cloud.google.com/text-to-speech/docs/reference/rest
 #[derive(Clone)]
 pub struct GoogleTtsApi {
@@ -435,7 +435,6 @@ pub struct SynthesizeSpeechResponse {
     pub audio_content: String,
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamingSynthesizeRequest {
     #[serde(rename = "streamingConfig", skip_serializing_if = "Option::is_none")]
@@ -475,7 +474,6 @@ pub struct StreamingSynthesizeResponse {
     #[serde(rename = "audioContent")]
     pub audio_content: Vec<u8>,
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SynthesizeLongAudioRequest {

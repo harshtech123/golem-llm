@@ -4,8 +4,8 @@ use crate::client::{
 };
 use golem_tts::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
 use golem_tts::golem::tts::types::{
-    AudioFormat, SynthesisMetadata, SynthesisResult, TextInput, TextType, TtsError, VoiceGender, VoiceQuality,
-    VoiceSettings,
+    AudioFormat, SynthesisMetadata, SynthesisResult, TextInput, TextType, TtsError, VoiceGender,
+    VoiceQuality, VoiceSettings,
 };
 use golem_tts::golem::tts::voices::{LanguageInfo, VoiceFilter, VoiceInfo};
 
@@ -77,7 +77,7 @@ pub fn google_voice_to_voice_info(voice: GoogleVoice) -> VoiceInfo {
         provider: "google".to_string(),
         sample_rate: voice.natural_sample_rate_hertz as u32,
         is_custom: voice_type.contains("Custom"),
-        is_cloned: false, 
+        is_cloned: false,
         preview_url: None,
         use_cases,
     }
@@ -242,7 +242,7 @@ pub fn synthesis_options_to_tts_request(
     };
 
     let default_params = BatchSynthesisParams {
-        max_chunk_size: Some(5000), 
+        max_chunk_size: Some(5000),
         chunk_overlap: Some(100),
     };
 
@@ -518,9 +518,10 @@ pub fn validate_synthesis_input(
     options: Option<&SynthesisOptions>,
 ) -> Result<(), TtsError> {
     if input.content.trim().is_empty() {
-        return Err(TtsError::InvalidText("Text content cannot be empty".to_string()));
+        return Err(TtsError::InvalidText(
+            "Text content cannot be empty".to_string(),
+        ));
     }
-
 
     if input.text_type == TextType::Ssml {
         if let Err(msg) = validate_ssml_content(&input.content) {
@@ -531,7 +532,8 @@ pub fn validate_synthesis_input(
     if let Some(ref language) = input.language {
         if !is_supported_language(language) {
             return Err(TtsError::UnsupportedLanguage(format!(
-                "Language '{}' is not supported by Google Cloud TTS", language
+                "Language '{}' is not supported by Google Cloud TTS",
+                language
             )));
         }
     }
@@ -554,7 +556,7 @@ pub fn validate_ssml_content(content: &str) -> Result<(), String> {
             let mut tag = String::new();
             let mut is_closing = false;
             let mut is_self_closing = false;
-            
+
             if chars.peek() == Some(&'/') {
                 is_closing = true;
                 chars.next();
@@ -578,11 +580,11 @@ pub fn validate_ssml_content(content: &str) -> Result<(), String> {
             if full_tag_content.ends_with('/') {
                 is_self_closing = true;
                 if tag.ends_with('/') {
-                    tag = tag[..tag.len()-1].to_string();
+                    tag = tag[..tag.len() - 1].to_string();
                 }
             }
 
-            while let Some(ch) = chars.next() {
+            for ch in chars.by_ref() {
                 if ch == '>' {
                     break;
                 }
@@ -596,10 +598,12 @@ pub fn validate_ssml_content(content: &str) -> Result<(), String> {
                 } else {
                     return Err(format!("Unmatched closing tag: </{}>", tag));
                 }
-            } else if !tag.is_empty() && !tag.starts_with('!') && !tag.starts_with('?') {
-                if !is_self_closing {
-                    tag_stack.push(tag);
-                }
+            } else if !tag.is_empty()
+                && !tag.starts_with('!')
+                && !tag.starts_with('?')
+                && !is_self_closing
+            {
+                tag_stack.push(tag);
             }
         }
     }
@@ -613,16 +617,15 @@ pub fn validate_ssml_content(content: &str) -> Result<(), String> {
 
 pub fn is_supported_language(language: &str) -> bool {
     let supported_languages = [
-        "ar", "ar-XA", "bg", "bg-BG", "ca", "ca-ES", "cs", "cs-CZ", "da", "da-DK",
-        "de", "de-DE", "de-AT", "de-CH", "el", "el-GR", "en", "en-AU", "en-GB", "en-US",
-        "es", "es-ES", "es-US", "fi", "fi-FI", "fil", "fil-PH", "fr", "fr-CA", "fr-FR",
-        "he", "he-IL", "hi", "hi-IN", "hr", "hr-HR", "hu", "hu-HU", "id", "id-ID",
-        "is", "is-IS", "it", "it-IT", "ja", "ja-JP", "ko", "ko-KR", "lt", "lt-LT",
-        "lv", "lv-LV", "ms", "ms-MY", "nb", "nb-NO", "nl", "nl-BE", "nl-NL", "pl", "pl-PL",
-        "pt", "pt-BR", "pt-PT", "ro", "ro-RO", "ru", "ru-RU", "sk", "sk-SK", "sl", "sl-SI",
-        "sr", "sr-RS", "sv", "sv-SE", "ta", "ta-IN", "te", "te-IN", "th", "th-TH",
-        "tr", "tr-TR", "uk", "uk-UA", "vi", "vi-VN", "zh", "zh-CN", "zh-TW", "zh-HK",
-        "af-ZA", "bn-IN", "cy-GB", "gu-IN", "kn-IN", "ml-IN", "mr-IN", "pa-IN", "yue-HK"
+        "ar", "ar-XA", "bg", "bg-BG", "ca", "ca-ES", "cs", "cs-CZ", "da", "da-DK", "de", "de-DE",
+        "de-AT", "de-CH", "el", "el-GR", "en", "en-AU", "en-GB", "en-US", "es", "es-ES", "es-US",
+        "fi", "fi-FI", "fil", "fil-PH", "fr", "fr-CA", "fr-FR", "he", "he-IL", "hi", "hi-IN", "hr",
+        "hr-HR", "hu", "hu-HU", "id", "id-ID", "is", "is-IS", "it", "it-IT", "ja", "ja-JP", "ko",
+        "ko-KR", "lt", "lt-LT", "lv", "lv-LV", "ms", "ms-MY", "nb", "nb-NO", "nl", "nl-BE",
+        "nl-NL", "pl", "pl-PL", "pt", "pt-BR", "pt-PT", "ro", "ro-RO", "ru", "ru-RU", "sk",
+        "sk-SK", "sl", "sl-SI", "sr", "sr-RS", "sv", "sv-SE", "ta", "ta-IN", "te", "te-IN", "th",
+        "th-TH", "tr", "tr-TR", "uk", "uk-UA", "vi", "vi-VN", "zh", "zh-CN", "zh-TW", "zh-HK",
+        "af-ZA", "bn-IN", "cy-GB", "gu-IN", "kn-IN", "ml-IN", "mr-IN", "pa-IN", "yue-HK",
     ];
 
     supported_languages.contains(&language)
@@ -630,50 +633,56 @@ pub fn is_supported_language(language: &str) -> bool {
 
 pub fn validate_voice_settings(settings: &VoiceSettings) -> Result<(), TtsError> {
     if let Some(speed) = settings.speed {
-        if speed < 0.25 || speed > 4.0 {
-            return Err(TtsError::InvalidConfiguration(
-                format!("Speed value {} is out of valid range (0.25-4.0)", speed)
-            ));
+        if !(0.25..=4.0).contains(&speed) {
+            return Err(TtsError::InvalidConfiguration(format!(
+                "Speed value {} is out of valid range (0.25-4.0)",
+                speed
+            )));
         }
     }
 
     if let Some(pitch) = settings.pitch {
-        if pitch < -20.0 || pitch > 20.0 {
-            return Err(TtsError::InvalidConfiguration(
-                format!("Pitch value {} is out of valid range (-20.0 to +20.0)", pitch)
-            ));
+        if !(-20.0..=20.0).contains(&pitch) {
+            return Err(TtsError::InvalidConfiguration(format!(
+                "Pitch value {} is out of valid range (-20.0 to +20.0)",
+                pitch
+            )));
         }
     }
 
     if let Some(volume) = settings.volume {
-        if volume < -96.0 || volume > 16.0 {
-            return Err(TtsError::InvalidConfiguration(
-                format!("Volume value {} is out of valid range (-96.0 to +16.0)", volume)
-            ));
+        if !(-96.0..=16.0).contains(&volume) {
+            return Err(TtsError::InvalidConfiguration(format!(
+                "Volume value {} is out of valid range (-96.0 to +16.0)",
+                volume
+            )));
         }
     }
 
     if let Some(stability) = settings.stability {
-        if stability < 0.0 || stability > 1.0 {
-            return Err(TtsError::InvalidConfiguration(
-                format!("Stability value {} is out of valid range (0.0-1.0)", stability)
-            ));
+        if !(0.0..=1.0).contains(&stability) {
+            return Err(TtsError::InvalidConfiguration(format!(
+                "Stability value {} is out of valid range (0.0-1.0)",
+                stability
+            )));
         }
     }
 
     if let Some(similarity) = settings.similarity {
-        if similarity < 0.0 || similarity > 1.0 {
-            return Err(TtsError::InvalidConfiguration(
-                format!("Similarity value {} is out of valid range (0.0-1.0)", similarity)
-            ));
+        if !(0.0..=1.0).contains(&similarity) {
+            return Err(TtsError::InvalidConfiguration(format!(
+                "Similarity value {} is out of valid range (0.0-1.0)",
+                similarity
+            )));
         }
     }
 
     if let Some(style) = settings.style {
-        if style < 0.0 || style > 1.0 {
-            return Err(TtsError::InvalidConfiguration(
-                format!("Style value {} is out of valid range (0.0-1.0)", style)
-            ));
+        if !(0.0..=1.0).contains(&style) {
+            return Err(TtsError::InvalidConfiguration(format!(
+                "Style value {} is out of valid range (0.0-1.0)",
+                style
+            )));
         }
     }
 
@@ -688,16 +697,22 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
     let mut chunks = Vec::new();
     let mut current_chunk = String::new();
 
-    let paragraphs: Vec<&str> = text.split("
+    let paragraphs: Vec<&str> = text
+        .split(
+            "
 
-").collect();
-    
+",
+        )
+        .collect();
+
     for paragraph in paragraphs {
         if current_chunk.len() + paragraph.len() + 2 <= max_chunk_size {
             if !current_chunk.is_empty() {
-                current_chunk.push_str("
+                current_chunk.push_str(
+                    "
 
-");
+",
+                );
             }
             current_chunk.push_str(paragraph);
         } else {
@@ -705,11 +720,11 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
                 chunks.push(current_chunk.clone());
                 current_chunk.clear();
             }
-            
+
             if paragraph.len() > max_chunk_size {
                 let sentences = split_by_sentences(paragraph);
                 for sentence in sentences {
-                    if current_chunk.len() + sentence.len() + 1 <= max_chunk_size {
+                    if current_chunk.len() + sentence.len() < max_chunk_size {
                         if !current_chunk.is_empty() {
                             current_chunk.push(' ');
                         }
@@ -719,7 +734,7 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
                             chunks.push(current_chunk.clone());
                             current_chunk.clear();
                         }
-                        
+
                         if sentence.len() > max_chunk_size {
                             let clauses = split_by_clauses(&sentence, max_chunk_size);
                             for clause in clauses {
@@ -740,58 +755,62 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
         chunks.push(current_chunk);
     }
 
-    chunks.into_iter().filter(|chunk| !chunk.trim().is_empty()).collect()
+    chunks
+        .into_iter()
+        .filter(|chunk| !chunk.trim().is_empty())
+        .collect()
 }
 
 fn split_by_sentences(text: &str) -> Vec<String> {
     let mut sentences = Vec::new();
     let mut current_sentence = String::new();
     let mut chars = text.chars().peekable();
-    
+
     while let Some(ch) = chars.next() {
         current_sentence.push(ch);
-        
-        if ch == '.' || ch == '!' || ch == '?' {
-            if chars.peek().map_or(true, |&next_ch| next_ch.is_whitespace()) {
-                sentences.push(current_sentence.trim().to_string());
-                current_sentence.clear();
-            }
+
+        if (ch == '.' || ch == '!' || ch == '?')
+            && chars.peek().is_none_or(|&next_ch| next_ch.is_whitespace())
+        {
+            sentences.push(current_sentence.trim().to_string());
+            current_sentence.clear();
         }
     }
-    
+
     if !current_sentence.trim().is_empty() {
         sentences.push(current_sentence.trim().to_string());
     }
-    
-    sentences.into_iter().filter(|s| !s.trim().is_empty()).collect()
+
+    sentences
+        .into_iter()
+        .filter(|s| !s.trim().is_empty())
+        .collect()
 }
 
 fn split_by_clauses(text: &str, max_size: usize) -> Vec<String> {
     if text.len() <= max_size {
         return vec![text.to_string()];
     }
-    
+
     let mut clauses = Vec::new();
     let mut current_clause = String::new();
     let mut chars = text.chars().peekable();
-    
+
     while let Some(ch) = chars.next() {
         current_clause.push(ch);
-        
-        if ch == ',' || ch == ';' {
-            if chars.peek().map_or(true, |&next_ch| next_ch.is_whitespace()) {
-                if current_clause.len() <= max_size {
-                    clauses.push(current_clause.trim().to_string());
-                    current_clause.clear();
-                } else {
-                    let words = split_by_words(&current_clause, max_size);
-                    clauses.extend(words);
-                    current_clause.clear();
-                }
+
+        if (ch == ',' || ch == ';') && chars.peek().is_none_or(|&next_ch| next_ch.is_whitespace()) {
+            if current_clause.len() <= max_size {
+                clauses.push(current_clause.trim().to_string());
+                current_clause.clear();
+            } else {
+                let words = split_by_words(&current_clause, max_size);
+                clauses.extend(words);
+                current_clause.clear();
             }
         }
     }
-    
+
     if !current_clause.trim().is_empty() {
         if current_clause.len() <= max_size {
             clauses.push(current_clause.trim().to_string());
@@ -800,15 +819,18 @@ fn split_by_clauses(text: &str, max_size: usize) -> Vec<String> {
             clauses.extend(words);
         }
     }
-    
-    clauses.into_iter().filter(|c| !c.trim().is_empty()).collect()
+
+    clauses
+        .into_iter()
+        .filter(|c| !c.trim().is_empty())
+        .collect()
 }
 
 fn split_by_words(text: &str, max_size: usize) -> Vec<String> {
     let words: Vec<&str> = text.split_whitespace().collect();
     let mut chunks = Vec::new();
     let mut current_chunk = String::new();
-    
+
     for word in words {
         if current_chunk.is_empty() {
             current_chunk = word.to_string();
@@ -820,11 +842,11 @@ fn split_by_words(text: &str, max_size: usize) -> Vec<String> {
             current_chunk = word.to_string();
         }
     }
-    
+
     if !current_chunk.is_empty() {
         chunks.push(current_chunk);
     }
-    
+
     chunks
 }
 
@@ -832,24 +854,22 @@ pub fn combine_audio_chunks(chunks: Vec<Vec<u8>>, format: &AudioFormat) -> Vec<u
     if chunks.is_empty() {
         return Vec::new();
     }
-    
+
     if chunks.len() == 1 {
         return chunks.into_iter().next().unwrap();
     }
-    
+
     match format {
         AudioFormat::Mp3 => {
             let mut combined = Vec::new();
             for (i, chunk) in chunks.iter().enumerate() {
                 if i == 0 {
                     combined.extend_from_slice(chunk);
+                } else if chunk.len() > 128 && chunk.starts_with(&[0xFF, 0xFB]) {
+                    let start = if chunk.len() > 1024 { 1024 } else { 128 };
+                    combined.extend_from_slice(&chunk[start..]);
                 } else {
-                    if chunk.len() > 128 && chunk.starts_with(&[0xFF, 0xFB]) {
-                        let start = if chunk.len() > 1024 { 1024 } else { 128 };
-                        combined.extend_from_slice(&chunk[start..]);
-                    } else {
-                        combined.extend_from_slice(chunk);
-                    }
+                    combined.extend_from_slice(chunk);
                 }
             }
             combined
@@ -857,32 +877,28 @@ pub fn combine_audio_chunks(chunks: Vec<Vec<u8>>, format: &AudioFormat) -> Vec<u
         AudioFormat::Wav => {
             let mut combined = Vec::new();
             let mut total_data_size = 0u32;
-            
+
             for (i, chunk) in chunks.iter().enumerate() {
                 if i == 0 {
                     combined.extend_from_slice(chunk);
                     if chunk.len() >= 44 {
                         total_data_size += (chunk.len() - 44) as u32;
                     }
-                } else {
-                    if chunk.len() > 44 {
-                        combined.extend_from_slice(&chunk[44..]);
-                        total_data_size += (chunk.len() - 44) as u32;
-                    }
+                } else if chunk.len() > 44 {
+                    combined.extend_from_slice(&chunk[44..]);
+                    total_data_size += (chunk.len() - 44) as u32;
                 }
             }
-            
+
             if combined.len() >= 44 {
                 let file_size = (combined.len() - 8) as u32;
                 combined[4..8].copy_from_slice(&file_size.to_le_bytes());
                 combined[40..44].copy_from_slice(&total_data_size.to_le_bytes());
             }
-            
+
             combined
         }
-        _ => {
-            chunks.into_iter().flatten().collect()
-        }
+        _ => chunks.into_iter().flatten().collect(),
     }
 }
 

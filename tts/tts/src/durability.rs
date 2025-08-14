@@ -1158,7 +1158,7 @@ mod durable_impl {
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    OperationStatus::Completed 
+                    OperationStatus::Completed
                 });
                 durability.persist_infallible(NoInput, result)
             } else {
@@ -1173,9 +1173,7 @@ mod durable_impl {
                 DurableFunctionType::ReadRemote,
             );
             if durability.is_live() {
-                let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    1.0 
-                });
+                let result = with_persistence_level(PersistenceLevel::PersistNothing, || 1.0);
                 durability.persist_infallible(NoInput, result)
             } else {
                 durability.replay_infallible()
@@ -1234,8 +1232,8 @@ mod durable_impl {
         ) -> Result<Voice, TtsError> {
             init_logging();
 
-            Impl::create_voice_clone(name, audio_samples, description)  
-       }
+            Impl::create_voice_clone(name, audio_samples, description)
+        }
 
         fn design_voice(
             name: String,

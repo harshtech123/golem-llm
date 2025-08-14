@@ -1,9 +1,9 @@
 use crate::client::{AwsPollyTtsApi, Voice as AwsVoice};
 use crate::conversions::{
-    audio_data_to_synthesis_result, aws_voice_to_voice_info, get_polly_language_info,
-    polly_format_to_audio_format, synthesis_options_to_polly_params, validate_polly_input,
-    voice_filter_to_describe_params, validate_synthesis_input,
-    split_text_intelligently, combine_audio_chunks,
+    audio_data_to_synthesis_result, aws_voice_to_voice_info, combine_audio_chunks,
+    get_polly_language_info, polly_format_to_audio_format, split_text_intelligently,
+    synthesis_options_to_polly_params, validate_polly_input, validate_synthesis_input,
+    voice_filter_to_describe_params,
 };
 use golem_rust::wasm_rpc::Pollable;
 use golem_tts::config::with_config_key;
@@ -103,7 +103,7 @@ impl GuestVoice for PollyVoiceImpl {
     }
 
     fn supports_ssml(&self) -> bool {
-        true 
+        true
     }
 
     fn get_sample_rates(&self) -> Vec<u32> {
@@ -159,7 +159,7 @@ impl PollyVoiceResults {
         Self {
             voices: RefCell::new(voices),
             current_index: Cell::new(0),
-            has_more: Cell::new(has_voices), 
+            has_more: Cell::new(has_voices),
             total_count,
         }
     }
@@ -173,10 +173,15 @@ impl GuestVoiceResults for PollyVoiceResults {
     fn get_next(&self) -> Result<Vec<VoiceInfo>, TtsError> {
         let voices = self.voices.borrow();
         let start_index = self.current_index.get();
-        let batch_size = 10; 
+        let batch_size = 10;
         let end_index = std::cmp::min(start_index + batch_size, voices.len());
 
-        trace!("PollyVoiceResults::get_next - start: {}, end: {}, total: {}", start_index, end_index, voices.len());
+        trace!(
+            "PollyVoiceResults::get_next - start: {}, end: {}, total: {}",
+            start_index,
+            end_index,
+            voices.len()
+        );
 
         if start_index >= voices.len() {
             trace!("No more voices to return");
@@ -185,7 +190,7 @@ impl GuestVoiceResults for PollyVoiceResults {
 
         let batch = voices[start_index..end_index].to_vec();
         trace!("Returning batch of {} voices", batch.len());
-        
+
         self.current_index.set(end_index);
         self.has_more.set(end_index < voices.len());
 
@@ -521,8 +526,8 @@ impl GuestLongFormOperation for PollyLongFormOperation {
                 metadata: golem_tts::golem::tts::types::SynthesisMetadata {
                     duration_seconds: 0.0,
                     character_count: task.request_characters.unwrap_or(0) as u32,
-                    word_count: 0,      
-                    audio_size_bytes: 0, 
+                    word_count: 0,
+                    audio_size_bytes: 0,
                     request_id: self.task_id.clone(),
                     provider_info: Some("AWS Polly".to_string()),
                 },
@@ -550,12 +555,12 @@ impl AwsPollyComponent {
                     std::env::var(Self::REGION_ENV_VAR).unwrap_or_else(|_| "us-east-1".to_string());
                 let session_token = std::env::var(Self::SESSION_TOKEN_ENV_VAR).ok();
 
-                Ok(AwsPollyTtsApi::new(
+                AwsPollyTtsApi::new(
                     access_key_id.to_string(),
                     secret_access_key.to_string(),
                     region,
                     session_token,
-                )?)
+                )
             })
         })
     }
@@ -570,8 +575,11 @@ impl VoicesGuest for AwsPollyComponent {
         let params = voice_filter_to_describe_params(filter);
 
         let response = client.describe_voices(params)?;
-        trace!("AWS describe_voices returned {} voices", response.voices.len());
-        
+        trace!(
+            "AWS describe_voices returned {} voices",
+            response.voices.len()
+        );
+
         let voice_infos: Vec<VoiceInfo> = response
             .voices
             .into_iter()
@@ -643,13 +651,13 @@ impl SynthesisGuest for AwsPollyComponent {
         options: Option<SynthesisOptions>,
     ) -> Result<SynthesisResult, TtsError> {
         validate_synthesis_input(&input, options.as_ref())?;
-        
+
         let client = Self::create_client()?;
         let voice_id = voice.get::<PollyVoiceImpl>().get_id();
 
         if input.content.len() > 3000 {
             let chunks = split_text_intelligently(&input.content, 3000);
-            
+
             let mut audio_chunks = Vec::new();
             for chunk in chunks {
                 let chunk_input = TextInput {
@@ -665,21 +673,21 @@ impl SynthesisGuest for AwsPollyComponent {
                 let chunk_audio = client.synthesize_speech(params)?;
                 audio_chunks.push(chunk_audio);
             }
-            
+
             let format = options
                 .as_ref()
                 .and_then(|o| o.audio_config)
                 .map(|ac| ac.format)
                 .unwrap_or(AudioFormat::Mp3);
-            
+
             let combined_audio = combine_audio_chunks(audio_chunks, &format);
-            
+
             let sample_rate = options
                 .as_ref()
                 .and_then(|o| o.audio_config)
                 .and_then(|ac| ac.sample_rate)
                 .unwrap_or(22050);
-            
+
             Ok(audio_data_to_synthesis_result(
                 combined_audio,
                 &input.content,
@@ -687,7 +695,8 @@ impl SynthesisGuest for AwsPollyComponent {
                 sample_rate,
             ))
         } else {
-            let params = synthesis_options_to_polly_params(options, voice_id, input.content.clone());
+            let params =
+                synthesis_options_to_polly_params(options, voice_id, input.content.clone());
             let audio_data = client.synthesize_speech(params.clone())?;
 
             let format = polly_format_to_audio_format(&params.output_format);
@@ -716,10 +725,10 @@ impl SynthesisGuest for AwsPollyComponent {
 
         for input in inputs {
             validate_synthesis_input(&input, options.as_ref())?;
-            
+
             if input.content.len() > 3000 {
                 let chunks = split_text_intelligently(&input.content, 3000);
-                
+
                 let mut audio_chunks = Vec::new();
                 for chunk in chunks {
                     let chunk_input = TextInput {
@@ -735,21 +744,21 @@ impl SynthesisGuest for AwsPollyComponent {
                     let chunk_audio = client.synthesize_speech(params)?;
                     audio_chunks.push(chunk_audio);
                 }
-                
+
                 let format = options
                     .as_ref()
                     .and_then(|o| o.audio_config)
                     .map(|ac| ac.format)
                     .unwrap_or(AudioFormat::Mp3);
-                
+
                 let combined_audio = combine_audio_chunks(audio_chunks, &format);
-                
+
                 let sample_rate = options
                     .as_ref()
                     .and_then(|o| o.audio_config)
                     .and_then(|ac| ac.sample_rate)
                     .unwrap_or(22050);
-                
+
                 results.push(audio_data_to_synthesis_result(
                     combined_audio,
                     &input.content,
@@ -946,7 +955,8 @@ impl ExtendedGuest for AwsPollyComponent {
                 "dummy".to_string(),
                 "us-east-1".to_string(),
                 None,
-            ).unwrap_or_else(|_| panic!("Failed to create fallback client"))
+            )
+            .unwrap_or_else(|_| panic!("Failed to create fallback client"))
         });
         let voice_id = voice.get::<PollyVoiceImpl>().get_id();
 
@@ -963,7 +973,8 @@ impl ExtendedGuest for AwsPollyComponent {
                 "dummy".to_string(),
                 "us-east-1".to_string(),
                 None,
-            ).unwrap_or_else(|_| panic!("Failed to create fallback client"))
+            )
+            .unwrap_or_else(|_| panic!("Failed to create fallback client"))
         });
         let voice_id = target_voice.get::<PollyVoiceImpl>().get_id();
 

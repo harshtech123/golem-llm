@@ -46,7 +46,7 @@ pub struct QuotaInfo {
     pub status: String,
 }
 
-/// The ElevenLabs TTS API client 
+/// The ElevenLabs TTS API client
 /// Based on https://elevenlabs.io/docs/api-reference/
 #[derive(Clone)]
 pub struct ElevenLabsTtsApi {
@@ -348,7 +348,11 @@ impl ElevenLabsTtsApi {
             let request = TextToSpeechRequest {
                 text: chunk.clone(),
                 model_id: Some(self.model_version.clone()),
-                language_code: if supports_language_code { Some("en".to_string()) } else { None },
+                language_code: if supports_language_code {
+                    Some("en".to_string())
+                } else {
+                    None
+                },
                 voice_settings: None,
                 pronunciation_dictionary_locators: None,
                 seed: None,
@@ -563,7 +567,8 @@ impl ElevenLabsTtsApi {
 
         if let Some(ref description) = request.description {
             form_data.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
-            form_data.extend_from_slice(b"Content-Disposition: form-data; name=\"description\"\r\n\r\n");
+            form_data
+                .extend_from_slice(b"Content-Disposition: form-data; name=\"description\"\r\n\r\n");
             form_data.extend_from_slice(description.as_bytes());
             form_data.extend_from_slice(b"\r\n");
         }
@@ -578,7 +583,11 @@ impl ElevenLabsTtsApi {
         for (i, file) in request.files.iter().enumerate() {
             form_data.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
             form_data.extend_from_slice(
-                format!("Content-Disposition: form-data; name=\"files\"; filename=\"audio_{}.wav\"\r\n", i).as_bytes()
+                format!(
+                    "Content-Disposition: form-data; name=\"files\"; filename=\"audio_{}.wav\"\r\n",
+                    i
+                )
+                .as_bytes(),
             );
             form_data.extend_from_slice(b"Content-Type: audio/wav\r\n\r\n");
             form_data.extend(file.data.iter());
@@ -587,12 +596,15 @@ impl ElevenLabsTtsApi {
 
         form_data.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
 
-
         let response = self.execute_with_retry(|| {
-            let request = self.client
+            let request = self
+                .client
                 .post(&url)
                 .header("xi-api-key", &self.api_key)
-                .header("Content-Type", format!("multipart/form-data; boundary={}", boundary))
+                .header(
+                    "Content-Type",
+                    format!("multipart/form-data; boundary={}", boundary),
+                )
                 .body(form_data.clone());
 
             match request.send() {
@@ -602,18 +614,18 @@ impl ElevenLabsTtsApi {
                     } else {
                         let status = response.status();
                         match response.text() {
-                            Ok(error_body) => {
-                                Err(internal_error(format!("Failed to create voice: status code {} - {}", status, error_body)))
-                            }
-                            Err(_) => {
-                                Err(internal_error(format!("Failed to create voice: status code {}", status)))
-                            }
+                            Ok(error_body) => Err(internal_error(format!(
+                                "Failed to create voice: status code {} - {}",
+                                status, error_body
+                            ))),
+                            Err(_) => Err(internal_error(format!(
+                                "Failed to create voice: status code {}",
+                                status
+                            ))),
                         }
                     }
                 }
-                Err(e) => {
-                    Err(internal_error(format!("Failed to create voice: {e}")))
-                }
+                Err(e) => Err(internal_error(format!("Failed to create voice: {e}"))),
             }
         })?;
 
@@ -757,7 +769,6 @@ impl ElevenLabsTtsApi {
         }
     }
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListVoicesParams {
@@ -939,7 +950,7 @@ pub struct CreateVoiceJsonRequest {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub files: Vec<String>, 
+    pub files: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub labels: Option<String>,
 }

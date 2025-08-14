@@ -2,15 +2,14 @@ use chrono::Utc;
 use golem_tts::config::{get_endpoint_config, get_max_retries_config, get_timeout_config};
 use golem_tts::error::{from_reqwest_error, internal_error, tts_error_from_status};
 use golem_tts::golem::tts::types::TtsError;
+use hmac::{Hmac, Mac};
 use log::{error, trace};
 use reqwest::{Client, Method, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fmt::Debug;
 use std::time::Duration;
-use sha2::{Sha256, Digest};
-use hmac::{Hmac, Mac};
-use hex;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -141,10 +140,10 @@ impl AwsPollyTtsApi {
     fn validate_credentials(&self) -> Result<(), TtsError> {
         if self.access_key_id.is_empty() || self.secret_access_key.is_empty() {
             return Err(TtsError::Unauthorized(
-                "AWS credentials not properly configured".to_string()
+                "AWS credentials not properly configured".to_string(),
             ));
         }
-        
+
         trace!("AWS credentials basic validation passed");
         Ok(())
     }
@@ -168,7 +167,7 @@ impl AwsPollyTtsApi {
         query_params: Option<&[(&str, &str)]>,
     ) -> Result<Response, reqwest::Error> {
         let mut url = format!("{}{}", self.base_url, path);
-        
+
         if let Some(params) = query_params {
             if !params.is_empty() {
                 url.push('?');
@@ -180,31 +179,33 @@ impl AwsPollyTtsApi {
                 }
             }
         }
-        
+
         let timestamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
-        
+
         let request_body = if let Some(body) = body {
             serde_json::to_string(body).unwrap_or_default()
         } else {
             String::new()
         };
-        
+
         let payload_hash = self.sha256_hex(request_body.as_bytes());
-        let authorization = self.create_rest_auth_header(&method, path, query_params, &timestamp, &payload_hash);
-        
+        let authorization =
+            self.create_rest_auth_header(&method, path, query_params, &timestamp, &payload_hash);
+
         trace!("AWS Polly REST API request to: {} {}", method, url);
-        
-        let mut request_builder = self.client
+
+        let mut request_builder = self
+            .client
             .request(method, &url)
             .header("Authorization", authorization)
             .header("X-Amz-Date", timestamp);
-        
+
         if !request_body.is_empty() {
             request_builder = request_builder
                 .header("Content-Type", "application/json")
                 .body(request_body);
         }
-        
+
         request_builder.send()
     }
 
@@ -231,7 +232,9 @@ impl AwsPollyTtsApi {
                         std::thread::sleep(delay);
                         delay = std::cmp::min(
                             Duration::from_millis(
-                                (delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64,
+                                (delay.as_millis() as f64
+                                    * self.rate_limit_config.backoff_multiplier)
+                                    as u64,
                             ),
                             self.rate_limit_config.max_delay,
                         );
@@ -250,7 +253,9 @@ impl AwsPollyTtsApi {
                         std::thread::sleep(delay);
                         delay = std::cmp::min(
                             Duration::from_millis(
-                                (delay.as_millis() as f64 * self.rate_limit_config.backoff_multiplier) as u64,
+                                (delay.as_millis() as f64
+                                    * self.rate_limit_config.backoff_multiplier)
+                                    as u64,
                             ),
                             self.rate_limit_config.max_delay,
                         );
@@ -275,56 +280,53 @@ impl AwsPollyTtsApi {
         let mut query_params = Vec::new();
         if let Some(ref p) = params {
             if let Some(ref engine) = p.engine {
-                query_params.push(("Engine", match engine {
-                    Engine::Standard => "standard",
-                    Engine::Neural => "neural", 
-                    Engine::LongForm => "long-form",
-                    Engine::Generative => "generative",
-                }));
+                query_params.push((
+                    "Engine",
+                    match engine {
+                        Engine::Standard => "standard",
+                        Engine::Neural => "neural",
+                        Engine::LongForm => "long-form",
+                        Engine::Generative => "generative",
+                    },
+                ));
             }
             if let Some(ref lang) = p.language_code {
                 query_params.push(("LanguageCode", lang.as_str()));
             }
             if let Some(include_additional) = p.include_additional_language_codes {
-                query_params.push(("IncludeAdditionalLanguageCodes", if include_additional { "true" } else { "false" }));
+                query_params.push((
+                    "IncludeAdditionalLanguageCodes",
+                    if include_additional { "true" } else { "false" },
+                ));
             }
             if let Some(ref token) = p.next_token {
                 query_params.push(("NextToken", token.as_str()));
             }
         }
 
-        let query_slice = if query_params.is_empty() { 
-            None 
-        } else { 
-            Some(query_params.as_slice()) 
+        let query_slice = if query_params.is_empty() {
+            None
+        } else {
+            Some(query_params.as_slice())
         };
 
         self.execute_with_retry(|| {
-            self.create_authenticated_request(
-                Method::GET,
-                "/v1/voices",
-                None::<&()>,
-                query_slice
-            )
+            self.create_authenticated_request(Method::GET, "/v1/voices", None::<&()>, query_slice)
         })
         .and_then(parse_response)
     }
 
     pub fn synthesize_speech(&self, params: SynthesizeSpeechParams) -> Result<Vec<u8>, TtsError> {
         trace!("Synthesizing speech");
-        
+
         self.validate_credentials()?;
 
         let response = self.execute_with_retry(|| {
-            self.create_authenticated_request(
-                Method::POST,
-                "/v1/speech",
-                Some(&params),
-                None
-            )
+            self.create_authenticated_request(Method::POST, "/v1/speech", Some(&params), None)
         })?;
 
-        response.bytes()
+        response
+            .bytes()
             .map_err(|e| from_reqwest_error("Failed to read audio data", e))
             .map(|bytes| bytes.to_vec())
     }
@@ -334,7 +336,7 @@ impl AwsPollyTtsApi {
         params: StartSpeechSynthesisTaskParams,
     ) -> Result<SpeechSynthesisTask, TtsError> {
         trace!("Starting speech synthesis task");
-        
+
         self.validate_credentials()?;
 
         self.execute_with_retry(|| {
@@ -342,7 +344,7 @@ impl AwsPollyTtsApi {
                 Method::POST,
                 "/v1/synthesisTasks",
                 Some(&params),
-                None
+                None,
             )
         })
         .and_then(parse_response)
@@ -353,7 +355,7 @@ impl AwsPollyTtsApi {
         task_id: &str,
     ) -> Result<SpeechSynthesisTask, TtsError> {
         trace!("Getting speech synthesis task: {}", task_id);
-        
+
         self.validate_credentials()?;
 
         self.execute_with_retry(|| {
@@ -361,7 +363,7 @@ impl AwsPollyTtsApi {
                 Method::GET,
                 &format!("/v1/synthesisTasks/{}", task_id),
                 None::<&()>,
-                None
+                None,
             )
         })
         .and_then(parse_response)
@@ -382,23 +384,23 @@ impl AwsPollyTtsApi {
                 Method::PUT,
                 &format!("/v1/lexicons/{}", name),
                 Some(&request),
-                None
+                None,
             )
         })
         .map(|_| ())
     }
 
     fn create_rest_auth_header(
-        &self, 
-        method: &Method, 
-        path: &str, 
+        &self,
+        method: &Method,
+        path: &str,
         query_params: Option<&[(&str, &str)]>,
-        timestamp: &str, 
-        payload_hash: &str
+        timestamp: &str,
+        payload_hash: &str,
     ) -> String {
         let date = &timestamp[0..8];
         let host = format!("polly.{}.amazonaws.com", self.region);
-        
+
         let canonical_query_string = if let Some(params) = query_params {
             let mut sorted_params = params.to_vec();
             sorted_params.sort_by(|a, b| a.0.cmp(b.0));
@@ -410,10 +412,10 @@ impl AwsPollyTtsApi {
         } else {
             String::new()
         };
-        
+
         let canonical_headers = format!("host:{}\nx-amz-date:{}", host, timestamp);
         let signed_headers = "host;x-amz-date";
-        
+
         let canonical_request = format!(
             "{}\n{}\n{}\n{}\n\n{}\n{}",
             method.as_str(),
@@ -423,32 +425,38 @@ impl AwsPollyTtsApi {
             signed_headers,
             payload_hash
         );
-        
+
         let canonical_request_hash = self.sha256_hex(canonical_request.as_bytes());
-        
+
         let credential_scope = format!("{}/{}/polly/aws4_request", date, self.region);
         let string_to_sign = format!(
             "AWS4-HMAC-SHA256\n{}\n{}\n{}",
             timestamp, credential_scope, canonical_request_hash
         );
-        
+
         let signature = self.calculate_signature(&string_to_sign, date);
-        
+
         format!(
             "AWS4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}",
-            self.access_key_id.split(':').next().unwrap_or(&self.access_key_id), 
-            credential_scope, 
+            self.access_key_id
+                .split(':')
+                .next()
+                .unwrap_or(&self.access_key_id),
+            credential_scope,
             signed_headers,
             signature
         )
     }
 
     fn calculate_signature(&self, string_to_sign: &str, date: &str) -> String {
-        let date_key = hmac_sha256(format!("AWS4{}", self.secret_access_key).as_bytes(), date.as_bytes());
+        let date_key = hmac_sha256(
+            format!("AWS4{}", self.secret_access_key).as_bytes(),
+            date.as_bytes(),
+        );
         let date_region_key = hmac_sha256(&date_key, self.region.as_bytes());
         let date_region_service_key = hmac_sha256(&date_region_key, b"polly");
         let signing_key = hmac_sha256(&date_region_service_key, b"aws4_request");
-        
+
         let signature = hmac_sha256(&signing_key, string_to_sign.as_bytes());
         hex::encode(signature)
     }
@@ -490,7 +498,10 @@ pub struct DescribeVoicesParams {
     pub engine: Option<Engine>,
     #[serde(rename = "LanguageCode", skip_serializing_if = "Option::is_none")]
     pub language_code: Option<String>,
-    #[serde(rename = "IncludeAdditionalLanguageCodes", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "IncludeAdditionalLanguageCodes",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub include_additional_language_codes: Option<bool>,
     #[serde(rename = "NextToken", skip_serializing_if = "Option::is_none")]
     pub next_token: Option<String>,
@@ -516,7 +527,10 @@ pub struct Voice {
     pub language_name: String,
     #[serde(rename = "Name")]
     pub name: String,
-    #[serde(rename = "AdditionalLanguageCodes", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "AdditionalLanguageCodes",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub additional_language_codes: Option<Vec<String>>,
     #[serde(rename = "SupportedEngines")]
     pub supported_engines: Vec<String>,
@@ -704,9 +718,11 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, 
 
     trace!("AWS Polly API response: {}", response_text);
 
-    serde_json::from_str(&response_text)
-        .map_err(|e| {
-            error!("Failed to parse AWS Polly response: {}, Raw response: {}", e, response_text);
-            internal_error(format!("Failed to parse AWS Polly response: {}", e))
-        })
+    serde_json::from_str(&response_text).map_err(|e| {
+        error!(
+            "Failed to parse AWS Polly response: {}, Raw response: {}",
+            e, response_text
+        );
+        internal_error(format!("Failed to parse AWS Polly response: {}", e))
+    })
 }

@@ -66,14 +66,12 @@ pub fn tts_error_from_status(status: StatusCode) -> TtsError {
         StatusCode::BAD_REQUEST => TtsError::InvalidText("Bad request".to_string()),
         StatusCode::UNAUTHORIZED => TtsError::Unauthorized("Authentication failed".to_string()),
         StatusCode::FORBIDDEN => TtsError::AccessDenied("Access denied".to_string()),
-        StatusCode::PAYMENT_REQUIRED => {
-            TtsError::QuotaExceeded(QuotaInfo {
-                used: 0,
-                limit: 0,
-                reset_time: 0,
-                unit: QuotaUnit::Characters,
-            })
-        }
+        StatusCode::PAYMENT_REQUIRED => TtsError::QuotaExceeded(QuotaInfo {
+            used: 0,
+            limit: 0,
+            reset_time: 0,
+            unit: QuotaUnit::Characters,
+        }),
         StatusCode::UNPROCESSABLE_ENTITY => {
             TtsError::SynthesisFailed("Unable to process synthesis request".to_string())
         }

@@ -5,7 +5,8 @@ use crate::client::{
 use golem_tts::golem::tts::advanced::{AgeCategory, AudioSample, VoiceDesignParams};
 use golem_tts::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
 use golem_tts::golem::tts::types::{
-    AudioFormat, SynthesisMetadata, SynthesisResult, TextInput, TextType, TtsError, VoiceGender, VoiceQuality, VoiceSettings,
+    AudioFormat, SynthesisMetadata, SynthesisResult, TextInput, TextType, TtsError, VoiceGender,
+    VoiceQuality, VoiceSettings,
 };
 use golem_tts::golem::tts::voices::{LanguageInfo, VoiceFilter, VoiceInfo};
 
@@ -14,7 +15,7 @@ pub fn estimate_audio_duration(audio_data: &[u8], _sample_rate: u32) -> f32 {
         return 0.0;
     }
 
-    let estimated_bitrate_bps = 96000;  
+    let estimated_bitrate_bps = 96000;
     let bytes_per_second = estimated_bitrate_bps / 8;
 
     (audio_data.len() as f32) / (bytes_per_second as f32)
@@ -92,7 +93,7 @@ fn detect_voice_language(voice: &ElevenLabsVoice) -> String {
 
     match voice.category.to_lowercase().as_str() {
         "multilingual" => "en".to_string(),
-        _ => "en".to_string(),        
+        _ => "en".to_string(),
     }
 }
 
@@ -295,7 +296,7 @@ fn accent_to_language_code(accent: &str) -> String {
         "mexican" | "argentinian" | "colombian" => "es".to_string(),
         "parisian" | "canadian" => "fr".to_string(),
         "bavarian" | "austrian" => "de".to_string(),
-        _ => "en".to_string(), 
+        _ => "en".to_string(),
     }
 }
 
@@ -320,15 +321,22 @@ pub fn synthesis_options_to_tts_request(
     model_version: &str,
 ) -> (TextToSpeechRequest, Option<TextToSpeechParams>) {
     let supports_language_code = !model_version.contains("multilingual");
-    
+
     println!("[DEBUG] ElevenLabs synthesis_options_to_tts_request - Model compatibility check:");
     println!("[DEBUG]   Model: {}", model_version);
-    println!("[DEBUG]   Supports language_code: {}", supports_language_code);
-    
+    println!(
+        "[DEBUG]   Supports language_code: {}",
+        supports_language_code
+    );
+
     let default_request = TextToSpeechRequest {
         text: String::new(),
         model_id: Some(model_version.to_string()),
-        language_code: if supports_language_code { Some("en".to_string()) } else { None }, 
+        language_code: if supports_language_code {
+            Some("en".to_string())
+        } else {
+            None
+        },
         voice_settings: None,
         pronunciation_dictionary_locators: None,
         seed: None,
@@ -337,8 +345,8 @@ pub fn synthesis_options_to_tts_request(
         previous_request_ids: None,
         next_request_ids: None,
         apply_text_normalization: Some("auto".to_string()),
-        apply_language_text_normalization: Some(false), 
-        use_pvc_as_ivc: Some(false),  
+        apply_language_text_normalization: Some(false),
+        use_pvc_as_ivc: Some(false),
     };
 
     let default_params = TextToSpeechParams {
@@ -386,13 +394,19 @@ pub fn voice_settings_to_elevenlabs(settings: VoiceSettings) -> ElevenLabsVoiceS
         use_speaker_boost: None,
         speed: None,
     };
-    
+
     println!("[DEBUG] ElevenLabs voice_settings_to_elevenlabs conversion:");
-    println!("[DEBUG]   Original stability: {:?} -> Clamped: {:?}", settings.stability, elevenlabs_settings.stability);
-    println!("[DEBUG]   Original similarity: {:?} -> Clamped: {:?}", settings.similarity, elevenlabs_settings.similarity_boost);
+    println!(
+        "[DEBUG]   Original stability: {:?} -> Clamped: {:?}",
+        settings.stability, elevenlabs_settings.stability
+    );
+    println!(
+        "[DEBUG]   Original similarity: {:?} -> Clamped: {:?}",
+        settings.similarity, elevenlabs_settings.similarity_boost
+    );
     println!("[DEBUG]   Style disabled for compatibility");
     println!("[DEBUG]   Speed disabled for compatibility");
-    
+
     elevenlabs_settings
 }
 
@@ -401,11 +415,11 @@ pub fn audio_format_to_string(format: AudioFormat) -> String {
         AudioFormat::Mp3 => "mp3_22050_32".to_string(),
         AudioFormat::Wav => "pcm_22050".to_string(),
         AudioFormat::Pcm => "pcm_22050".to_string(),
-        AudioFormat::OggOpus => "mp3_22050_32".to_string(), 
-        AudioFormat::Aac => "mp3_22050_32".to_string(),  
-        AudioFormat::Flac => "pcm_22050".to_string(), 
-        AudioFormat::Mulaw => "pcm_22050".to_string(), 
-        AudioFormat::Alaw => "pcm_22050".to_string(),  
+        AudioFormat::OggOpus => "mp3_22050_32".to_string(),
+        AudioFormat::Aac => "mp3_22050_32".to_string(),
+        AudioFormat::Flac => "pcm_22050".to_string(),
+        AudioFormat::Mulaw => "pcm_22050".to_string(),
+        AudioFormat::Alaw => "pcm_22050".to_string(),
     }
 }
 
@@ -483,7 +497,7 @@ pub fn infer_gender_from_name(name: &str) -> Option<VoiceGender> {
     } else if name_lower.contains("male") || name_lower.contains("man") {
         Some(VoiceGender::Male)
     } else {
-        None 
+        None
     }
 }
 
@@ -664,14 +678,14 @@ pub fn validate_text_input(text: &str, model: Option<&str>) -> ValidationResult 
 pub fn get_max_chars_for_model(model: Option<&str>) -> usize {
     if let Some(m) = model {
         if m.contains("turbo") {
-            2500 
+            2500
         } else if m.contains("multilingual") {
             5000
         } else {
             4500
         }
     } else {
-        4500 
+        4500
     }
 }
 
@@ -684,7 +698,7 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
     let mut current_chunk = String::new();
 
     let paragraphs: Vec<&str> = text.split("\n\n").collect();
-    
+
     for paragraph in paragraphs {
         if paragraph.len() > max_chunk_size {
             let sentences = split_by_sentences(paragraph);
@@ -692,7 +706,7 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
                 if sentence.len() > max_chunk_size {
                     let clauses = split_by_clauses(&sentence, max_chunk_size);
                     for clause in clauses {
-                        if current_chunk.len() + clause.len() + 1 <= max_chunk_size {
+                        if current_chunk.len() + clause.len() < max_chunk_size {
                             if !current_chunk.is_empty() {
                                 current_chunk.push(' ');
                             }
@@ -705,34 +719,30 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
                             current_chunk = clause;
                         }
                     }
-                } else {
-                    if current_chunk.len() + sentence.len() + 1 <= max_chunk_size {
-                        if !current_chunk.is_empty() {
-                            current_chunk.push(' ');
-                        }
-                        current_chunk.push_str(&sentence);
-                    } else {
-                        if !current_chunk.is_empty() {
-                            chunks.push(current_chunk.trim().to_string());
-                            current_chunk.clear();
-                        }
-                        current_chunk = sentence;
+                } else if current_chunk.len() + sentence.len() < max_chunk_size {
+                    if !current_chunk.is_empty() {
+                        current_chunk.push(' ');
                     }
+                    current_chunk.push_str(&sentence);
+                } else {
+                    if !current_chunk.is_empty() {
+                        chunks.push(current_chunk.trim().to_string());
+                        current_chunk.clear();
+                    }
+                    current_chunk = sentence;
                 }
             }
+        } else if current_chunk.len() + paragraph.len() + 2 <= max_chunk_size {
+            if !current_chunk.is_empty() {
+                current_chunk.push_str("\n\n");
+            }
+            current_chunk.push_str(paragraph);
         } else {
-            if current_chunk.len() + paragraph.len() + 2 <= max_chunk_size {
-                if !current_chunk.is_empty() {
-                    current_chunk.push_str("\n\n");
-                }
-                current_chunk.push_str(paragraph);
-            } else {
-                if !current_chunk.is_empty() {
-                    chunks.push(current_chunk.trim().to_string());
-                    current_chunk.clear();
-                }
-                current_chunk = paragraph.to_string();
+            if !current_chunk.is_empty() {
+                chunks.push(current_chunk.trim().to_string());
+                current_chunk.clear();
             }
+            current_chunk = paragraph.to_string();
         }
     }
 
@@ -740,17 +750,20 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
         chunks.push(current_chunk.trim().to_string());
     }
 
-    chunks.into_iter().filter(|chunk| !chunk.trim().is_empty()).collect()
+    chunks
+        .into_iter()
+        .filter(|chunk| !chunk.trim().is_empty())
+        .collect()
 }
 
 fn split_by_sentences(text: &str) -> Vec<String> {
     let mut sentences = Vec::new();
     let mut current_sentence = String::new();
     let mut chars = text.chars().peekable();
-    
+
     while let Some(ch) = chars.next() {
         current_sentence.push(ch);
-        
+
         if matches!(ch, '.' | '!' | '?') {
             if let Some(&next_char) = chars.peek() {
                 if next_char.is_whitespace() || next_char.is_ascii_uppercase() {
@@ -763,26 +776,29 @@ fn split_by_sentences(text: &str) -> Vec<String> {
             }
         }
     }
-    
+
     if !current_sentence.trim().is_empty() {
         sentences.push(current_sentence.trim().to_string());
     }
-    
-    sentences.into_iter().filter(|s| !s.trim().is_empty()).collect()
+
+    sentences
+        .into_iter()
+        .filter(|s| !s.trim().is_empty())
+        .collect()
 }
 
 fn split_by_clauses(text: &str, max_size: usize) -> Vec<String> {
     if text.len() <= max_size {
         return vec![text.to_string()];
     }
-    
+
     let mut clauses = Vec::new();
     let mut current_clause = String::new();
     let mut chars = text.chars().peekable();
-    
+
     while let Some(ch) = chars.next() {
         current_clause.push(ch);
-        
+
         if matches!(ch, ',' | ';' | ':') {
             if let Some(&next_char) = chars.peek() {
                 if next_char.is_whitespace() {
@@ -802,12 +818,15 @@ fn split_by_clauses(text: &str, max_size: usize) -> Vec<String> {
             }
         }
     }
-    
+
     if !current_clause.trim().is_empty() {
         clauses.push(current_clause.trim().to_string());
     }
-    
-    clauses.into_iter().filter(|c| !c.trim().is_empty()).collect()
+
+    clauses
+        .into_iter()
+        .filter(|c| !c.trim().is_empty())
+        .collect()
 }
 
 pub fn validate_synthesis_input(
@@ -815,7 +834,9 @@ pub fn validate_synthesis_input(
     options: Option<&SynthesisOptions>,
 ) -> Result<(), TtsError> {
     if input.content.trim().is_empty() {
-        return Err(TtsError::InvalidText("Text content cannot be empty".to_string()));
+        return Err(TtsError::InvalidText(
+            "Text content cannot be empty".to_string(),
+        ));
     }
 
     if input.text_type == TextType::Ssml {
@@ -826,9 +847,10 @@ pub fn validate_synthesis_input(
 
     if let Some(ref language) = input.language {
         if !is_supported_language(language) {
-            return Err(TtsError::UnsupportedLanguage(
-                format!("Language '{}' is not supported by ElevenLabs", language)
-            ));
+            return Err(TtsError::UnsupportedLanguage(format!(
+                "Language '{}' is not supported by ElevenLabs",
+                language
+            )));
         }
     }
 
@@ -852,7 +874,7 @@ pub fn validate_ssml_content(content: &str) -> Result<(), String> {
             let mut tag = String::new();
             let mut is_closing = false;
             let mut is_self_closing = false;
-            
+
             if chars.peek() == Some(&'/') {
                 is_closing = true;
                 chars.next();
@@ -876,11 +898,11 @@ pub fn validate_ssml_content(content: &str) -> Result<(), String> {
             if full_tag_content.ends_with('/') {
                 is_self_closing = true;
                 if tag.ends_with('/') {
-                    tag = tag[..tag.len()-1].to_string();
+                    tag = tag[..tag.len() - 1].to_string();
                 }
             }
 
-            while let Some(ch) = chars.next() {
+            for ch in chars.by_ref() {
                 if ch == '>' {
                     break;
                 }
@@ -894,10 +916,12 @@ pub fn validate_ssml_content(content: &str) -> Result<(), String> {
                 } else {
                     return Err(format!("Unmatched closing tag: </{}>", tag));
                 }
-            } else if !tag.is_empty() && !tag.starts_with('!') && !tag.starts_with('?') {
-                if !is_self_closing {
-                    tag_stack.push(tag);
-                }
+            } else if !tag.is_empty()
+                && !tag.starts_with('!')
+                && !tag.starts_with('?')
+                && !is_self_closing
+            {
+                tag_stack.push(tag);
             }
         }
     }
@@ -911,23 +935,10 @@ pub fn validate_ssml_content(content: &str) -> Result<(), String> {
 
 pub fn is_supported_language(language: &str) -> bool {
     let supported_languages = [
-        "en", "en-US", "en-GB", "en-AU", "en-CA",
-        "es", "es-ES", "es-MX", "es-AR",
-        "fr", "fr-FR", "fr-CA",
-        "de", "de-DE", "de-AT", "de-CH",
-        "it", "it-IT",
-        "pt", "pt-PT", "pt-BR",
-        "pl", "pl-PL",
-        "zh", "zh-CN", "zh-TW",
-        "ja", "ja-JP",
-        "hi", "hi-IN",
-        "ko", "ko-KR",
-        "nl", "nl-NL",
-        "tr", "tr-TR",
-        "sv", "sv-SE",
-        "da", "da-DK",
-        "no", "no-NO",
-        "fi", "fi-FI",
+        "en", "en-US", "en-GB", "en-AU", "en-CA", "es", "es-ES", "es-MX", "es-AR", "fr", "fr-FR",
+        "fr-CA", "de", "de-DE", "de-AT", "de-CH", "it", "it-IT", "pt", "pt-PT", "pt-BR", "pl",
+        "pl-PL", "zh", "zh-CN", "zh-TW", "ja", "ja-JP", "hi", "hi-IN", "ko", "ko-KR", "nl",
+        "nl-NL", "tr", "tr-TR", "sv", "sv-SE", "da", "da-DK", "no", "no-NO", "fi", "fi-FI",
     ];
 
     supported_languages.contains(&language)
@@ -935,32 +946,43 @@ pub fn is_supported_language(language: &str) -> bool {
 
 pub fn validate_voice_settings(settings: &VoiceSettings) -> Result<(), String> {
     if let Some(speed) = settings.speed {
-        if speed < 0.1 || speed > 5.0 {
-            return Err(format!("Speed value {} is out of valid range (0.1-5.0)", speed));
+        if !(0.1..=5.0).contains(&speed) {
+            return Err(format!(
+                "Speed value {} is out of valid range (0.1-5.0)",
+                speed
+            ));
         }
     }
 
     if let Some(pitch) = settings.pitch {
-        if pitch < -50.0 || pitch > 50.0 {
-            return Err(format!("Pitch value {} is out of valid range (-50.0 to 50.0)", pitch));
+        if !(-50.0..=50.0).contains(&pitch) {
+            return Err(format!(
+                "Pitch value {} is out of valid range (-50.0 to 50.0)",
+                pitch
+            ));
         }
     }
 
     if let Some(stability) = settings.stability {
-        if stability < 0.0 || stability > 1.0 {
-            return Err(format!("Stability value {} is out of valid range (0.0-1.0)", stability));
+        if !(0.0..=1.0).contains(&stability) {
+            return Err(format!(
+                "Stability value {} is out of valid range (0.0-1.0)",
+                stability
+            ));
         }
     }
 
     if let Some(similarity) = settings.similarity {
-        if similarity < 0.0 || similarity > 1.0 {
-            return Err(format!("Similarity value {} is out of valid range (0.0-1.0)", similarity));
+        if !(0.0..=1.0).contains(&similarity) {
+            return Err(format!(
+                "Similarity value {} is out of valid range (0.0-1.0)",
+                similarity
+            ));
         }
     }
 
     Ok(())
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -1033,7 +1055,8 @@ mod tests {
 
     #[test]
     fn test_text_chunking() {
-        let long_text = "This is a test. This is another sentence. And here's a third one. ".repeat(100);
+        let long_text =
+            "This is a test. This is another sentence. And here's a third one. ".repeat(100);
         let chunks = split_text_intelligently(&long_text, 1000);
         assert!(chunks.len() > 1);
         for chunk in &chunks {
@@ -1045,7 +1068,10 @@ mod tests {
     #[test]
     fn test_get_max_chars_for_model() {
         assert_eq!(get_max_chars_for_model(Some("eleven_turbo_v2")), 2500);
-        assert_eq!(get_max_chars_for_model(Some("eleven_multilingual_v2")), 5000);
+        assert_eq!(
+            get_max_chars_for_model(Some("eleven_multilingual_v2")),
+            5000
+        );
         assert_eq!(get_max_chars_for_model(Some("eleven_monolingual_v1")), 4500);
         assert_eq!(get_max_chars_for_model(None), 4500);
     }
@@ -1053,16 +1079,16 @@ mod tests {
     #[test]
     fn test_validate_ssml_content() {
         assert!(validate_ssml_content("<speak>Hello <break time='1s'/> world</speak>").is_ok());
-        
+
         assert!(validate_ssml_content("<speak>Hello <break>world</speak>").is_err());
-        
+
         assert!(validate_ssml_content("<speak>Hello world").is_err());
     }
 
     #[test]
     fn test_validate_voice_settings() {
         use golem_tts::golem::tts::types::VoiceSettings;
-        
+
         let settings = VoiceSettings {
             speed: Some(1.0),
             pitch: Some(0.0),
@@ -1072,7 +1098,7 @@ mod tests {
             style: Some(0.3),
         };
         assert!(validate_voice_settings(&settings).is_ok());
-        
+
         let invalid_settings = VoiceSettings {
             speed: None,
             pitch: None,

@@ -1,7 +1,7 @@
 use crate::client::{AudioEncoding, GoogleTtsApi, Voice as GoogleVoice};
 use crate::conversions::{
-    audio_data_to_synthesis_result, combine_audio_chunks, create_validation_result, estimate_audio_duration,
-    google_voice_to_voice_info, google_voices_to_language_info, 
+    audio_data_to_synthesis_result, combine_audio_chunks, create_validation_result,
+    estimate_audio_duration, google_voice_to_voice_info, google_voices_to_language_info,
     split_text_intelligently, synthesis_options_to_tts_request, validate_synthesis_input,
     voice_filter_to_language_code,
 };
@@ -86,7 +86,7 @@ impl GuestVoice for GoogleVoiceImpl {
     }
 
     fn supports_ssml(&self) -> bool {
-        true 
+        true
     }
 
     fn get_sample_rates(&self) -> Vec<u32> {
@@ -688,7 +688,7 @@ impl SynthesisGuest for GoogleComponent {
 
         if input.content.len() > 5000 {
             let chunks = split_text_intelligently(&input.content, 5000);
-            
+
             let mut audio_chunks = Vec::new();
             for chunk in chunks {
                 let chunk_input = TextInput {
@@ -697,30 +697,30 @@ impl SynthesisGuest for GoogleComponent {
                     text_type: input.text_type,
                 };
                 let (chunk_request, _) = synthesis_options_to_tts_request(
-                    &chunk_input, 
-                    &voice_name, 
-                    &language_code, 
-                    options.clone()
+                    &chunk_input,
+                    &voice_name,
+                    &language_code,
+                    options.clone(),
                 );
                 let chunk_audio = client.text_to_speech(&chunk_request)?;
                 audio_chunks.push(chunk_audio);
             }
-            
+
             let format = options
                 .as_ref()
                 .and_then(|o| o.audio_config)
                 .map(|ac| ac.format)
                 .unwrap_or(AudioFormat::Mp3);
-            
+
             let combined_audio = combine_audio_chunks(audio_chunks, &format);
-            
+
             let encoding = &AudioEncoding::Mp3;
             let sample_rate = options
                 .as_ref()
                 .and_then(|o| o.audio_config)
                 .and_then(|ac| ac.sample_rate)
                 .unwrap_or(22050);
-            
+
             Ok(audio_data_to_synthesis_result(
                 combined_audio,
                 &input.content,
@@ -769,7 +769,7 @@ impl SynthesisGuest for GoogleComponent {
 
             if input.content.len() > 5000 {
                 let chunks = split_text_intelligently(&input.content, 5000);
-                
+
                 let mut audio_chunks = Vec::new();
                 for chunk in chunks {
                     let chunk_input = TextInput {
@@ -786,22 +786,22 @@ impl SynthesisGuest for GoogleComponent {
                     let chunk_audio = client.text_to_speech(&chunk_request)?;
                     audio_chunks.push(chunk_audio);
                 }
-                
+
                 let format = options
                     .as_ref()
                     .and_then(|o| o.audio_config)
                     .map(|ac| ac.format)
                     .unwrap_or(AudioFormat::Mp3);
-                
+
                 let combined_audio = combine_audio_chunks(audio_chunks, &format);
-                
+
                 let encoding = &AudioEncoding::Mp3;
                 let sample_rate = options
                     .as_ref()
                     .and_then(|o| o.audio_config)
                     .and_then(|ac| ac.sample_rate)
                     .unwrap_or(22050);
-                
+
                 results.push(audio_data_to_synthesis_result(
                     combined_audio,
                     &input.content,

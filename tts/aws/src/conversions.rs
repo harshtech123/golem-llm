@@ -4,7 +4,8 @@ use crate::client::{
 };
 use golem_tts::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
 use golem_tts::golem::tts::types::{
-    AudioFormat, SynthesisMetadata, SynthesisResult, VoiceGender, VoiceQuality, TtsError, TextType as TtsTextType, VoiceSettings,
+    AudioFormat, SynthesisMetadata, SynthesisResult, TextType as TtsTextType, TtsError,
+    VoiceGender, VoiceQuality, VoiceSettings,
 };
 use golem_tts::golem::tts::voices::{LanguageInfo, VoiceFilter, VoiceInfo};
 use log::trace;
@@ -14,7 +15,9 @@ pub fn validate_synthesis_input(
     options: Option<&SynthesisOptions>,
 ) -> Result<(), TtsError> {
     if input.content.trim().is_empty() {
-        return Err(TtsError::InvalidText("Text content cannot be empty".to_string()));
+        return Err(TtsError::InvalidText(
+            "Text content cannot be empty".to_string(),
+        ));
     }
 
     if input.text_type == TtsTextType::Ssml {
@@ -26,7 +29,8 @@ pub fn validate_synthesis_input(
     if let Some(ref language) = input.language {
         if !is_supported_language(language) {
             return Err(TtsError::UnsupportedLanguage(format!(
-                "Language '{}' is not supported by AWS Polly", language
+                "Language '{}' is not supported by AWS Polly",
+                language
             )));
         }
     }
@@ -49,10 +53,10 @@ pub fn validate_ssml_content(content: &str) -> Result<(), String> {
             let mut tag = String::new();
             let mut is_closing = false;
             let mut is_self_closing = false;
-            
+
             if chars.peek() == Some(&'/') {
                 is_closing = true;
-                chars.next(); 
+                chars.next();
             }
 
             let mut full_tag_content = String::new();
@@ -73,11 +77,11 @@ pub fn validate_ssml_content(content: &str) -> Result<(), String> {
             if full_tag_content.ends_with('/') {
                 is_self_closing = true;
                 if tag.ends_with('/') {
-                    tag = tag[..tag.len()-1].to_string();
+                    tag = tag[..tag.len() - 1].to_string();
                 }
             }
 
-            while let Some(ch) = chars.next() {
+            for ch in chars.by_ref() {
                 if ch == '>' {
                     break;
                 }
@@ -91,10 +95,12 @@ pub fn validate_ssml_content(content: &str) -> Result<(), String> {
                 } else {
                     return Err(format!("Unmatched closing tag: </{}>", tag));
                 }
-            } else if !tag.is_empty() && !tag.starts_with('!') && !tag.starts_with('?') {
-                if !is_self_closing {
-                    tag_stack.push(tag);
-                }
+            } else if !tag.is_empty()
+                && !tag.starts_with('!')
+                && !tag.starts_with('?')
+                && !is_self_closing
+            {
+                tag_stack.push(tag);
             }
         }
     }
@@ -108,66 +114,58 @@ pub fn validate_ssml_content(content: &str) -> Result<(), String> {
 
 pub fn is_supported_language(language: &str) -> bool {
     let supported_languages = [
-        "en-US", "en-GB", "en-AU", "en-IN",
-        "es-ES", "es-MX", "es-US",
-        "fr-FR", "fr-CA",
-        "de-DE", "it-IT",
-        "pt-PT", "pt-BR",
-        "ja-JP", "ko-KR",
-        "zh-CN", "cmn-CN",
-        "ar", "hi-IN", "ru-RU",
-        "nl-NL", "pl-PL", "sv-SE",
-        "nb-NO", "da-DK", "tr-TR",
-        "ro-RO", "cy-GB", "is-IS"
+        "en-US", "en-GB", "en-AU", "en-IN", "es-ES", "es-MX", "es-US", "fr-FR", "fr-CA", "de-DE",
+        "it-IT", "pt-PT", "pt-BR", "ja-JP", "ko-KR", "zh-CN", "cmn-CN", "ar", "hi-IN", "ru-RU",
+        "nl-NL", "pl-PL", "sv-SE", "nb-NO", "da-DK", "tr-TR", "ro-RO", "cy-GB", "is-IS",
     ];
     supported_languages.contains(&language)
 }
 
 pub fn validate_voice_settings(settings: &VoiceSettings) -> Result<(), TtsError> {
     if let Some(speed) = settings.speed {
-        if speed < 0.25 || speed > 4.0 {
+        if !(0.25..=4.0).contains(&speed) {
             return Err(TtsError::InvalidConfiguration(
-                "Speed must be between 0.25 and 4.0".to_string()
+                "Speed must be between 0.25 and 4.0".to_string(),
             ));
         }
     }
 
     if let Some(pitch) = settings.pitch {
-        if pitch < -10.0 || pitch > 10.0 {
+        if !(-10.0..=10.0).contains(&pitch) {
             return Err(TtsError::InvalidConfiguration(
-                "Pitch must be between -10.0 and +10.0".to_string()
+                "Pitch must be between -10.0 and +10.0".to_string(),
             ));
         }
     }
 
     if let Some(volume) = settings.volume {
-        if volume < -20.0 || volume > 20.0 {
+        if !(-20.0..=20.0).contains(&volume) {
             return Err(TtsError::InvalidConfiguration(
-                "Volume must be between -20.0 and +20.0".to_string()
+                "Volume must be between -20.0 and +20.0".to_string(),
             ));
         }
     }
 
     if let Some(stability) = settings.stability {
-        if stability < 0.0 || stability > 1.0 {
+        if !(0.0..=1.0).contains(&stability) {
             return Err(TtsError::InvalidConfiguration(
-                "Stability must be between 0.0 and 1.0".to_string()
+                "Stability must be between 0.0 and 1.0".to_string(),
             ));
         }
     }
 
     if let Some(similarity) = settings.similarity {
-        if similarity < 0.0 || similarity > 1.0 {
+        if !(0.0..=1.0).contains(&similarity) {
             return Err(TtsError::InvalidConfiguration(
-                "Similarity must be between 0.0 and 1.0".to_string()
+                "Similarity must be between 0.0 and 1.0".to_string(),
             ));
         }
     }
 
     if let Some(style) = settings.style {
-        if style < 0.0 || style > 1.0 {
+        if !(0.0..=1.0).contains(&style) {
             return Err(TtsError::InvalidConfiguration(
-                "Style must be between 0.0 and 1.0".to_string()
+                "Style must be between 0.0 and 1.0".to_string(),
             ));
         }
     }
@@ -182,14 +180,14 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
 
     let mut chunks = Vec::new();
     let mut current_chunk = String::new();
-    
+
     let mut sentences = Vec::new();
     let mut current_sentence = String::new();
     let mut chars = text.chars().peekable();
-    
+
     while let Some(ch) = chars.next() {
         current_sentence.push(ch);
-        
+
         if matches!(ch, '.' | '!' | '?') {
             if chars.peek().map(|c| c.is_whitespace()).unwrap_or(true) {
                 sentences.push(current_sentence.trim().to_string());
@@ -203,7 +201,7 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
             }
         }
     }
-    
+
     let remaining = current_sentence.trim();
     if !remaining.is_empty() {
         sentences.push(remaining.to_string());
@@ -256,7 +254,7 @@ pub fn split_by_words(text: &str, max_chunk_size: usize) -> Vec<String> {
                 chunks.push(current_chunk.trim().to_string());
                 current_chunk.clear();
             }
-            
+
             if word.len() > max_chunk_size {
                 chunks.push(word[..max_chunk_size].to_string());
             } else {
@@ -287,18 +285,10 @@ pub fn combine_audio_chunks(chunks: Vec<Vec<u8>>, format: &AudioFormat) -> Vec<u
     }
 
     match format {
-        AudioFormat::Pcm => {
-            chunks.into_iter().flatten().collect()
-        }
-        AudioFormat::Mp3 => {           
-            chunks.into_iter().flatten().collect()
-        }
-        AudioFormat::OggOpus => {
-            chunks.into_iter().flatten().collect()
-        }
-        _ => {
-            chunks.into_iter().flatten().collect()
-        }
+        AudioFormat::Pcm => chunks.into_iter().flatten().collect(),
+        AudioFormat::Mp3 => chunks.into_iter().flatten().collect(),
+        AudioFormat::OggOpus => chunks.into_iter().flatten().collect(),
+        _ => chunks.into_iter().flatten().collect(),
     }
 }
 
@@ -309,13 +299,13 @@ pub fn estimate_audio_duration(audio_data: &[u8], sample_rate: u32, format: &Aud
 
     match format {
         AudioFormat::Mp3 => {
-            let estimated_bitrate_bps = 128000; 
+            let estimated_bitrate_bps = 128000;
             let bytes_per_second = estimated_bitrate_bps / 8;
             (audio_data.len() as f32) / (bytes_per_second as f32)
         }
         AudioFormat::Wav | AudioFormat::Pcm => {
             let channels = 1;
-            let bytes_per_sample = 2; 
+            let bytes_per_sample = 2;
             let bytes_per_second = sample_rate * channels * bytes_per_sample;
             (audio_data.len() as f32) / (bytes_per_second as f32)
         }
@@ -325,7 +315,7 @@ pub fn estimate_audio_duration(audio_data: &[u8], sample_rate: u32, format: &Aud
             (audio_data.len() as f32) / (bytes_per_second as f32)
         }
         _ => {
-            let estimated_chars = audio_data.len() / 100; 
+            let estimated_chars = audio_data.len() / 100;
             (estimated_chars as f32 / 150.0) * 60.0
         }
     }
@@ -344,7 +334,7 @@ pub fn voice_filter_to_describe_params(
 
 pub fn aws_voice_to_voice_info(voice: AwsVoice) -> VoiceInfo {
     trace!("Converting AWS voice: {} ({})", voice.name, voice.id);
-    
+
     let gender = match voice.gender.to_lowercase().as_str() {
         "male" => VoiceGender::Male,
         "female" => VoiceGender::Female,
@@ -363,7 +353,7 @@ pub fn aws_voice_to_voice_info(voice: AwsVoice) -> VoiceInfo {
 
     let use_cases = infer_use_cases_from_aws_voice(&voice);
 
-    let sample_rate = 22050; 
+    let sample_rate = 22050;
 
     VoiceInfo {
         id: voice.id.clone(),
@@ -375,7 +365,7 @@ pub fn aws_voice_to_voice_info(voice: AwsVoice) -> VoiceInfo {
         description: Some(format!("{} voice from AWS Polly", voice.language_name)),
         provider: "AWS Polly".to_string(),
         sample_rate,
-        is_custom: false, 
+        is_custom: false,
         is_cloned: false,
         preview_url: None,
         use_cases,
@@ -483,7 +473,10 @@ pub fn synthesis_options_to_polly_params(
                     params.speech_mark_types = Some(speech_marks);
                 }
                 _ => {
-                    trace!("Timing marks requested but not supported for format {:?}, ignoring", params.output_format);
+                    trace!(
+                        "Timing marks requested but not supported for format {:?}, ignoring",
+                        params.output_format
+                    );
                 }
             }
         }
@@ -538,7 +531,7 @@ pub fn audio_data_to_synthesis_result(
 pub fn _create_validation_result(is_valid: bool, message: Option<String>) -> ValidationResult {
     ValidationResult {
         is_valid,
-        character_count: 0,  
+        character_count: 0,
         estimated_duration: None,
         warnings: Vec::new(),
         errors: if is_valid {

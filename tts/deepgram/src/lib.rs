@@ -1,8 +1,8 @@
 use crate::client::{get_available_models, DeepgramTtsApi, Model, RateLimitConfig};
 use crate::conversions::{
     audio_data_to_synthesis_result, deepgram_model_to_voice_info, estimate_audio_duration,
-    models_to_language_info, synthesis_options_to_tts_request, validate_text_input,
-    validate_synthesis_request, split_text_intelligently, get_max_chars_for_model,
+    get_max_chars_for_model, models_to_language_info, split_text_intelligently,
+    synthesis_options_to_tts_request, validate_synthesis_request, validate_text_input,
 };
 use golem_rust::wasm_rpc::Pollable;
 use golem_tts::config::with_config_key;
@@ -20,8 +20,8 @@ use golem_tts::golem::tts::synthesis::{
     Guest as SynthesisGuest, SynthesisOptions, ValidationResult,
 };
 use golem_tts::golem::tts::types::{
-    AudioChunk, AudioFormat, LanguageCode, SynthesisResult, SynthesisMetadata, TextInput, TimingInfo, TtsError,
-    VoiceGender, VoiceQuality, VoiceSettings,
+    AudioChunk, AudioFormat, LanguageCode, SynthesisMetadata, SynthesisResult, TextInput,
+    TimingInfo, TtsError, VoiceGender, VoiceQuality, VoiceSettings,
 };
 use golem_tts::golem::tts::voices::{
     Guest as VoicesGuest, GuestVoice, GuestVoiceResults, LanguageInfo, Voice, VoiceFilter,
@@ -84,7 +84,7 @@ impl GuestVoice for DeepgramVoiceImpl {
     }
 
     fn supports_ssml(&self) -> bool {
-        false  
+        false
     }
 
     fn get_sample_rates(&self) -> Vec<u32> {
@@ -187,7 +187,9 @@ impl DeepgramSynthesisStream {
     fn new(voice_id: String, client: DeepgramTtsApi, options: Option<SynthesisOptions>) -> Self {
         let (request, params) = synthesis_options_to_tts_request(String::new(), options)
             .unwrap_or_else(|_| {
-                let request = crate::client::TextToSpeechRequest { text: String::new() };
+                let request = crate::client::TextToSpeechRequest {
+                    text: String::new(),
+                };
                 let params = Some(crate::client::TextToSpeechParams {
                     model: Some(voice_id.clone()),
                     encoding: Some("linear16".to_string()),
@@ -223,7 +225,7 @@ impl DeepgramSynthesisStream {
 impl GuestSynthesisStream for DeepgramSynthesisStream {
     fn send_text(&self, input: TextInput) -> Result<(), TtsError> {
         println!("[DEEPGRAM] send_text called with: '{}'", input.content);
-        
+
         if self.finished.get() {
             println!("[DEEPGRAM] Stream already finished, returning error");
             return Err(TtsError::InvalidConfiguration(
@@ -234,7 +236,10 @@ impl GuestSynthesisStream for DeepgramSynthesisStream {
         {
             let mut request_ref = self.current_request.borrow_mut();
             if let Some(mut request) = request_ref.take() {
-                println!("[DEEPGRAM] Updating request text from '{}' to '{}'", request.text, input.content);
+                println!(
+                    "[DEEPGRAM] Updating request text from '{}' to '{}'",
+                    request.text, input.content
+                );
                 request.text = input.content;
                 *request_ref = Some(request);
             } else {
@@ -248,17 +253,21 @@ impl GuestSynthesisStream for DeepgramSynthesisStream {
 
     fn finish(&self) -> Result<(), TtsError> {
         println!("[DEEPGRAM] finish() called");
-        
+
         if self.stream_started.get() {
             println!("[DEEPGRAM] Stream already started, returning OK");
-            return Ok(());  
+            return Ok(());
         }
 
         println!("[DEEPGRAM] Checking current request state...");
         let request_debug = self.current_request.borrow();
         match request_debug.as_ref() {
             Some(req) => {
-                println!("[DEEPGRAM] Request exists with text: '{}' (length: {})", req.text, req.text.len());
+                println!(
+                    "[DEEPGRAM] Request exists with text: '{}' (length: {})",
+                    req.text,
+                    req.text.len()
+                );
             }
             None => {
                 println!("[DEEPGRAM] No request found!");
@@ -271,14 +280,16 @@ impl GuestSynthesisStream for DeepgramSynthesisStream {
             println!("[DEEPGRAM] Current request text: '{}'", request.text);
             if !request.text.is_empty() {
                 println!("[DEEPGRAM] Making API call to Deepgram...");
-                
+
                 if let Some(params) = self.params.borrow().as_ref() {
-                    println!("[DEEPGRAM] Params - model: {:?}, encoding: {:?}, sample_rate: {:?}", 
-                        params.model, params.encoding, params.sample_rate);
+                    println!(
+                        "[DEEPGRAM] Params - model: {:?}, encoding: {:?}, sample_rate: {:?}",
+                        params.model, params.encoding, params.sample_rate
+                    );
                 } else {
                     println!("[DEEPGRAM] Warning: No params available");
                 }
-                
+
                 match self
                     .client
                     .text_to_speech_stream(request, self.params.borrow().as_ref())
@@ -296,7 +307,9 @@ impl GuestSynthesisStream for DeepgramSynthesisStream {
                 }
             } else {
                 println!("[DEEPGRAM] Request text is empty, no API call needed");
-                return Err(TtsError::InvalidText("No text provided for synthesis".to_string()));
+                return Err(TtsError::InvalidText(
+                    "No text provided for synthesis".to_string(),
+                ));
             }
         } else {
             println!("[DEEPGRAM] No current request available");
@@ -352,7 +365,7 @@ impl GuestSynthesisStream for DeepgramSynthesisStream {
                             data: chunk_data,
                             sequence_number: sequence,
                             is_final,
-                            timing_info: None, 
+                            timing_info: None,
                         };
 
                         return Ok(Some(chunk));
@@ -437,8 +450,7 @@ impl GuestVoiceConversionStream for DeepgramVoiceConversionStream {
         ))
     }
 
-    fn close(&self) {
-    }
+    fn close(&self) {}
 }
 
 struct DeepgramPronunciationLexicon {
@@ -628,7 +640,7 @@ impl DeepgramComponent {
             max_retries: 5,
             initial_delay: std::time::Duration::from_millis(500),
             max_delay: std::time::Duration::from_secs(60),
-            backoff_multiplier: 1.5,                      
+            backoff_multiplier: 1.5,
         };
         Self::create_client_with_rate_limit(batch_config)
     }
@@ -637,8 +649,8 @@ impl DeepgramComponent {
         let streaming_config = RateLimitConfig {
             max_retries: 3,
             initial_delay: std::time::Duration::from_millis(200),
-            max_delay: std::time::Duration::from_secs(5), 
-            backoff_multiplier: 2.0,                    
+            max_delay: std::time::Duration::from_secs(5),
+            backoff_multiplier: 2.0,
         };
         Self::create_client_with_rate_limit(streaming_config)
     }
@@ -814,7 +826,7 @@ impl SynthesisGuest for DeepgramComponent {
         let voice_id = voice.get::<DeepgramVoiceImpl>().get_id();
 
         let max_chars = get_max_chars_for_model(Some(&voice_id));
-        
+
         if input.content.len() <= max_chars {
             let (request, mut params) =
                 synthesis_options_to_tts_request(input.content.clone(), options)?;
@@ -857,17 +869,18 @@ impl SynthesisGuest for DeepgramComponent {
                     p.model = Some(voice_id.clone());
                 }
 
-                let tts_response = client.text_to_speech_with_metadata(&request, params.as_ref())?;
-                
+                let tts_response =
+                    client.text_to_speech_with_metadata(&request, params.as_ref())?;
+
                 combined_audio.extend_from_slice(&tts_response.audio_data);
-                
+
                 total_characters += chunk.chars().count() as u32;
                 total_words += chunk.split_whitespace().count() as u32;
-                
+
                 let encoding = params
                     .as_ref()
                     .and_then(|p| p.encoding.as_ref())
-                    .map(|s| s.clone())
+                    .cloned()
                     .unwrap_or_else(|| "linear16".to_string());
                 let sample_rate = params.as_ref().and_then(|p| p.sample_rate).unwrap_or(24000);
                 total_duration += estimate_audio_duration(&tts_response.audio_data, sample_rate);
@@ -877,7 +890,7 @@ impl SynthesisGuest for DeepgramComponent {
                     let silence_bytes = match encoding.as_str() {
                         "linear16" => silence_samples * 2,
                         "mulaw" | "alaw" => silence_samples,
-                        _ => silence_samples * 2, 
+                        _ => silence_samples * 2,
                     };
                     combined_audio.extend(vec![0u8; silence_bytes]);
                     total_duration += 0.1;
@@ -895,7 +908,9 @@ impl SynthesisGuest for DeepgramComponent {
                     request_id: format!("deepgram-chunked-{}", chrono::Utc::now().timestamp()),
                     provider_info: Some(format!(
                         "Deepgram TTS - Model: {}, Chunks: {}, Total Characters: {}",
-                        voice_id, chunks.len(), total_characters
+                        voice_id,
+                        chunks.len(),
+                        total_characters
                     )),
                 },
             };
@@ -1120,9 +1135,8 @@ impl ExtendedGuest for DeepgramComponent {
         voice: golem_tts::golem::tts::voices::VoiceBorrow<'_>,
         options: Option<SynthesisOptions>,
     ) -> Self::SynthesisStream {
-        let client = Self::create_streaming_client().unwrap_or_else(|_| {
-            DeepgramTtsApi::new("dummy".to_string(), "v1".to_string())
-        });
+        let client = Self::create_streaming_client()
+            .unwrap_or_else(|_| DeepgramTtsApi::new("dummy".to_string(), "v1".to_string()));
         let voice_id = voice.get::<DeepgramVoiceImpl>().get_id();
 
         DeepgramSynthesisStream::new(voice_id, client, options)

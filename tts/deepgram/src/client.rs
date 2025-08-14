@@ -197,7 +197,7 @@ impl DeepgramTtsApi {
         trace!("Making TTS request to: {}", url);
 
         let request_clone = request.clone();
-        
+
         let operation = || {
             let req = self.create_request(Method::POST, &url).json(&request_clone);
 
@@ -246,7 +246,7 @@ impl DeepgramTtsApi {
         trace!("Making streaming TTS request to: {}", url);
 
         let request_clone = request.clone();
-        
+
         let operation = || {
             let req = self.create_request(Method::POST, &url).json(&request_clone);
 
@@ -279,7 +279,6 @@ impl DeepgramTtsApi {
         Ok(response.models)
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct TtsResponseMetadata {
