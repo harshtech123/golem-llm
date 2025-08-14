@@ -5,7 +5,7 @@ use crate::client::{
 use golem_tts::golem::tts::advanced::{AgeCategory, AudioSample, VoiceDesignParams};
 use golem_tts::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
 use golem_tts::golem::tts::types::{
-    AudioFormat, SynthesisMetadata, SynthesisResult, VoiceGender, VoiceQuality, VoiceSettings,
+    AudioFormat, SynthesisMetadata, SynthesisResult, TextInput, TextType, TtsError, VoiceGender, VoiceQuality, VoiceSettings,
 };
 use golem_tts::golem::tts::voices::{LanguageInfo, VoiceFilter, VoiceInfo};
 
@@ -541,16 +541,6 @@ pub fn infer_quality_from_category(category: &str) -> Option<VoiceQuality> {
     }
 }
 
-pub fn create_validation_result(is_valid: bool, message: Option<String>) -> ValidationResult {
-    ValidationResult {
-        is_valid,
-        character_count: 0, // Would need actual text to determine
-        estimated_duration: None,
-        warnings: message.map(|m| vec![m]).unwrap_or_default(),
-        errors: vec![],
-    }
-}
-
 pub fn models_to_language_info(models: Vec<Model>) -> Vec<LanguageInfo> {
     // Extract languages from ElevenLabs models for accurate language support
     let mut language_map = std::collections::HashMap::new();
@@ -683,6 +673,388 @@ fn get_default_language_info() -> Vec<LanguageInfo> {
     ]
 }
 
+/// Validate text input for ElevenLabs TTS
+pub fn validate_text_input(text: &str, model: Option<&str>) -> ValidationResult {
+    let character_count = text.chars().count();
+    let mut errors = Vec::new();
+    let mut warnings = Vec::new();
+
+    if text.trim().is_empty() {
+        errors.push("Text cannot be empty".to_string());
+    }
+
+    // Check for potentially problematic characters
+    if text.contains('\0') {
+        warnings.push("Text contains null characters which may cause issues".to_string());
+    }
+
+    // For very long text, add a warning but don't error (we'll handle chunking automatically)
+    let max_chars = get_max_chars_for_model(model);
+    if character_count > max_chars {
+        warnings.push(format!(
+            "Text length ({} characters) exceeds single request limit ({}). Will be automatically chunked.",
+            character_count, max_chars
+        ));
+    }
+
+    let is_valid = errors.is_empty();
+    let estimated_duration = if is_valid {
+        // Rough estimation: ~150 words per minute
+        let word_count = text.split_whitespace().count();
+        Some((word_count as f32 / 150.0) * 60.0)
+    } else {
+        None
+    };
+
+    ValidationResult {
+        is_valid,
+        character_count: character_count as u32,
+        estimated_duration,
+        warnings,
+        errors,
+    }
+}
+
+/// Get maximum characters for an ElevenLabs model
+pub fn get_max_chars_for_model(model: Option<&str>) -> usize {
+    if let Some(m) = model {
+        if m.contains("turbo") {
+            2500 // Turbo models have lower limits
+        } else if m.contains("multilingual") {
+            5000 // Multilingual models support longer text
+        } else {
+            4500 // Standard models
+        }
+    } else {
+        4500 // Default to standard limit
+    }
+}
+
+/// Intelligently split text into chunks suitable for ElevenLabs TTS
+/// Following ElevenLabs best practices for text chunking
+pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String> {
+    if text.len() <= max_chunk_size {
+        return vec![text.to_string()];
+    }
+
+    let mut chunks = Vec::new();
+    let mut current_chunk = String::new();
+
+    // First, try to split by paragraphs (double newlines)
+    let paragraphs: Vec<&str> = text.split("\n\n").collect();
+    
+    for paragraph in paragraphs {
+        // If the paragraph itself is too long, split by sentences
+        if paragraph.len() > max_chunk_size {
+            let sentences = split_by_sentences(paragraph);
+            for sentence in sentences {
+                if sentence.len() > max_chunk_size {
+                    // If even a single sentence is too long, split by clauses
+                    let clauses = split_by_clauses(&sentence, max_chunk_size);
+                    for clause in clauses {
+                        if current_chunk.len() + clause.len() + 1 <= max_chunk_size {
+                            if !current_chunk.is_empty() {
+                                current_chunk.push(' ');
+                            }
+                            current_chunk.push_str(&clause);
+                        } else {
+                            if !current_chunk.is_empty() {
+                                chunks.push(current_chunk.trim().to_string());
+                                current_chunk.clear();
+                            }
+                            current_chunk = clause;
+                        }
+                    }
+                } else {
+                    // Normal sentence processing
+                    if current_chunk.len() + sentence.len() + 1 <= max_chunk_size {
+                        if !current_chunk.is_empty() {
+                            current_chunk.push(' ');
+                        }
+                        current_chunk.push_str(&sentence);
+                    } else {
+                        if !current_chunk.is_empty() {
+                            chunks.push(current_chunk.trim().to_string());
+                            current_chunk.clear();
+                        }
+                        current_chunk = sentence;
+                    }
+                }
+            }
+        } else {
+            // Paragraph fits within limits
+            if current_chunk.len() + paragraph.len() + 2 <= max_chunk_size {
+                if !current_chunk.is_empty() {
+                    current_chunk.push_str("\n\n");
+                }
+                current_chunk.push_str(paragraph);
+            } else {
+                if !current_chunk.is_empty() {
+                    chunks.push(current_chunk.trim().to_string());
+                    current_chunk.clear();
+                }
+                current_chunk = paragraph.to_string();
+            }
+        }
+    }
+
+    if !current_chunk.is_empty() {
+        chunks.push(current_chunk.trim().to_string());
+    }
+
+    // Ensure no empty chunks
+    chunks.into_iter().filter(|chunk| !chunk.trim().is_empty()).collect()
+}
+
+/// Split text by sentences, preserving sentence boundaries
+fn split_by_sentences(text: &str) -> Vec<String> {
+    let mut sentences = Vec::new();
+    let mut current_sentence = String::new();
+    let mut chars = text.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        current_sentence.push(ch);
+        
+        // Check for sentence endings
+        if matches!(ch, '.' | '!' | '?') {
+            // Look ahead to see if this is actually the end of a sentence
+            if let Some(&next_char) = chars.peek() {
+                if next_char.is_whitespace() || next_char.is_ascii_uppercase() {
+                    sentences.push(current_sentence.trim().to_string());
+                    current_sentence.clear();
+                }
+            } else {
+                // End of text
+                sentences.push(current_sentence.trim().to_string());
+                current_sentence.clear();
+            }
+        }
+    }
+    
+    if !current_sentence.trim().is_empty() {
+        sentences.push(current_sentence.trim().to_string());
+    }
+    
+    sentences.into_iter().filter(|s| !s.trim().is_empty()).collect()
+}
+
+/// Split text by clauses (commas, semicolons) when sentences are too long
+fn split_by_clauses(text: &str, max_size: usize) -> Vec<String> {
+    if text.len() <= max_size {
+        return vec![text.to_string()];
+    }
+    
+    let mut clauses = Vec::new();
+    let mut current_clause = String::new();
+    let mut chars = text.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        current_clause.push(ch);
+        
+        // Check for clause endings
+        if matches!(ch, ',' | ';' | ':') {
+            if let Some(&next_char) = chars.peek() {
+                if next_char.is_whitespace() {
+                    clauses.push(current_clause.trim().to_string());
+                    current_clause.clear();
+                }
+            }
+        } else if current_clause.len() >= max_size {
+            // Force split at word boundary if we exceed max size
+            let last_space = current_clause.rfind(' ');
+            if let Some(pos) = last_space {
+                let (first_part, remainder) = current_clause.split_at(pos);
+                clauses.push(first_part.trim().to_string());
+                current_clause = remainder.trim().to_string();
+            } else {
+                // No word boundary found, force split anyway
+                clauses.push(current_clause.clone());
+                current_clause.clear();
+            }
+        }
+    }
+    
+    if !current_clause.trim().is_empty() {
+        clauses.push(current_clause.trim().to_string());
+    }
+    
+    clauses.into_iter().filter(|c| !c.trim().is_empty()).collect()
+}
+
+/// Validate synthesis input and options for proper error handling
+pub fn validate_synthesis_input(
+    input: &TextInput,
+    options: Option<&SynthesisOptions>,
+) -> Result<(), TtsError> {
+    // Validate empty text
+    if input.content.trim().is_empty() {
+        return Err(TtsError::InvalidText("Text content cannot be empty".to_string()));
+    }
+
+    // Validate SSML content if specified
+    if input.text_type == TextType::Ssml {
+        if let Err(msg) = validate_ssml_content(&input.content) {
+            return Err(TtsError::InvalidSsml(msg));
+        }
+    }
+
+    // Validate language code if specified
+    if let Some(ref language) = input.language {
+        if !is_supported_language(language) {
+            return Err(TtsError::UnsupportedLanguage(
+                format!("Language '{}' is not supported by ElevenLabs", language)
+            ));
+        }
+    }
+
+    // Validate voice settings if specified
+    if let Some(opts) = options {
+        if let Some(ref voice_settings) = opts.voice_settings {
+            if let Err(msg) = validate_voice_settings(voice_settings) {
+                return Err(TtsError::InvalidConfiguration(msg));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate SSML content for basic structure
+pub fn validate_ssml_content(content: &str) -> Result<(), String> {
+    // Basic SSML validation - check for unmatched tags
+    let mut tag_stack = Vec::new();
+    let mut chars = content.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '<' {
+            // Parse tag
+            let mut tag = String::new();
+            let mut is_closing = false;
+            let mut is_self_closing = false;
+            
+            // Check if it's a closing tag
+            if chars.peek() == Some(&'/') {
+                is_closing = true;
+                chars.next(); // consume '/'
+            }
+
+            // Read tag name and attributes
+            let mut full_tag_content = String::new();
+            while let Some(&ch) = chars.peek() {
+                if ch == '>' {
+                    break;
+                }
+                if ch == ' ' && tag.is_empty() {
+                    // We've read the tag name, now read the rest
+                    tag = full_tag_content.clone();
+                }
+                full_tag_content.push(chars.next().unwrap());
+            }
+
+            // If we didn't hit a space, the entire content is the tag name
+            if tag.is_empty() {
+                tag = full_tag_content.clone();
+            }
+
+            // Check if it's self-closing (ends with '/')
+            if full_tag_content.ends_with('/') {
+                is_self_closing = true;
+                // Remove the trailing '/' from tag name if it got included
+                if tag.ends_with('/') {
+                    tag = tag[..tag.len()-1].to_string();
+                }
+            }
+
+            // Skip to end of tag
+            while let Some(ch) = chars.next() {
+                if ch == '>' {
+                    break;
+                }
+            }
+
+            if is_closing {
+                if let Some(expected_tag) = tag_stack.pop() {
+                    if expected_tag != tag {
+                        return Err(format!("Unmatched closing tag: </{}>", tag));
+                    }
+                } else {
+                    return Err(format!("Unmatched closing tag: </{}>", tag));
+                }
+            } else if !tag.is_empty() && !tag.starts_with('!') && !tag.starts_with('?') {
+                // Only track opening tags that aren't self-closing, XML declarations, or comments
+                if !is_self_closing {
+                    tag_stack.push(tag);
+                }
+            }
+        }
+    }
+
+    if !tag_stack.is_empty() {
+        return Err(format!("Unclosed tags: {:?}", tag_stack));
+    }
+
+    Ok(())
+}
+
+/// Check if a language is supported by ElevenLabs
+pub fn is_supported_language(language: &str) -> bool {
+    let supported_languages = [
+        "en", "en-US", "en-GB", "en-AU", "en-CA",
+        "es", "es-ES", "es-MX", "es-AR",
+        "fr", "fr-FR", "fr-CA",
+        "de", "de-DE", "de-AT", "de-CH",
+        "it", "it-IT",
+        "pt", "pt-PT", "pt-BR",
+        "pl", "pl-PL",
+        "zh", "zh-CN", "zh-TW",
+        "ja", "ja-JP",
+        "hi", "hi-IN",
+        "ko", "ko-KR",
+        "nl", "nl-NL",
+        "tr", "tr-TR",
+        "sv", "sv-SE",
+        "da", "da-DK",
+        "no", "no-NO",
+        "fi", "fi-FI",
+    ];
+
+    supported_languages.contains(&language)
+}
+
+/// Validate voice settings parameters
+pub fn validate_voice_settings(settings: &VoiceSettings) -> Result<(), String> {
+    // Check speed (should be between 0.25 and 4.0 for most TTS systems)
+    if let Some(speed) = settings.speed {
+        if speed < 0.1 || speed > 5.0 {
+            return Err(format!("Speed value {} is out of valid range (0.1-5.0)", speed));
+        }
+    }
+
+    // Check pitch (should be reasonable range)
+    if let Some(pitch) = settings.pitch {
+        if pitch < -50.0 || pitch > 50.0 {
+            return Err(format!("Pitch value {} is out of valid range (-50.0 to 50.0)", pitch));
+        }
+    }
+
+    // Check stability (ElevenLabs specific: 0.0-1.0)
+    if let Some(stability) = settings.stability {
+        if stability < 0.0 || stability > 1.0 {
+            return Err(format!("Stability value {} is out of valid range (0.0-1.0)", stability));
+        }
+    }
+
+    // Check similarity (ElevenLabs specific: 0.0-1.0)
+    if let Some(similarity) = settings.similarity {
+        if similarity < 0.0 || similarity > 1.0 {
+            return Err(format!("Similarity value {} is out of valid range (0.0-1.0)", similarity));
+        }
+    }
+
+    Ok(())
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -738,5 +1110,75 @@ mod tests {
             infer_quality_from_category("professional"),
             Some(VoiceQuality::Studio)
         );
+    }
+
+    #[test]
+    fn test_validate_text_input() {
+        let result = validate_text_input("Hello, world!", Some("eleven_multilingual_v2"));
+        assert!(result.is_valid);
+        assert_eq!(result.character_count, 13);
+
+        let long_text = "a".repeat(6000);
+        let result = validate_text_input(&long_text, Some("eleven_multilingual_v2"));
+        assert!(result.is_valid);
+        assert!(!result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_text_chunking() {
+        let long_text = "This is a test. This is another sentence. And here's a third one. ".repeat(100);
+        let chunks = split_text_intelligently(&long_text, 1000);
+        assert!(chunks.len() > 1);
+        for chunk in &chunks {
+            assert!(chunk.len() <= 1000);
+            assert!(!chunk.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_get_max_chars_for_model() {
+        assert_eq!(get_max_chars_for_model(Some("eleven_turbo_v2")), 2500);
+        assert_eq!(get_max_chars_for_model(Some("eleven_multilingual_v2")), 5000);
+        assert_eq!(get_max_chars_for_model(Some("eleven_monolingual_v1")), 4500);
+        assert_eq!(get_max_chars_for_model(None), 4500);
+    }
+
+    #[test]
+    fn test_validate_ssml_content() {
+        // Valid SSML
+        assert!(validate_ssml_content("<speak>Hello <break time='1s'/> world</speak>").is_ok());
+        
+        // Invalid SSML - unmatched tags
+        assert!(validate_ssml_content("<speak>Hello <break>world</speak>").is_err());
+        
+        // Invalid SSML - unclosed tags
+        assert!(validate_ssml_content("<speak>Hello world").is_err());
+    }
+
+    #[test]
+    fn test_validate_voice_settings() {
+        use golem_tts::golem::tts::types::VoiceSettings;
+        
+        // Valid settings
+        let settings = VoiceSettings {
+            speed: Some(1.0),
+            pitch: Some(0.0),
+            volume: Some(1.0),
+            stability: Some(0.5),
+            similarity: Some(0.8),
+            style: Some(0.3),
+        };
+        assert!(validate_voice_settings(&settings).is_ok());
+        
+        // Invalid stability
+        let invalid_settings = VoiceSettings {
+            speed: None,
+            pitch: None,
+            volume: None,
+            stability: Some(1.5), // Out of range
+            similarity: None,
+            style: None,
+        };
+        assert!(validate_voice_settings(&invalid_settings).is_err());
     }
 }

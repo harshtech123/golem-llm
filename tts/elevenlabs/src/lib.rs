@@ -1,9 +1,9 @@
 use crate::client::{ElevenLabsTtsApi, Voice as ElevenLabsVoice};
 use crate::conversions::{
-    audio_data_to_synthesis_result, create_validation_result, create_voice_request_from_samples,
-    elevenlabs_voice_to_voice_info, estimate_audio_duration, models_to_language_info,
-    synthesis_options_to_tts_request, voice_design_params_to_create_request,
-    voice_filter_to_list_params,
+    audio_data_to_synthesis_result, create_voice_request_from_samples,
+    elevenlabs_voice_to_voice_info, estimate_audio_duration, get_max_chars_for_model, models_to_language_info,
+    split_text_intelligently, synthesis_options_to_tts_request, validate_synthesis_input,
+    voice_design_params_to_create_request, voice_filter_to_list_params,
 };
 use golem_rust::wasm_rpc::Pollable;
 use golem_tts::config::with_config_key;
@@ -676,184 +676,6 @@ impl ElevenLabsComponent {
             Ok(ElevenLabsTtsApi::new(api_key.to_string(), model_version))
         })
     }
-
-    /// Validate synthesis input and options for proper error handling
-    fn validate_synthesis_input(
-        input: &TextInput,
-        options: Option<&SynthesisOptions>,
-    ) -> Result<(), TtsError> {
-        // Validate empty text
-        if input.content.trim().is_empty() {
-            return Err(TtsError::InvalidText("Text content cannot be empty".to_string()));
-        }
-
-        // Validate text length (ElevenLabs has limits)
-        if input.content.len() > 5000 {
-            return Err(TtsError::InvalidText("Text exceeds maximum length of 5000 characters".to_string()));
-        }
-
-        // Validate SSML content if specified
-        if input.text_type == golem_tts::golem::tts::types::TextType::Ssml {
-            if let Err(msg) = Self::validate_ssml_content(&input.content) {
-                return Err(TtsError::InvalidSsml(msg));
-            }
-        }
-
-        // Validate language code if specified
-        if let Some(ref language) = input.language {
-            if !Self::is_supported_language(language) {
-                return Err(TtsError::UnsupportedLanguage(
-                    format!("Language '{}' is not supported by ElevenLabs", language)
-                ));
-            }
-        }
-
-        // Validate voice settings if specified
-        if let Some(opts) = options {
-            if let Some(ref voice_settings) = opts.voice_settings {
-                if let Err(msg) = Self::validate_voice_settings(voice_settings) {
-                    return Err(TtsError::InvalidConfiguration(msg));
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Validate SSML content for basic structure
-    fn validate_ssml_content(content: &str) -> Result<(), String> {
-        // Basic SSML validation - check for unmatched tags
-        let mut tag_stack = Vec::new();
-        let mut chars = content.chars().peekable();
-
-        while let Some(ch) = chars.next() {
-            if ch == '<' {
-                // Parse tag
-                let mut tag = String::new();
-                let mut is_closing = false;
-                let mut is_self_closing = false;
-                
-                // Check if it's a closing tag
-                if chars.peek() == Some(&'/') {
-                    is_closing = true;
-                    chars.next(); // consume '/'
-                }
-
-                // Read tag name and attributes
-                let mut full_tag_content = String::new();
-                while let Some(&ch) = chars.peek() {
-                    if ch == '>' {
-                        break;
-                    }
-                    if ch == ' ' && tag.is_empty() {
-                        // We've read the tag name, now read the rest
-                        tag = full_tag_content.clone();
-                    }
-                    full_tag_content.push(chars.next().unwrap());
-                }
-
-                // If we didn't hit a space, the entire content is the tag name
-                if tag.is_empty() {
-                    tag = full_tag_content.clone();
-                }
-
-                // Check if it's self-closing (ends with '/')
-                if full_tag_content.ends_with('/') {
-                    is_self_closing = true;
-                    // Remove the trailing '/' from tag name if it got included
-                    if tag.ends_with('/') {
-                        tag = tag[..tag.len()-1].to_string();
-                    }
-                }
-
-                // Skip to end of tag
-                while let Some(ch) = chars.next() {
-                    if ch == '>' {
-                        break;
-                    }
-                }
-
-                if is_closing {
-                    if let Some(expected_tag) = tag_stack.pop() {
-                        if expected_tag != tag {
-                            return Err(format!("Unmatched closing tag: </{}>", tag));
-                        }
-                    } else {
-                        return Err(format!("Unmatched closing tag: </{}>", tag));
-                    }
-                } else if !tag.is_empty() && !tag.starts_with('!') && !tag.starts_with('?') {
-                    // Only track opening tags that aren't self-closing, XML declarations, or comments
-                    if !is_self_closing {
-                        tag_stack.push(tag);
-                    }
-                }
-            }
-        }
-
-        if !tag_stack.is_empty() {
-            return Err(format!("Unclosed tags: {:?}", tag_stack));
-        }
-
-        Ok(())
-    }
-
-    /// Check if a language is supported by ElevenLabs
-    fn is_supported_language(language: &str) -> bool {
-        let supported_languages = [
-            "en", "en-US", "en-GB", "en-AU", "en-CA",
-            "es", "es-ES", "es-MX", "es-AR",
-            "fr", "fr-FR", "fr-CA",
-            "de", "de-DE", "de-AT", "de-CH",
-            "it", "it-IT",
-            "pt", "pt-PT", "pt-BR",
-            "pl", "pl-PL",
-            "zh", "zh-CN", "zh-TW",
-            "ja", "ja-JP",
-            "hi", "hi-IN",
-            "ko", "ko-KR",
-            "nl", "nl-NL",
-            "tr", "tr-TR",
-            "sv", "sv-SE",
-            "da", "da-DK",
-            "no", "no-NO",
-            "fi", "fi-FI",
-        ];
-
-        supported_languages.contains(&language)
-    }
-
-    /// Validate voice settings parameters
-    fn validate_voice_settings(settings: &golem_tts::golem::tts::types::VoiceSettings) -> Result<(), String> {
-        // Check speed (should be between 0.25 and 4.0 for most TTS systems)
-        if let Some(speed) = settings.speed {
-            if speed < 0.1 || speed > 5.0 {
-                return Err(format!("Speed value {} is out of valid range (0.1-5.0)", speed));
-            }
-        }
-
-        // Check pitch (should be reasonable range)
-        if let Some(pitch) = settings.pitch {
-            if pitch < -50.0 || pitch > 50.0 {
-                return Err(format!("Pitch value {} is out of valid range (-50.0 to 50.0)", pitch));
-            }
-        }
-
-        // Check stability (ElevenLabs specific: 0.0-1.0)
-        if let Some(stability) = settings.stability {
-            if stability < 0.0 || stability > 1.0 {
-                return Err(format!("Stability value {} is out of valid range (0.0-1.0)", stability));
-            }
-        }
-
-        // Check similarity (ElevenLabs specific: 0.0-1.0)
-        if let Some(similarity) = settings.similarity {
-            if similarity < 0.0 || similarity > 1.0 {
-                return Err(format!("Similarity value {} is out of valid range (0.0-1.0)", similarity));
-            }
-        }
-
-        Ok(())
-    }
 }
 
 impl VoicesGuest for ElevenLabsComponent {
@@ -941,29 +763,71 @@ impl SynthesisGuest for ElevenLabsComponent {
         options: Option<SynthesisOptions>,
     ) -> Result<SynthesisResult, TtsError> {
         // Validate input before processing
-        Self::validate_synthesis_input(&input, options.as_ref())?;
+        validate_synthesis_input(&input, options.as_ref())?;
 
         let client = Self::create_client()?;
         let voice_id = voice.get::<ElevenLabsVoiceImpl>().get_id();
 
-        let (mut request, params) =
-            synthesis_options_to_tts_request(options, client.get_model_version());
-        request.text = input.content;
+        // Get max chunk size for the current model
+        let max_chunk_size = get_max_chars_for_model(client.get_model_version().into());
+        
+        // For long content, use intelligent chunking
+        if input.content.len() > max_chunk_size {
+            trace!(
+                "Using intelligent text chunking for content with {} characters (limit: {})",
+                input.content.len(),
+                max_chunk_size
+            );
 
-        // Handle language from TextInput with model compatibility
-        if let Some(language) = input.language {
-            let model_version = client.get_model_version();
-            let supports_language_code = !model_version.contains("multilingual");
-            
-            if supports_language_code {
-                request.language_code = Some(language);
+            let chunks = split_text_intelligently(&input.content, max_chunk_size);
+            let mut all_audio_data = Vec::new();
+
+            for chunk in chunks {
+                let (mut request, params) =
+                    synthesis_options_to_tts_request(options.clone(), client.get_model_version());
+                request.text = chunk.clone();
+
+                // Handle language from TextInput with model compatibility
+                if let Some(language) = input.language.clone() {
+                    let model_version = client.get_model_version();
+                    let supports_language_code = !model_version.contains("multilingual");
+                    
+                    if supports_language_code {
+                        request.language_code = Some(language);
+                    }
+                    // For multilingual models, ignore the language parameter as it's not supported
+                }
+
+                match client.text_to_speech(&voice_id, &request, params) {
+                    Ok(audio_data) => {
+                        all_audio_data.extend(audio_data);
+                    }
+                    Err(e) => return Err(e),
+                }
             }
-            // For multilingual models, ignore the language parameter as it's not supported
-        }
 
-        match client.text_to_speech(&voice_id, &request, params) {
-            Ok(audio_data) => Ok(audio_data_to_synthesis_result(audio_data, &request.text)),
-            Err(e) => Err(e),
+            Ok(audio_data_to_synthesis_result(all_audio_data, &input.content))
+        } else {
+            // Use regular synthesis for shorter content
+            let (mut request, params) =
+                synthesis_options_to_tts_request(options, client.get_model_version());
+            request.text = input.content.clone();
+
+            // Handle language from TextInput with model compatibility
+            if let Some(language) = input.language {
+                let model_version = client.get_model_version();
+                let supports_language_code = !model_version.contains("multilingual");
+                
+                if supports_language_code {
+                    request.language_code = Some(language);
+                }
+                // For multilingual models, ignore the language parameter as it's not supported
+            }
+
+            match client.text_to_speech(&voice_id, &request, params) {
+                Ok(audio_data) => Ok(audio_data_to_synthesis_result(audio_data, &input.content)),
+                Err(e) => Err(e),
+            }
         }
     }
 
@@ -974,7 +838,7 @@ impl SynthesisGuest for ElevenLabsComponent {
     ) -> Result<Vec<SynthesisResult>, TtsError> {
         // Validate all inputs first
         for input in &inputs {
-            Self::validate_synthesis_input(input, options.as_ref())?;
+            validate_synthesis_input(input, options.as_ref())?;
         }
 
         let mut results = Vec::new();
@@ -982,23 +846,45 @@ impl SynthesisGuest for ElevenLabsComponent {
         let voice_id = voice.get::<ElevenLabsVoiceImpl>().get_id();
 
         for input in inputs {
+            // Get max chunk size for the current model
+            let max_chunk_size = get_max_chars_for_model(client.get_model_version().into());
+            
             // For long content, use intelligent chunking
-            if input.content.len() > 4500 {
+            if input.content.len() > max_chunk_size {
                 trace!(
-                    "Using long-form batch processing for content with {} characters",
-                    input.content.len()
+                    "Using intelligent text chunking for content with {} characters (limit: {})",
+                    input.content.len(),
+                    max_chunk_size
                 );
 
-                let audio_chunks = client.synthesize_long_form_batch(
-                    &voice_id,
-                    &input.content,
-                    None, // Use default synthesis options for now
-                    4500, // Conservative chunk size
-                )?;
+                let chunks = split_text_intelligently(&input.content, max_chunk_size);
+                let mut all_audio_data = Vec::new();
 
-                // Combine all chunks into a single result
-                let combined_audio: Vec<u8> = audio_chunks.into_iter().flatten().collect();
-                let result = audio_data_to_synthesis_result(combined_audio, &input.content);
+                for chunk in chunks {
+                    let (mut request, params) =
+                        synthesis_options_to_tts_request(options.clone(), client.get_model_version());
+                    request.text = chunk.clone();
+
+                    // Handle language from TextInput with model compatibility
+                    if let Some(language) = input.language.clone() {
+                        let model_version = client.get_model_version();
+                        let supports_language_code = !model_version.contains("multilingual");
+                        
+                        if supports_language_code {
+                            request.language_code = Some(language);
+                        }
+                        // For multilingual models, ignore the language parameter as it's not supported
+                    }
+
+                    match client.text_to_speech(&voice_id, &request, params) {
+                        Ok(audio_data) => {
+                            all_audio_data.extend(audio_data);
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+
+                let result = audio_data_to_synthesis_result(all_audio_data, &input.content);
                 results.push(result);
             } else {
                 // Use regular synthesis for shorter content
@@ -1044,15 +930,11 @@ impl SynthesisGuest for ElevenLabsComponent {
         input: TextInput,
         _voice: golem_tts::golem::tts::voices::VoiceBorrow<'_>,
     ) -> Result<ValidationResult, TtsError> {
-        // Basic validation for ElevenLabs
-        let is_valid = !input.content.is_empty() && input.content.len() <= 5000; // ElevenLabs limit
-        let message = if !is_valid {
-            Some("Text is empty or exceeds 5000 character limit".to_string())
-        } else {
-            None
-        };
-
-        Ok(create_validation_result(is_valid, message))
+        // Use the comprehensive text validation from conversions
+        let client = Self::create_client()?;
+        let model_version = client.get_model_version();
+        
+        Ok(crate::conversions::validate_text_input(&input.content, Some(model_version)))
     }
 }
 

@@ -4,7 +4,7 @@ use crate::client::{
 };
 use golem_tts::golem::tts::synthesis::{SynthesisOptions, ValidationResult};
 use golem_tts::golem::tts::types::{
-    AudioFormat, SynthesisMetadata, SynthesisResult, TextInput, VoiceGender, VoiceQuality,
+    AudioFormat, SynthesisMetadata, SynthesisResult, TextInput, TextType, TtsError, VoiceGender, VoiceQuality,
     VoiceSettings,
 };
 use golem_tts::golem::tts::voices::{LanguageInfo, VoiceFilter, VoiceInfo};
@@ -536,6 +536,432 @@ fn get_default_google_language_info() -> Vec<LanguageInfo> {
             voice_count: 6,
         },
     ]
+}
+
+/// Validate synthesis input and options for proper error handling
+pub fn validate_synthesis_input(
+    input: &TextInput,
+    options: Option<&SynthesisOptions>,
+) -> Result<(), TtsError> {
+    // Validate empty text
+    if input.content.trim().is_empty() {
+        return Err(TtsError::InvalidText("Text content cannot be empty".to_string()));
+    }
+
+    // For large text, we'll handle chunking automatically instead of rejecting
+    // No need to reject here since we'll chunk in the synthesis method
+
+    // Validate SSML content if specified
+    if input.text_type == TextType::Ssml {
+        if let Err(msg) = validate_ssml_content(&input.content) {
+            return Err(TtsError::InvalidSsml(msg));
+        }
+    }
+
+    // Validate language code if specified
+    if let Some(ref language) = input.language {
+        if !is_supported_language(language) {
+            return Err(TtsError::UnsupportedLanguage(format!(
+                "Language '{}' is not supported by Google Cloud TTS", language
+            )));
+        }
+    }
+
+    // Validate voice settings if specified
+    if let Some(opts) = options {
+        if let Some(ref voice_settings) = opts.voice_settings {
+            validate_voice_settings(voice_settings)?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Validate SSML content for basic structure
+pub fn validate_ssml_content(content: &str) -> Result<(), String> {
+    // Basic SSML validation - check for unmatched tags
+    let mut tag_stack = Vec::new();
+    let mut chars = content.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '<' {
+            // Parse tag
+            let mut tag = String::new();
+            let mut is_closing = false;
+            let mut is_self_closing = false;
+            
+            // Check if it's a closing tag
+            if chars.peek() == Some(&'/') {
+                is_closing = true;
+                chars.next(); // consume '/'
+            }
+
+            // Read tag name and attributes
+            let mut full_tag_content = String::new();
+            while let Some(&ch) = chars.peek() {
+                if ch == '>' {
+                    break;
+                }
+                if ch == ' ' && tag.is_empty() {
+                    // We've read the tag name, now read the rest
+                    tag = full_tag_content.clone();
+                }
+                full_tag_content.push(chars.next().unwrap());
+            }
+
+            // If we didn't hit a space, the entire content is the tag name
+            if tag.is_empty() {
+                tag = full_tag_content.clone();
+            }
+
+            // Check if it's self-closing (ends with '/')
+            if full_tag_content.ends_with('/') {
+                is_self_closing = true;
+                // Remove the trailing '/' from tag name if it got included
+                if tag.ends_with('/') {
+                    tag = tag[..tag.len()-1].to_string();
+                }
+            }
+
+            // Skip to end of tag
+            while let Some(ch) = chars.next() {
+                if ch == '>' {
+                    break;
+                }
+            }
+
+            if is_closing {
+                if let Some(expected_tag) = tag_stack.pop() {
+                    if expected_tag != tag {
+                        return Err(format!("Unmatched closing tag: </{}>", tag));
+                    }
+                } else {
+                    return Err(format!("Unmatched closing tag: </{}>", tag));
+                }
+            } else if !tag.is_empty() && !tag.starts_with('!') && !tag.starts_with('?') {
+                // Only track opening tags that aren't self-closing, XML declarations, or comments
+                if !is_self_closing {
+                    tag_stack.push(tag);
+                }
+            }
+        }
+    }
+
+    if !tag_stack.is_empty() {
+        return Err(format!("Unclosed tags: {:?}", tag_stack));
+    }
+
+    Ok(())
+}
+
+/// Check if a language is supported by Google Cloud TTS
+pub fn is_supported_language(language: &str) -> bool {
+    let supported_languages = [
+        "ar", "ar-XA", "bg", "bg-BG", "ca", "ca-ES", "cs", "cs-CZ", "da", "da-DK",
+        "de", "de-DE", "de-AT", "de-CH", "el", "el-GR", "en", "en-AU", "en-GB", "en-US",
+        "es", "es-ES", "es-US", "fi", "fi-FI", "fil", "fil-PH", "fr", "fr-CA", "fr-FR",
+        "he", "he-IL", "hi", "hi-IN", "hr", "hr-HR", "hu", "hu-HU", "id", "id-ID",
+        "is", "is-IS", "it", "it-IT", "ja", "ja-JP", "ko", "ko-KR", "lt", "lt-LT",
+        "lv", "lv-LV", "ms", "ms-MY", "nb", "nb-NO", "nl", "nl-BE", "nl-NL", "pl", "pl-PL",
+        "pt", "pt-BR", "pt-PT", "ro", "ro-RO", "ru", "ru-RU", "sk", "sk-SK", "sl", "sl-SI",
+        "sr", "sr-RS", "sv", "sv-SE", "ta", "ta-IN", "te", "te-IN", "th", "th-TH",
+        "tr", "tr-TR", "uk", "uk-UA", "vi", "vi-VN", "zh", "zh-CN", "zh-TW", "zh-HK",
+        "af-ZA", "bn-IN", "cy-GB", "gu-IN", "kn-IN", "ml-IN", "mr-IN", "pa-IN", "yue-HK"
+    ];
+
+    supported_languages.contains(&language)
+}
+
+/// Validate voice settings parameters
+pub fn validate_voice_settings(settings: &VoiceSettings) -> Result<(), TtsError> {
+    // Check speed (should be between 0.25 and 4.0 for Google Cloud TTS)
+    if let Some(speed) = settings.speed {
+        if speed < 0.25 || speed > 4.0 {
+            return Err(TtsError::InvalidConfiguration(
+                format!("Speed value {} is out of valid range (0.25-4.0)", speed)
+            ));
+        }
+    }
+
+    // Check pitch (Google Cloud TTS accepts -20.0 to +20.0 semitones)
+    if let Some(pitch) = settings.pitch {
+        if pitch < -20.0 || pitch > 20.0 {
+            return Err(TtsError::InvalidConfiguration(
+                format!("Pitch value {} is out of valid range (-20.0 to +20.0)", pitch)
+            ));
+        }
+    }
+
+    // Check volume (Google Cloud TTS accepts -96.0 to +16.0 dB)
+    if let Some(volume) = settings.volume {
+        if volume < -96.0 || volume > 16.0 {
+            return Err(TtsError::InvalidConfiguration(
+                format!("Volume value {} is out of valid range (-96.0 to +16.0)", volume)
+            ));
+        }
+    }
+
+    // Google Cloud TTS doesn't use stability/similarity, but we can check they're in reasonable range
+    if let Some(stability) = settings.stability {
+        if stability < 0.0 || stability > 1.0 {
+            return Err(TtsError::InvalidConfiguration(
+                format!("Stability value {} is out of valid range (0.0-1.0)", stability)
+            ));
+        }
+    }
+
+    if let Some(similarity) = settings.similarity {
+        if similarity < 0.0 || similarity > 1.0 {
+            return Err(TtsError::InvalidConfiguration(
+                format!("Similarity value {} is out of valid range (0.0-1.0)", similarity)
+            ));
+        }
+    }
+
+    if let Some(style) = settings.style {
+        if style < 0.0 || style > 1.0 {
+            return Err(TtsError::InvalidConfiguration(
+                format!("Style value {} is out of valid range (0.0-1.0)", style)
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Intelligently split text into chunks suitable for Google Cloud TTS
+/// Following Google's text chunking best practices
+pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String> {
+    if text.len() <= max_chunk_size {
+        return vec![text.to_string()];
+    }
+
+    let mut chunks = Vec::new();
+    let mut current_chunk = String::new();
+
+    // First, try to split by paragraphs (double newlines)
+    let paragraphs: Vec<&str> = text.split("
+
+").collect();
+    
+    for paragraph in paragraphs {
+        if current_chunk.len() + paragraph.len() + 2 <= max_chunk_size {
+            if !current_chunk.is_empty() {
+                current_chunk.push_str("
+
+");
+            }
+            current_chunk.push_str(paragraph);
+        } else {
+            // Add current chunk if it's not empty
+            if !current_chunk.is_empty() {
+                chunks.push(current_chunk.clone());
+                current_chunk.clear();
+            }
+            
+            // If this paragraph is still too long, split by sentences
+            if paragraph.len() > max_chunk_size {
+                let sentences = split_by_sentences(paragraph);
+                for sentence in sentences {
+                    if current_chunk.len() + sentence.len() + 1 <= max_chunk_size {
+                        if !current_chunk.is_empty() {
+                            current_chunk.push(' ');
+                        }
+                        current_chunk.push_str(&sentence);
+                    } else {
+                        if !current_chunk.is_empty() {
+                            chunks.push(current_chunk.clone());
+                            current_chunk.clear();
+                        }
+                        
+                        // If sentence is still too long, split by clauses
+                        if sentence.len() > max_chunk_size {
+                            let clauses = split_by_clauses(&sentence, max_chunk_size);
+                            for clause in clauses {
+                                chunks.push(clause);
+                            }
+                        } else {
+                            current_chunk = sentence;
+                        }
+                    }
+                }
+            } else {
+                current_chunk = paragraph.to_string();
+            }
+        }
+    }
+
+    if !current_chunk.is_empty() {
+        chunks.push(current_chunk);
+    }
+
+    // Ensure no empty chunks
+    chunks.into_iter().filter(|chunk| !chunk.trim().is_empty()).collect()
+}
+
+/// Split text by sentences, preserving sentence boundaries
+fn split_by_sentences(text: &str) -> Vec<String> {
+    let mut sentences = Vec::new();
+    let mut current_sentence = String::new();
+    let mut chars = text.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        current_sentence.push(ch);
+        
+        // Look for sentence endings
+        if ch == '.' || ch == '!' || ch == '?' {
+            // Check if next character is whitespace or end of text
+            if chars.peek().map_or(true, |&next_ch| next_ch.is_whitespace()) {
+                sentences.push(current_sentence.trim().to_string());
+                current_sentence.clear();
+            }
+        }
+    }
+    
+    if !current_sentence.trim().is_empty() {
+        sentences.push(current_sentence.trim().to_string());
+    }
+    
+    sentences.into_iter().filter(|s| !s.trim().is_empty()).collect()
+}
+
+/// Split text by clauses (commas, semicolons) when sentences are too long
+fn split_by_clauses(text: &str, max_size: usize) -> Vec<String> {
+    if text.len() <= max_size {
+        return vec![text.to_string()];
+    }
+    
+    let mut clauses = Vec::new();
+    let mut current_clause = String::new();
+    let mut chars = text.chars().peekable();
+    
+    while let Some(ch) = chars.next() {
+        current_clause.push(ch);
+        
+        // Look for clause separators
+        if ch == ',' || ch == ';' {
+            // Check if next character is whitespace
+            if chars.peek().map_or(true, |&next_ch| next_ch.is_whitespace()) {
+                if current_clause.len() <= max_size {
+                    clauses.push(current_clause.trim().to_string());
+                    current_clause.clear();
+                } else {
+                    // Even the clause is too long, split by words
+                    let words = split_by_words(&current_clause, max_size);
+                    clauses.extend(words);
+                    current_clause.clear();
+                }
+            }
+        }
+    }
+    
+    if !current_clause.trim().is_empty() {
+        if current_clause.len() <= max_size {
+            clauses.push(current_clause.trim().to_string());
+        } else {
+            let words = split_by_words(&current_clause, max_size);
+            clauses.extend(words);
+        }
+    }
+    
+    clauses.into_iter().filter(|c| !c.trim().is_empty()).collect()
+}
+
+/// Split text by words as last resort
+fn split_by_words(text: &str, max_size: usize) -> Vec<String> {
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let mut chunks = Vec::new();
+    let mut current_chunk = String::new();
+    
+    for word in words {
+        if current_chunk.is_empty() {
+            current_chunk = word.to_string();
+        } else if current_chunk.len() + 1 + word.len() <= max_size {
+            current_chunk.push(' ');
+            current_chunk.push_str(word);
+        } else {
+            chunks.push(current_chunk);
+            current_chunk = word.to_string();
+        }
+    }
+    
+    if !current_chunk.is_empty() {
+        chunks.push(current_chunk);
+    }
+    
+    chunks
+}
+
+/// Combine multiple audio chunks into a single audio stream
+/// Google Cloud TTS returns audio in different formats
+pub fn combine_audio_chunks(chunks: Vec<Vec<u8>>, format: &AudioFormat) -> Vec<u8> {
+    if chunks.is_empty() {
+        return Vec::new();
+    }
+    
+    if chunks.len() == 1 {
+        return chunks.into_iter().next().unwrap();
+    }
+    
+    match format {
+        AudioFormat::Mp3 => {
+            // For MP3, we need to be careful about headers
+            // Simple concatenation works for most cases but isn't perfect
+            let mut combined = Vec::new();
+            for (i, chunk) in chunks.iter().enumerate() {
+                if i == 0 {
+                    // Include full first chunk with headers
+                    combined.extend_from_slice(chunk);
+                } else {
+                    // For subsequent chunks, try to skip MP3 headers if present
+                    // This is a simplified approach
+                    if chunk.len() > 128 && chunk.starts_with(&[0xFF, 0xFB]) {
+                        // Skip potential ID3v2 header and MP3 frame header
+                        let start = if chunk.len() > 1024 { 1024 } else { 128 };
+                        combined.extend_from_slice(&chunk[start..]);
+                    } else {
+                        combined.extend_from_slice(chunk);
+                    }
+                }
+            }
+            combined
+        }
+        AudioFormat::Wav => {
+            // For WAV, we need to merge properly by combining data sections
+            // This is a simplified approach - just concatenate data
+            let mut combined = Vec::new();
+            let mut total_data_size = 0u32;
+            
+            for (i, chunk) in chunks.iter().enumerate() {
+                if i == 0 {
+                    // Use first chunk as base, but we'll update the size later
+                    combined.extend_from_slice(chunk);
+                    if chunk.len() >= 44 {
+                        total_data_size += (chunk.len() - 44) as u32;
+                    }
+                } else {
+                    // For subsequent chunks, skip WAV header (first 44 bytes)
+                    if chunk.len() > 44 {
+                        combined.extend_from_slice(&chunk[44..]);
+                        total_data_size += (chunk.len() - 44) as u32;
+                    }
+                }
+            }
+            
+            // Update WAV header with correct file size
+            if combined.len() >= 44 {
+                let file_size = (combined.len() - 8) as u32;
+                combined[4..8].copy_from_slice(&file_size.to_le_bytes());
+                combined[40..44].copy_from_slice(&total_data_size.to_le_bytes());
+            }
+            
+            combined
+        }
+        _ => {
+            // For other formats, simple concatenation
+            chunks.into_iter().flatten().collect()
+        }
+    }
 }
 
 #[cfg(test)]
