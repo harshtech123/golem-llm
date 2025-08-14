@@ -285,81 +285,55 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
         }
 
         if let Some(response) = self.response_stream.borrow_mut().take() {
+            const CHUNK_SIZE: usize = 4096;
+
             match response.bytes() {
                 Ok(bytes) => {
-                    if !bytes.is_empty() {
-                        const CHUNK_SIZE: usize = 4096;
-                        let mut current_buffer = self.chunk_buffer.borrow_mut();
-
-                        if current_buffer.is_empty() {
-                            current_buffer.extend_from_slice(&bytes);
-                        }
-
-                        if current_buffer.len() >= CHUNK_SIZE {
-                            let chunk_data: Vec<u8> = current_buffer.drain(0..CHUNK_SIZE).collect();
-
-                            let current_bytes = self.bytes_streamed.get();
-                            let current_chunks = self.total_chunks_received.get();
-                            self.bytes_streamed.set(current_bytes + chunk_data.len());
-                            self.total_chunks_received.set(current_chunks + 1);
-
-                            let seq = self.sequence_number.get();
-                            self.sequence_number.set(seq + 1);
-
-                            let is_final = current_buffer.is_empty();
-
-                            let chunk = AudioChunk {
-                                data: chunk_data.clone(),
-                                sequence_number: seq,
-                                is_final,
-                                timing_info: Some(TimingInfo {
-                                    start_time_seconds: (current_bytes as f32) / 12000.0,
-                                    end_time_seconds: Some(estimate_audio_duration(
-                                        &chunk_data,
-                                        22050,
-                                    )),
-                                    text_offset: None,
-                                    mark_type: None,
-                                }),
-                            };
-
-                            if !is_final {
-                            } else {
-                                self.finished.set(true);
-                            }
-
-                            return Ok(Some(chunk));
-                        } else if !current_buffer.is_empty() {
-                            let final_data = current_buffer.clone();
-                            current_buffer.clear();
-
-                            let current_bytes = self.bytes_streamed.get();
-                            let current_chunks = self.total_chunks_received.get();
-                            self.bytes_streamed.set(current_bytes + final_data.len());
-                            self.total_chunks_received.set(current_chunks + 1);
-
-                            let seq = self.sequence_number.get();
-                            let final_chunk = AudioChunk {
-                                data: final_data.clone(),
-                                sequence_number: seq,
-                                is_final: true,
-                                timing_info: Some(TimingInfo {
-                                    start_time_seconds: (current_bytes as f32) / 12000.0,
-                                    end_time_seconds: Some(estimate_audio_duration(
-                                        &final_data,
-                                        22050,
-                                    )),
-                                    text_offset: None,
-                                    mark_type: None,
-                                }),
-                            };
-
-                            self.finished.set(true);
-                            return Ok(Some(final_chunk));
-                        }
+                    if bytes.is_empty() {
+                        self.finished.set(true);
+                        return Ok(None);
                     }
 
-                    self.finished.set(true);
+                    let mut current_buffer = self.chunk_buffer.borrow_mut();
+                    current_buffer.extend_from_slice(&bytes);
+
+                    if current_buffer.len() >= CHUNK_SIZE || bytes.len() < CHUNK_SIZE {
+                        let chunk_data: Vec<u8> = if current_buffer.len() <= CHUNK_SIZE {
+                            current_buffer.drain(..).collect()
+                        } else {
+                            current_buffer.drain(..CHUNK_SIZE).collect()
+                        };
+
+                        let sequence = self.sequence_number.get();
+                        self.sequence_number.set(sequence + 1);
+                        self.bytes_streamed
+                            .set(self.bytes_streamed.get() + chunk_data.len());
+                        self.total_chunks_received
+                            .set(self.total_chunks_received.get() + 1);
+
+                        let is_final = bytes.len() < CHUNK_SIZE && current_buffer.is_empty();
+                        if is_final {
+                            self.finished.set(true);
+                        }
+
+                        let chunk = AudioChunk {
+                            data: chunk_data.clone(),
+                            sequence_number: sequence,
+                            is_final,
+                            timing_info: Some(TimingInfo {
+                                start_time_seconds: (self.bytes_streamed.get() as f32) / 22050.0,
+                                end_time_seconds: Some(estimate_audio_duration(
+                                    &chunk_data,
+                                    22050,
+                                )),
+                                text_offset: None,
+                                mark_type: None,
+                            }),
+                        };
+
+                        return Ok(Some(chunk));
+                    }
+
                     Ok(None)
                 }
                 Err(e) => {
@@ -376,11 +350,8 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
     fn has_pending_audio(&self) -> bool {
         !self.finished.get()
             && (self.response_stream.borrow().is_some()
-                || self
-                    .current_request
-                    .borrow()
-                    .as_ref()
-                    .is_some_and(|r| !r.text.is_empty()))
+                || !self.chunk_buffer.borrow().is_empty()
+                || (!self.current_request.borrow().as_ref().map_or(true, |r| r.text.is_empty())))
     }
 
     fn get_status(&self) -> StreamStatus {
