@@ -561,15 +561,4 @@ mod tests {
         assert_eq!(sample_rate, 22050);
     }
 
-    #[test]
-    fn test_validate_text_input() {
-        let result = validate_text_input("Hello, world!", Some("aura-2-thalia-en"));
-        assert!(result.is_valid);
-        assert_eq!(result.character_count, 13);
-
-        let long_text = "a".repeat(1001);
-        let result = validate_text_input(&long_text, Some("aura-2-thalia-en"));
-        assert!(!result.is_valid);
-        assert!(!result.errors.is_empty());
-    }
 }

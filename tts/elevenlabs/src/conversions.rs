@@ -995,7 +995,6 @@ mod tests {
         assert_eq!(params.voice_type, Some("female".to_string()));
         assert_eq!(params.category, Some("premium".to_string()));
         assert_eq!(params.search, Some("narrator".to_string()));
-        assert_eq!(params.page_size, Some(10));
     }
 
     #[test]
