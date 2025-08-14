@@ -28,7 +28,7 @@ use golem_tts::golem::tts::voices::{
     Guest as VoicesGuest, GuestVoice, GuestVoiceResults, LanguageInfo, Voice, VoiceFilter,
     VoiceInfo, VoiceResults,
 };
-use log::{trace, info, warn};
+use log::{info, trace, warn};
 use std::cell::{Cell, RefCell};
 
 mod client;
@@ -248,9 +248,7 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
                 *request_ref = Some(request);
                 info!("[DEBUG] ElevenLabs send_text - Successfully updated request");
             } else {
-                warn!(
-                    "[DEBUG] ElevenLabs send_text - Warning: No current request found to update"
-                );
+                warn!("[DEBUG] ElevenLabs send_text - Warning: No current request found to update");
             }
         }
 
@@ -322,10 +320,7 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
                             is_final,
                             timing_info: Some(TimingInfo {
                                 start_time_seconds: (self.bytes_streamed.get() as f32) / 22050.0,
-                                end_time_seconds: Some(estimate_audio_duration(
-                                    &chunk_data,
-                                    22050,
-                                )),
+                                end_time_seconds: Some(estimate_audio_duration(&chunk_data, 22050)),
                                 text_offset: None,
                                 mark_type: None,
                             }),
@@ -351,7 +346,11 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
         !self.finished.get()
             && (self.response_stream.borrow().is_some()
                 || !self.chunk_buffer.borrow().is_empty()
-                || (!self.current_request.borrow().as_ref().map_or(true, |r| r.text.is_empty())))
+                || (!self
+                    .current_request
+                    .borrow()
+                    .as_ref()
+                    .is_none_or(|r| r.text.is_empty())))
     }
 
     fn get_status(&self) -> StreamStatus {

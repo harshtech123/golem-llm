@@ -8,8 +8,8 @@ use golem_tts::golem::tts::types::{
     AudioFormat, SynthesisMetadata, SynthesisResult, TextInput, TextType, TtsError, VoiceGender,
     VoiceQuality, VoiceSettings,
 };
-use log::{info, warn};
 use golem_tts::golem::tts::voices::{LanguageInfo, VoiceFilter, VoiceInfo};
+use log::info;
 
 pub fn estimate_audio_duration(audio_data: &[u8], _sample_rate: u32) -> f32 {
     if audio_data.is_empty() {

@@ -312,7 +312,7 @@ impl GuestSynthesisStream for DeepgramSynthesisStream {
             return Err(TtsError::InternalError("No request available".to_string()));
         }
 
-       Ok(())
+        Ok(())
     }
 
     fn receive_chunk(&self) -> Result<Option<AudioChunk>, TtsError> {
