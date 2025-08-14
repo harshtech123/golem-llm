@@ -27,6 +27,7 @@ use golem_tts::golem::tts::voices::{
     Guest as VoicesGuest, GuestVoice, GuestVoiceResults, LanguageInfo, Voice, VoiceFilter,
     VoiceInfo, VoiceResults,
 };
+use log::{info, warn};
 use std::cell::{Cell, RefCell};
 
 mod client;
@@ -224,10 +225,10 @@ impl DeepgramSynthesisStream {
 
 impl GuestSynthesisStream for DeepgramSynthesisStream {
     fn send_text(&self, input: TextInput) -> Result<(), TtsError> {
-        println!("[DEEPGRAM] send_text called with: '{}'", input.content);
+        info!("[DEEPGRAM] send_text called with: '{}'", input.content);
 
         if self.finished.get() {
-            println!("[DEEPGRAM] Stream already finished, returning error");
+            warn!("[DEEPGRAM] Stream already finished, returning error");
             return Err(TtsError::InvalidConfiguration(
                 "Stream already finished".to_string(),
             ));
@@ -236,58 +237,57 @@ impl GuestSynthesisStream for DeepgramSynthesisStream {
         {
             let mut request_ref = self.current_request.borrow_mut();
             if let Some(mut request) = request_ref.take() {
-                println!(
+                info!(
                     "[DEEPGRAM] Updating request text from '{}' to '{}'",
                     request.text, input.content
                 );
                 request.text = input.content;
                 *request_ref = Some(request);
             } else {
-                println!("[DEEPGRAM] Warning: No current request to update");
+                warn!("[DEEPGRAM] Warning: No current request to update");
             }
         }
 
-        println!("[DEEPGRAM] send_text completed successfully");
         Ok(())
     }
 
     fn finish(&self) -> Result<(), TtsError> {
-        println!("[DEEPGRAM] finish() called");
+        info!("[DEEPGRAM] finish() called");
 
         if self.stream_started.get() {
-            println!("[DEEPGRAM] Stream already started, returning OK");
+            info!("[DEEPGRAM] Stream already started, returning OK");
             return Ok(());
         }
 
-        println!("[DEEPGRAM] Checking current request state...");
+        warn!("[DEEPGRAM] Checking current request state...");
         let request_debug = self.current_request.borrow();
         match request_debug.as_ref() {
             Some(req) => {
-                println!(
+                info!(
                     "[DEEPGRAM] Request exists with text: '{}' (length: {})",
                     req.text,
                     req.text.len()
                 );
             }
             None => {
-                println!("[DEEPGRAM] No request found!");
+                warn!("[DEEPGRAM] No request found!");
                 return Err(TtsError::InternalError("No request available".to_string()));
             }
         }
         drop(request_debug);
 
         if let Some(request) = self.current_request.borrow().as_ref() {
-            println!("[DEEPGRAM] Current request text: '{}'", request.text);
+            warn!("[DEEPGRAM] Current request text: '{}'", request.text);
             if !request.text.is_empty() {
-                println!("[DEEPGRAM] Making API call to Deepgram...");
+                warn!("[DEEPGRAM] Making API call to Deepgram...");
 
                 if let Some(params) = self.params.borrow().as_ref() {
-                    println!(
+                    warn!(
                         "[DEEPGRAM] Params - model: {:?}, encoding: {:?}, sample_rate: {:?}",
                         params.model, params.encoding, params.sample_rate
                     );
                 } else {
-                    println!("[DEEPGRAM] Warning: No params available");
+                    warn!("[DEEPGRAM] Warning: No params available");
                 }
 
                 match self
@@ -295,29 +295,24 @@ impl GuestSynthesisStream for DeepgramSynthesisStream {
                     .text_to_speech_stream(request, self.params.borrow().as_ref())
                 {
                     Ok(response) => {
-                        println!("[DEEPGRAM] API call successful, storing response");
                         *self.response_stream.borrow_mut() = Some(response);
                         self.stream_started.set(true);
                     }
                     Err(e) => {
-                        println!("[DEEPGRAM] API call failed: {:?}", e);
                         self.finished.set(true);
                         return Err(e);
                     }
                 }
             } else {
-                println!("[DEEPGRAM] Request text is empty, no API call needed");
                 return Err(TtsError::InvalidText(
                     "No text provided for synthesis".to_string(),
                 ));
             }
         } else {
-            println!("[DEEPGRAM] No current request available");
             return Err(TtsError::InternalError("No request available".to_string()));
         }
 
-        println!("[DEEPGRAM] finish() completed successfully");
-        Ok(())
+       Ok(())
     }
 
     fn receive_chunk(&self) -> Result<Option<AudioChunk>, TtsError> {

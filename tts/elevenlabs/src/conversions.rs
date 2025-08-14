@@ -8,6 +8,7 @@ use golem_tts::golem::tts::types::{
     AudioFormat, SynthesisMetadata, SynthesisResult, TextInput, TextType, TtsError, VoiceGender,
     VoiceQuality, VoiceSettings,
 };
+use log::{info, warn};
 use golem_tts::golem::tts::voices::{LanguageInfo, VoiceFilter, VoiceInfo};
 
 pub fn estimate_audio_duration(audio_data: &[u8], _sample_rate: u32) -> f32 {
@@ -322,12 +323,7 @@ pub fn synthesis_options_to_tts_request(
 ) -> (TextToSpeechRequest, Option<TextToSpeechParams>) {
     let supports_language_code = !model_version.contains("multilingual");
 
-    println!("[DEBUG] ElevenLabs synthesis_options_to_tts_request - Model compatibility check:");
-    println!("[DEBUG]   Model: {}", model_version);
-    println!(
-        "[DEBUG]   Supports language_code: {}",
-        supports_language_code
-    );
+    info!("[DEBUG] ElevenLabs synthesis_options_to_tts_request - Model compatibility check:");
 
     let default_request = TextToSpeechRequest {
         text: String::new(),
@@ -394,18 +390,14 @@ pub fn voice_settings_to_elevenlabs(settings: VoiceSettings) -> ElevenLabsVoiceS
         use_speaker_boost: None,
         speed: None,
     };
-
-    println!("[DEBUG] ElevenLabs voice_settings_to_elevenlabs conversion:");
-    println!(
+    info!(
         "[DEBUG]   Original stability: {:?} -> Clamped: {:?}",
         settings.stability, elevenlabs_settings.stability
     );
-    println!(
+    info!(
         "[DEBUG]   Original similarity: {:?} -> Clamped: {:?}",
         settings.similarity, elevenlabs_settings.similarity_boost
     );
-    println!("[DEBUG]   Style disabled for compatibility");
-    println!("[DEBUG]   Speed disabled for compatibility");
 
     elevenlabs_settings
 }

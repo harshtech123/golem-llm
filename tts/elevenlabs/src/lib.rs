@@ -28,7 +28,7 @@ use golem_tts::golem::tts::voices::{
     Guest as VoicesGuest, GuestVoice, GuestVoiceResults, LanguageInfo, Voice, VoiceFilter,
     VoiceInfo, VoiceResults,
 };
-use log::trace;
+use log::{trace, info, warn};
 use std::cell::{Cell, RefCell};
 
 mod client;
@@ -240,15 +240,15 @@ impl GuestSynthesisStream for ElevenLabsSynthesisStream {
         {
             let mut request_ref = self.current_request.borrow_mut();
             if let Some(mut request) = request_ref.take() {
-                println!(
+                info!(
                     "[DEBUG] ElevenLabs send_text - Updating request with new text: '{}'",
                     input.content
                 );
                 request.text = input.content;
                 *request_ref = Some(request);
-                println!("[DEBUG] ElevenLabs send_text - Successfully updated request");
+                info!("[DEBUG] ElevenLabs send_text - Successfully updated request");
             } else {
-                println!(
+                warn!(
                     "[DEBUG] ElevenLabs send_text - Warning: No current request found to update"
                 );
             }
