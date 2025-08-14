@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::time::Duration;
 
-/// Rate limiting configuration for Google Cloud TTS
+/// Rate limiting configuration 
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
     pub max_retries: u32,
@@ -29,7 +29,6 @@ impl Default for RateLimitConfig {
     }
 }
 
-/// Authentication token information
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct AuthToken {
@@ -38,7 +37,7 @@ pub struct AuthToken {
     pub expires_at: std::time::SystemTime,
 }
 
-/// The Google Cloud TTS API client for managing voices and performing text-to-speech
+/// The Google Cloud TTS API client 
 /// Based on https://cloud.google.com/text-to-speech/docs/reference/rest
 #[derive(Clone)]
 pub struct GoogleTtsApi {
@@ -72,18 +71,14 @@ impl GoogleTtsApi {
         })
     }
 
-    /// Get access token using Google Cloud authentication
     fn get_access_token(&self) -> Result<String, TtsError> {
-        // Try to get token from service account credentials
         if let Some(ref creds_path) = self.credentials_path {
             return self.get_token_from_service_account(creds_path);
         }
 
-        // Fallback to metadata service (for GCE/Cloud Run/etc.)
         self.get_token_from_metadata_service()
     }
 
-    /// Get token from service account credentials file
     fn get_token_from_service_account(&self, creds_path: &str) -> Result<String, TtsError> {
         let creds_content = std::fs::read_to_string(creds_path)
             .map_err(|e| internal_error(format!("Failed to read service account file: {}", e)))?;
@@ -91,10 +86,8 @@ impl GoogleTtsApi {
         let creds: ServiceAccountCredentials = serde_json::from_str(&creds_content)
             .map_err(|e| internal_error(format!("Failed to parse service account file: {}", e)))?;
 
-        // Create JWT assertion
         let jwt = self.create_jwt_assertion(&creds)?;
 
-        // Exchange JWT for access token
         let response = self
             .client
             .post("https://oauth2.googleapis.com/token")
@@ -117,7 +110,6 @@ impl GoogleTtsApi {
         Ok(token_response.access_token)
     }
 
-    /// Get token from GCE metadata service
     fn get_token_from_metadata_service(&self) -> Result<String, TtsError> {
         let response = self.client
             .get("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token")
@@ -135,7 +127,6 @@ impl GoogleTtsApi {
         Ok(token_response.access_token)
     }
 
-    /// Create JWT assertion for service account authentication
     fn create_jwt_assertion(&self, creds: &ServiceAccountCredentials) -> Result<String, TtsError> {
         use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
         use serde_json::json;
@@ -153,7 +144,6 @@ impl GoogleTtsApi {
             "iat": now
         });
 
-        // Parse the private key
         let key = EncodingKey::from_rsa_pem(creds.private_key.as_bytes())
             .map_err(|e| internal_error(format!("Failed to parse private key: {}", e)))?;
 
@@ -163,7 +153,6 @@ impl GoogleTtsApi {
             .map_err(|e| internal_error(format!("Failed to create JWT: {}", e)))
     }
 
-    /// Create an authenticated request
     fn create_request(&self, method: Method, url: &str) -> Result<RequestBuilder, TtsError> {
         let access_token = self.get_access_token()?;
 
@@ -174,7 +163,6 @@ impl GoogleTtsApi {
             .header("Content-Type", "application/json"))
     }
 
-    /// Execute a request with retry logic for rate limiting
     fn execute_with_retry<F>(&self, operation: F) -> Result<Response, TtsError>
     where
         F: Fn() -> Result<Response, TtsError>,
@@ -236,7 +224,6 @@ impl GoogleTtsApi {
         Err(internal_error("Max retries exceeded"))
     }
 
-    /// Get a list of available voices
     pub fn list_voices(&self, language_code: Option<&str>) -> Result<ListVoicesResponse, TtsError> {
         let mut url = format!("{}/voices", self.base_url);
 
@@ -253,7 +240,6 @@ impl GoogleTtsApi {
         .and_then(parse_response)
     }
 
-    /// Convert text to speech
     pub fn text_to_speech(&self, request: &SynthesizeSpeechRequest) -> Result<Vec<u8>, TtsError> {
         let url = format!("{}/text:synthesize", self.base_url);
 
@@ -265,14 +251,11 @@ impl GoogleTtsApi {
         })?;
 
         let synthesis_response: SynthesizeSpeechResponse = parse_response(response)?;
-        // Decode base64 audio content
         general_purpose::STANDARD
             .decode(&synthesis_response.audio_content)
             .map_err(|e| internal_error(format!("Failed to decode audio content: {}", e)))
     }
 }
-
-// Request/Response Types
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceAccountCredentials {
@@ -449,10 +432,9 @@ pub struct VoiceCloneParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SynthesizeSpeechResponse {
     #[serde(rename = "audioContent")]
-    pub audio_content: String, // Base64 encoded audio data
+    pub audio_content: String,
 }
 
-// Streaming Types
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamingSynthesizeRequest {
@@ -491,10 +473,9 @@ pub struct StreamingSynthesisInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StreamingSynthesizeResponse {
     #[serde(rename = "audioContent")]
-    pub audio_content: Vec<u8>, // Raw audio bytes for streaming
+    pub audio_content: Vec<u8>,
 }
 
-// Long Audio Types
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SynthesizeLongAudioRequest {
@@ -507,7 +488,6 @@ pub struct SynthesizeLongAudioRequest {
     pub voice: VoiceSelectionParams,
 }
 
-// Batch processing parameters for Google TTS
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchSynthesisParams {
     #[serde(skip_serializing_if = "Option::is_none")]

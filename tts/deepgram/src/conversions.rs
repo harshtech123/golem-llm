@@ -5,22 +5,18 @@ use golem_tts::golem::tts::types::{
 };
 use golem_tts::golem::tts::voices::{LanguageInfo, VoiceInfo};
 
-/// Estimate audio duration in seconds based on audio data size
-/// This is a rough estimation for audio data
 pub fn estimate_audio_duration(audio_data: &[u8], sample_rate: u32) -> f32 {
     if audio_data.is_empty() {
         return 0.0;
     }
 
-    // For different encoding formats, use appropriate calculations
-    // This is a simplified estimation
     let bytes_per_second = match sample_rate {
-        8000 => 16000,  // 8kHz * 2 bytes (16-bit)
-        16000 => 32000, // 16kHz * 2 bytes (16-bit)
-        22050 => 44100, // 22.05kHz * 2 bytes (16-bit)
-        24000 => 48000, // 24kHz * 2 bytes (16-bit)
-        48000 => 96000, // 48kHz * 2 bytes (16-bit)
-        _ => 48000,     // Default fallback
+        8000 => 16000,
+        16000 => 32000,
+        22050 => 44100,
+        24000 => 48000,
+        48000 => 96000,
+        _ => 48000,
     };
 
     (audio_data.len() as f32) / (bytes_per_second as f32)
@@ -30,10 +26,8 @@ pub fn deepgram_model_to_voice_info(model: Model) -> VoiceInfo {
     let gender = parse_gender(&model.gender);
     let quality = infer_quality_from_model(&model.voice_id);
 
-    // Parse language code
     let language = normalize_language_code(&model.language);
 
-    // Deepgram voices are always custom/proprietary
     let is_custom = false;
     let is_cloned = false;
 
@@ -41,7 +35,7 @@ pub fn deepgram_model_to_voice_info(model: Model) -> VoiceInfo {
         id: model.voice_id.clone(),
         name: model.name.clone(),
         language: language.clone(),
-        additional_languages: vec![], // Deepgram voices are typically monolingual
+        additional_languages: vec![], 
         gender,
         quality,
         description: Some(format!(
@@ -56,12 +50,11 @@ pub fn deepgram_model_to_voice_info(model: Model) -> VoiceInfo {
         sample_rate: get_default_sample_rate(),
         is_custom,
         is_cloned,
-        preview_url: None, // Deepgram doesn't provide preview URLs
+        preview_url: None,
         use_cases: model.use_cases.clone(),
     }
 }
 
-/// Parse gender from string
 pub fn parse_gender(gender_str: &str) -> VoiceGender {
     match gender_str.to_lowercase().as_str() {
         "feminine" | "female" => VoiceGender::Female,
@@ -70,16 +63,14 @@ pub fn parse_gender(gender_str: &str) -> VoiceGender {
     }
 }
 
-/// Infer quality from model name
 pub fn infer_quality_from_model(voice_id: &str) -> VoiceQuality {
     if voice_id.starts_with("aura-2-") {
-        VoiceQuality::Premium // Aura-2 is the newer, higher quality model
+        VoiceQuality::Premium 
     } else {
-        VoiceQuality::Standard // Aura-1 and others are standard quality
+        VoiceQuality::Standard 
     }
 }
 
-/// Normalize language codes to standard format
 pub fn normalize_language_code(code: &str) -> String {
     match code.to_lowercase().as_str() {
         "en-us" | "en-gb" | "en-au" | "en-ph" | "en-ie" => "en".to_string(),
@@ -88,14 +79,11 @@ pub fn normalize_language_code(code: &str) -> String {
     }
 }
 
-/// Get default sample rate for Deepgram
 fn get_default_sample_rate() -> u32 {
-    24000 // Deepgram's default sample rate
+    24000 
 }
 
-/// Validate SSML content
 pub fn validate_ssml(content: &str) -> Result<(), TtsError> {
-    // Since Deepgram doesn't support SSML, we should reject it
     if content.trim_start().starts_with('<') && content.contains("speak") {
         return Err(TtsError::InvalidSsml(
             "Deepgram TTS does not support SSML markup".to_string(),
@@ -104,9 +92,7 @@ pub fn validate_ssml(content: &str) -> Result<(), TtsError> {
     Ok(())
 }
 
-/// Validate language code
 pub fn validate_language_code(language: &str) -> Result<(), TtsError> {
-    // Define supported language codes for Deepgram
     let supported_languages = [
         "en", "en-us", "en-gb", "en-au", "en-ph", "en-ie",
         "es", "es-es", "es-mx", "es-co", "es-419",
@@ -126,11 +112,9 @@ pub fn validate_language_code(language: &str) -> Result<(), TtsError> {
     Ok(())
 }
 
-/// Validate voice settings
 pub fn validate_voice_settings(settings: &VoiceSettings) -> Result<(), TtsError> {
     let mut errors = Vec::new();
     
-    // Deepgram doesn't support voice settings modifications
     if settings.speed.is_some() {
         errors.push("Speed adjustment not supported".to_string());
     }
@@ -176,12 +160,10 @@ pub fn synthesis_options_to_tts_request(
     if let Some(opts) = options {
         let mut params = default_params;
 
-        // Validate voice settings if provided
         if let Some(ref voice_settings) = opts.voice_settings {
             validate_voice_settings(voice_settings)?;
         }
 
-        // Map audio config
         if let Some(audio_config) = opts.audio_config {
             let (encoding, container, default_sample_rate, default_bit_rate) =
                 audio_format_to_deepgram_params(audio_config.format);
@@ -189,52 +171,40 @@ pub fn synthesis_options_to_tts_request(
             params.encoding = Some(encoding);
             params.container = container;
             
-            // For some formats, sample rate is fixed and cannot be configured
-            // For fixed-rate formats, DON'T send sample_rate parameter to Deepgram
             match audio_config.format {
                 AudioFormat::Mp3 | AudioFormat::Aac => {
-                    // Fixed sample rate formats - DO NOT send sample_rate parameter
                     params.sample_rate = None;
                 },
                 AudioFormat::OggOpus => {
-                    // Fixed sample rate for Opus - DO NOT send sample_rate parameter  
                     params.sample_rate = None;
                 },
                 AudioFormat::Wav | AudioFormat::Pcm | AudioFormat::Flac => {
-                    // For uncompressed formats, validate user sample rate against supported rates
                     if let Some(user_rate) = audio_config.sample_rate {
-                        // Deepgram supports: 8000, 16000, 24000, 32000, 48000 for WAV/PCM/FLAC
                         let supported_rates = [8000, 16000, 24000, 32000, 48000];
                         if supported_rates.contains(&user_rate) {
                             params.sample_rate = Some(user_rate);
                         } else {
-                            // Fall back to closest supported rate
-                            params.sample_rate = Some(24000); // Safe default
+                            params.sample_rate = Some(24000); 
                         }
                     } else {
                         params.sample_rate = Some(default_sample_rate);
                     }
                 },
                 _ => {
-                    // Use default for other formats
                     params.sample_rate = Some(default_sample_rate);
                 }
             }
             
-            // For bit rate, use default values for compressed formats (ignore user settings for now)
             match audio_config.format {
                 AudioFormat::Mp3 | AudioFormat::OggOpus | AudioFormat::Aac => {
-                    // Use the conservative default bit rates we defined
                     params.bit_rate = default_bit_rate;
                 },
                 _ => {
-                    // Uncompressed formats don't use bit rate
                     params.bit_rate = None;
                 }
             }
         }
 
-        // Model version mapping
         if let Some(model_version) = opts.model_version {
             params.model = Some(model_version);
         }
@@ -245,48 +215,33 @@ pub fn synthesis_options_to_tts_request(
     }
 }
 
-/// Get the default Deepgram model
 fn get_default_model() -> String {
     std::env::var("DEEPGRAM_MODEL").unwrap_or_else(|_| "aura-2-asteria-en".to_string())
 }
 
-/// Convert AudioFormat to Deepgram parameters
+/// AudioFormat to Deepgram parameters
 /// Based on Deepgram TTS API documentation: https://developers.deepgram.com/docs/text-to-speech
-/// 
-/// Audio Format Combinations from official docs:
-/// - MP3: encoding=mp3, no container, fixed sample_rate=22050, bit_rate=32000|48000 (default)
-/// - Opus: encoding=opus, container=ogg, fixed sample_rate=48000, bit_rate=12000 (default), range: >=4000 and <=650000
-/// - AAC: encoding=aac, no container, fixed sample_rate=22050, bit_rate=48000 (default), range: >=4000 and <=192000
-/// - Linear16: encoding=linear16, container=wav|none, sample_rate configurable (8k,16k,24k,32k,48k), no bit_rate
 fn audio_format_to_deepgram_params(
     format: AudioFormat,
 ) -> (String, Option<String>, u32, Option<u32>) {
     match format {
-        // MP3: Use Deepgram's default bit_rate of 48000 instead of 32000
         AudioFormat::Mp3 => ("mp3".to_string(), None, 22050, Some(48000)),
-        // WAV: encoding=linear16, container=wav, sample_rate configurable (8k,16k,24k,32k,48k), no bit_rate
         AudioFormat::Wav => ("linear16".to_string(), Some("wav".to_string()), 24000, None),
-        // PCM: encoding=linear16, no container (raw audio), sample_rate configurable, no bit_rate
         AudioFormat::Pcm => (
             "linear16".to_string(),
-            None, // No container for raw PCM
+            None,
             24000,
             None,
         ),
-        // Opus: Use Deepgram's default bit_rate of 12000 instead of 32000
         AudioFormat::OggOpus => (
             "opus".to_string(),
             Some("ogg".to_string()),
             48000,
-            Some(12000), // Deepgram's documented default
+            Some(12000), 
         ),
-        // AAC: Use Deepgram's default bit_rate of 48000 instead of 64000
         AudioFormat::Aac => ("aac".to_string(), None, 22050, Some(48000)), // Deepgram's documented default
-        // FLAC: encoding=flac, no container, sample_rate configurable, no bit_rate
         AudioFormat::Flac => ("flac".to_string(), None, 48000, None),
-        // MULAW: encoding=mulaw, container=wav, sample_rate=8000 or 16000, no bit_rate
         AudioFormat::Mulaw => ("mulaw".to_string(), Some("wav".to_string()), 8000, None),
-        // ALAW: encoding=alaw, container=wav, sample_rate=8000 or 16000, no bit_rate
         AudioFormat::Alaw => ("alaw".to_string(), Some("wav".to_string()), 8000, None),
     }
 }
@@ -301,7 +256,6 @@ pub fn audio_data_to_synthesis_result(
     let character_count = text.chars().count() as u32;
     let word_count = text.split_whitespace().count() as u32;
 
-    // Estimate duration
     let duration_seconds = estimate_audio_duration(&audio_data, sample_rate);
 
     let metadata = SynthesisMetadata {
@@ -364,7 +318,6 @@ fn get_native_language_name(language_code: &str) -> String {
     }
 }
 
-/// Validate text input for Deepgram TTS
 pub fn validate_text_input(text: &str, model: Option<&str>) -> ValidationResult {
     let character_count = text.chars().count();
     let mut errors = Vec::new();
@@ -374,12 +327,10 @@ pub fn validate_text_input(text: &str, model: Option<&str>) -> ValidationResult 
         errors.push("Text cannot be empty".to_string());
     }
 
-    // Check for potentially problematic characters
     if text.contains('\0') {
         warnings.push("Text contains null characters which may cause issues".to_string());
     }
 
-    // For very long text, add a warning but don't error (we'll handle chunking automatically)
     let max_chars = get_max_chars_for_model(model);
     if character_count > max_chars {
         warnings.push(format!(
@@ -390,7 +341,6 @@ pub fn validate_text_input(text: &str, model: Option<&str>) -> ValidationResult 
 
     let is_valid = errors.is_empty();
     let estimated_duration = if is_valid {
-        // Rough estimation: ~150 words per minute
         let word_count = text.split_whitespace().count();
         Some((word_count as f32 / 150.0) * 60.0)
     } else {
@@ -406,21 +356,18 @@ pub fn validate_text_input(text: &str, model: Option<&str>) -> ValidationResult 
     }
 }
 
-/// Get maximum characters for a Deepgram model
 pub fn get_max_chars_for_model(model: Option<&str>) -> usize {
     if let Some(m) = model {
         if m.starts_with("aura-2-") {
-            1000 // Aura-2 limit
+            1000 
         } else {
-            2000 // Aura-1 limit
+            2000
         }
     } else {
-        1000 // Default to stricter limit
+        1000
     }
 }
 
-/// Intelligently split text into chunks suitable for Deepgram TTS
-/// Following Deepgram's text chunking best practices
 pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String> {
     if text.len() <= max_chunk_size {
         return vec![text.to_string()];
@@ -429,16 +376,13 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
     let mut chunks = Vec::new();
     let mut current_chunk = String::new();
 
-    // First, try to split by paragraphs (double newlines)
     let paragraphs: Vec<&str> = text.split("\n\n").collect();
     
     for paragraph in paragraphs {
-        // If the paragraph itself is too long, split by sentences
         if paragraph.len() > max_chunk_size {
             let sentences = split_by_sentences(paragraph);
             for sentence in sentences {
                 if sentence.len() > max_chunk_size {
-                    // If even a single sentence is too long, split by clauses
                     let clauses = split_by_clauses(&sentence, max_chunk_size);
                     for clause in clauses {
                         if current_chunk.len() + clause.len() + 1 <= max_chunk_size {
@@ -455,7 +399,6 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
                         }
                     }
                 } else {
-                    // Normal sentence processing
                     if current_chunk.len() + sentence.len() + 1 <= max_chunk_size {
                         if !current_chunk.is_empty() {
                             current_chunk.push(' ');
@@ -471,7 +414,6 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
                 }
             }
         } else {
-            // Paragraph fits within limits
             if current_chunk.len() + paragraph.len() + 2 <= max_chunk_size {
                 if !current_chunk.is_empty() {
                     current_chunk.push_str("\n\n");
@@ -491,11 +433,9 @@ pub fn split_text_intelligently(text: &str, max_chunk_size: usize) -> Vec<String
         chunks.push(current_chunk.trim().to_string());
     }
 
-    // Ensure no empty chunks
     chunks.into_iter().filter(|chunk| !chunk.trim().is_empty()).collect()
 }
 
-/// Split text by sentences, preserving sentence boundaries
 fn split_by_sentences(text: &str) -> Vec<String> {
     let mut sentences = Vec::new();
     let mut current_sentence = String::new();
@@ -504,16 +444,13 @@ fn split_by_sentences(text: &str) -> Vec<String> {
     while let Some(ch) = chars.next() {
         current_sentence.push(ch);
         
-        // Check for sentence endings
         if matches!(ch, '.' | '!' | '?') {
-            // Look ahead to see if this is actually the end of a sentence
             if let Some(&next_char) = chars.peek() {
                 if next_char.is_whitespace() || next_char.is_ascii_uppercase() {
                     sentences.push(current_sentence.trim().to_string());
                     current_sentence.clear();
                 }
             } else {
-                // End of text
                 sentences.push(current_sentence.trim().to_string());
                 current_sentence.clear();
             }
@@ -527,7 +464,6 @@ fn split_by_sentences(text: &str) -> Vec<String> {
     sentences.into_iter().filter(|s| !s.trim().is_empty()).collect()
 }
 
-/// Split text by clauses (commas, semicolons) when sentences are too long
 fn split_by_clauses(text: &str, max_size: usize) -> Vec<String> {
     if text.len() <= max_size {
         return vec![text.to_string()];
@@ -540,7 +476,6 @@ fn split_by_clauses(text: &str, max_size: usize) -> Vec<String> {
     while let Some(ch) = chars.next() {
         current_clause.push(ch);
         
-        // Check for clause boundaries
         if matches!(ch, ',' | ';' | ':') && current_clause.len() <= max_size {
             if let Some(&next_char) = chars.peek() {
                 if next_char.is_whitespace() {
@@ -549,15 +484,13 @@ fn split_by_clauses(text: &str, max_size: usize) -> Vec<String> {
                 }
             }
         } else if current_clause.len() >= max_size {
-            // Force split if we've reached the limit
             if let Some(last_space) = current_clause.rfind(' ') {
-                if last_space > max_size / 2 { // Don't split too early
+                if last_space > max_size / 2 {
                     let (first_part, second_part) = current_clause.split_at(last_space);
                     clauses.push(first_part.trim().to_string());
                     current_clause = second_part.trim().to_string();
                 }
             } else {
-                // No good split point, just cut at the limit
                 clauses.push(current_clause.trim().to_string());
                 current_clause.clear();
             }
@@ -571,29 +504,24 @@ fn split_by_clauses(text: &str, max_size: usize) -> Vec<String> {
     clauses.into_iter().filter(|c| !c.trim().is_empty()).collect()
 }
 
-/// Comprehensive validation for synthesis request
 pub fn validate_synthesis_request(
     text: &str,
     text_type: TextType,
     language: Option<&str>,
     options: Option<&SynthesisOptions>,
 ) -> Result<(), TtsError> {
-    // Validate empty text
     if text.trim().is_empty() {
         return Err(TtsError::InvalidText("Text cannot be empty".to_string()));
     }
     
-    // Validate SSML
     if text_type == TextType::Ssml {
         validate_ssml(text)?;
     }
     
-    // Validate language if provided
     if let Some(lang) = language {
         validate_language_code(lang)?;
     }
     
-    // Validate voice settings if provided
     if let Some(opts) = options {
         if let Some(ref voice_settings) = opts.voice_settings {
             validate_voice_settings(voice_settings)?;

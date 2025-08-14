@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::time::Duration;
 
-/// Rate limiting configuration for Deepgram
+/// Rate limiting configuration
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
     pub max_retries: u32,
@@ -69,7 +69,6 @@ impl DeepgramTtsApi {
             .header("Content-Type", "application/json")
     }
 
-    /// Execute a request with retry logic for rate limiting and network errors
     fn execute_with_retry<F>(&self, operation: F) -> Result<Response, TtsError>
     where
         F: Fn() -> Result<Response, TtsError>,
@@ -81,13 +80,11 @@ impl DeepgramTtsApi {
             match operation() {
                 Ok(response) => {
                     if response.status().is_success() {
-                        // Log successful attempt if retries were needed
                         if attempt > 0 {
                             trace!("Deepgram TTS request succeeded after {} retries", attempt);
                         }
                         return Ok(response);
                     } else if response.status().as_u16() == 429 && attempt < max_retries {
-                        // Rate limited - extract retry-after header if available
                         let wait_time = response
                             .headers()
                             .get("retry-after")
@@ -114,7 +111,6 @@ impl DeepgramTtsApi {
                         );
                         continue;
                     } else if response.status().as_u16() >= 500 && attempt < max_retries {
-                        // Server error - retry with backoff
                         trace!(
                             "Deepgram API server error ({}), waiting {}ms before retry {} of {}",
                             response.status().as_u16(),
@@ -134,7 +130,6 @@ impl DeepgramTtsApi {
                         );
                         continue;
                     } else {
-                        // Non-retryable error or max retries exceeded
                         if attempt > 0 && response.status().as_u16() == 429 {
                             return Err(TtsError::RateLimited(delay.as_secs() as u32));
                         }
@@ -143,7 +138,6 @@ impl DeepgramTtsApi {
                 }
                 Err(e) => {
                     if attempt < max_retries {
-                        // Network error - retry with backoff
                         trace!(
                             "Deepgram API network error, waiting {}ms before retry {} of {}: {}",
                             delay.as_millis(),
@@ -175,7 +169,6 @@ impl DeepgramTtsApi {
         Err(TtsError::InternalError("Max retries exceeded".to_string()))
     }
 
-    /// Synthesize text to speech
     pub fn text_to_speech(
         &self,
         request: &TextToSpeechRequest,
@@ -185,7 +178,6 @@ impl DeepgramTtsApi {
         Ok(response.audio_data)
     }
 
-    /// Synthesize text to speech with full metadata
     pub fn text_to_speech_with_metadata(
         &self,
         request: &TextToSpeechRequest,
@@ -204,7 +196,6 @@ impl DeepgramTtsApi {
 
         trace!("Making TTS request to: {}", url);
 
-        // Clone the request data to avoid borrowing issues in the retry closure
         let request_clone = request.clone();
         
         let operation = || {
@@ -218,18 +209,15 @@ impl DeepgramTtsApi {
 
         let response = self.execute_with_retry(operation)?;
 
-        // Check if response is successful
         if !response.status().is_success() {
             return Err(tts_error_from_status(response.status()));
         }
 
-        // Extract metadata from headers
         let metadata =
             TtsResponseMetadata::from_response_headers(response.headers()).ok_or_else(|| {
                 TtsError::InternalError("Missing required response headers".to_string())
             })?;
 
-        // Get the audio data
         match response.bytes() {
             Ok(bytes) => Ok(TtsResponse {
                 audio_data: bytes.to_vec(),
@@ -239,7 +227,6 @@ impl DeepgramTtsApi {
         }
     }
 
-    /// Stream text to speech (returns response for streaming)
     pub fn text_to_speech_stream(
         &self,
         request: &TextToSpeechRequest,
@@ -271,7 +258,6 @@ impl DeepgramTtsApi {
 
         let response = self.execute_with_retry(operation)?;
 
-        // Check if response is successful
         if !response.status().is_success() {
             return Err(tts_error_from_status(response.status()));
         }
@@ -279,7 +265,6 @@ impl DeepgramTtsApi {
         Ok(response)
     }
 
-    /// Get models with filtering support
     pub fn get_models_filtered(
         &self,
         filters: &VoiceFilters,
@@ -288,7 +273,6 @@ impl DeepgramTtsApi {
         Ok(ModelListResponse::filter_by(models, filters))
     }
 
-    /// Search models by text query
     pub fn search_models(&self, query: &str) -> Result<Vec<Model>, TtsError> {
         let filters = VoiceFilters::new().with_search(query.to_string());
         let response = self.get_models_filtered(&filters)?;
@@ -296,9 +280,7 @@ impl DeepgramTtsApi {
     }
 }
 
-// Request/Response Types
 
-/// TTS Response metadata from headers
 #[derive(Debug, Clone)]
 pub struct TtsResponseMetadata {
     #[allow(dead_code)]
@@ -316,7 +298,6 @@ pub struct TtsResponseMetadata {
 }
 
 impl TtsResponseMetadata {
-    /// Extract metadata from response headers
     pub fn from_response_headers(headers: &reqwest::header::HeaderMap) -> Option<Self> {
         Some(Self {
             content_type: headers.get("content-type")?.to_str().ok()?.to_string(),
@@ -337,7 +318,6 @@ impl TtsResponseMetadata {
     }
 }
 
-/// Complete TTS response with metadata
 #[derive(Debug, Clone)]
 pub struct TtsResponse {
     pub audio_data: Vec<u8>,
@@ -438,7 +418,6 @@ pub struct Voice {
     pub use_cases: Vec<String>,
 }
 
-/// Voice filtering and search parameters
 #[derive(Debug, Clone, Default)]
 pub struct VoiceFilters {
     pub language: Option<String>,
@@ -475,7 +454,6 @@ impl VoiceFilters {
     }
 }
 
-/// Enhanced model list response
 #[derive(Debug, Clone)]
 pub struct ModelListResponse {
     pub models: Vec<Model>,
@@ -492,42 +470,36 @@ impl ModelListResponse {
         let filtered_models: Vec<Model> = models
             .into_iter()
             .filter(|model| {
-                // Language filter
                 if let Some(ref lang) = filters.language {
                     if !model.language.to_lowercase().contains(&lang.to_lowercase()) {
                         return false;
                     }
                 }
 
-                // Gender filter
                 if let Some(ref gender) = filters.gender {
                     if !model.gender.to_lowercase().contains(&gender.to_lowercase()) {
                         return false;
                     }
                 }
 
-                // Accent filter
                 if let Some(ref accent) = filters.accent {
                     if !model.accent.to_lowercase().contains(&accent.to_lowercase()) {
                         return false;
                     }
                 }
 
-                // Version filter
                 if let Some(ref version) = filters.version {
                     if model.version != *version {
                         return false;
                     }
                 }
 
-                // Quality filter
                 if let Some(ref quality) = filters.quality {
                     if model.quality != *quality {
                         return false;
                     }
                 }
 
-                // Search query filter
                 if let Some(ref query) = filters.search_query {
                     let query_lower = query.to_lowercase();
                     let matches_name = model.name.to_lowercase().contains(&query_lower);
@@ -559,7 +531,6 @@ impl ModelListResponse {
     }
 }
 
-/// Get the list of available Deepgram models/voices
 /// Based on the documentation at https://developers.deepgram.com/docs/tts-models
 pub fn get_available_models() -> Vec<Model> {
     vec![
@@ -771,7 +742,7 @@ pub fn get_available_models() -> Vec<Model> {
             version: ModelVersion::Aura2,
             quality: VoiceQuality::Premium,
         },
-        // Spanish voices (Featured)
+        // Spanish voices
         Model {
             name: "celeste".to_string(),
             voice_id: "aura-2-celeste-es".to_string(),

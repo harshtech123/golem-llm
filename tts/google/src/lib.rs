@@ -32,7 +32,6 @@ use std::cell::{Cell, RefCell};
 mod client;
 mod conversions;
 
-// Google Voice Resource Implementation
 struct GoogleVoiceImpl {
     voice_data: GoogleVoice,
     client: GoogleTtsApi,
@@ -87,7 +86,7 @@ impl GuestVoice for GoogleVoiceImpl {
     }
 
     fn supports_ssml(&self) -> bool {
-        true // Google Cloud TTS supports SSML
+        true 
     }
 
     fn get_sample_rates(&self) -> Vec<u32> {
@@ -112,21 +111,18 @@ impl GuestVoice for GoogleVoiceImpl {
     }
 
     fn update_settings(&self, _settings: VoiceSettings) -> Result<(), TtsError> {
-        // Google doesn't support updating voice settings directly
         Err(TtsError::UnsupportedOperation(
             "Voice settings update not supported by Google Cloud TTS".to_string(),
         ))
     }
 
     fn delete(&self) -> Result<(), TtsError> {
-        // Google doesn't support deleting built-in voices
         Err(TtsError::UnsupportedOperation(
             "Built-in voices cannot be deleted in Google Cloud TTS".to_string(),
         ))
     }
 
     fn clone(&self) -> Result<Voice, TtsError> {
-        // Google doesn't have voice cloning like ElevenLabs
         Err(TtsError::UnsupportedOperation(
             "Voice cloning not supported by Google Cloud TTS".to_string(),
         ))
@@ -147,7 +143,6 @@ impl GuestVoice for GoogleVoiceImpl {
     }
 }
 
-// Google Voice Results Implementation
 struct GoogleVoiceResults {
     voices: RefCell<Vec<VoiceInfo>>,
     current_index: Cell<usize>,
@@ -180,7 +175,6 @@ impl GuestVoiceResults for GoogleVoiceResults {
             return Ok(vec![]);
         }
 
-        // Return next batch of voices (simulating pagination)
         const BATCH_SIZE: usize = 10;
         let end_idx = std::cmp::min(current_idx + BATCH_SIZE, voices.len());
         let batch = voices[current_idx..end_idx].to_vec();
@@ -196,7 +190,6 @@ impl GuestVoiceResults for GoogleVoiceResults {
     }
 }
 
-// Synthesis Stream Implementation with Google Cloud TTS streaming
 struct GoogleSynthesisStream {
     client: GoogleTtsApi,
     current_request: RefCell<Option<crate::client::SynthesizeSpeechRequest>>,
@@ -263,11 +256,9 @@ impl GuestSynthesisStream for GoogleSynthesisStream {
             return Ok(());
         }
 
-        // Synthesize the accumulated text
         if let Some(request) = self.current_request.borrow().as_ref() {
             let audio_data = self.client.text_to_speech(request)?;
 
-            // Store in buffer for chunk retrieval
             let mut buffer = self.chunk_buffer.borrow_mut();
             buffer.extend_from_slice(&audio_data);
         }
@@ -283,7 +274,6 @@ impl GuestSynthesisStream for GoogleSynthesisStream {
             return Ok(None);
         }
 
-        // Return chunks of reasonable size
         const CHUNK_SIZE: usize = 4096;
         let chunk_size = std::cmp::min(CHUNK_SIZE, buffer.len());
         let chunk_data = buffer.drain(..chunk_size).collect::<Vec<u8>>();
@@ -323,7 +313,6 @@ impl GuestSynthesisStream for GoogleSynthesisStream {
     }
 }
 
-// Voice Conversion Stream (not supported by Google Cloud TTS)
 struct GoogleVoiceConversionStream {
     finished: Cell<bool>,
 }
@@ -359,7 +348,6 @@ impl GuestVoiceConversionStream for GoogleVoiceConversionStream {
     }
 }
 
-// Pronunciation Lexicon Implementation (placeholder for Google TTS)
 struct GooglePronunciationLexicon {
     name: String,
     language: LanguageCode,
@@ -414,7 +402,6 @@ impl GuestPronunciationLexicon for GooglePronunciationLexicon {
     }
 }
 
-// Long Form Operation Implementation with Google Cloud TTS
 struct GoogleLongFormOperation {
     content: String,
     output_location: String,
@@ -458,7 +445,6 @@ impl GoogleLongFormOperation {
     fn process_long_form(&self) -> Result<(), TtsError> {
         self.status.set(OperationStatus::Processing);
 
-        // Split content into chunks (Google TTS has a 5000 byte limit)
         let chunks = self.split_content_intelligently(&self.content, 4000);
         let total_chunks = chunks.len();
         let mut audio_results = Vec::new();
@@ -491,7 +477,6 @@ impl GoogleLongFormOperation {
         let mut chunks = Vec::new();
         let mut current_chunk = String::new();
 
-        // Split by sentences first
         let sentences: Vec<&str> = content.split('.').collect();
 
         for sentence in sentences {
@@ -506,7 +491,6 @@ impl GoogleLongFormOperation {
                     current_chunk.clear();
                 }
 
-                // If single sentence is too long, split by words
                 if sentence_with_period.len() > max_chunk_size {
                     chunks.extend(
                         self.split_at_word_boundaries(&sentence_with_period, max_chunk_size),
@@ -539,7 +523,6 @@ impl GoogleLongFormOperation {
                 chunks.push(current_chunk);
                 current_chunk = word.to_string();
             } else {
-                // Single word too long, force split
                 chunks.push(word.to_string());
             }
         }
@@ -578,10 +561,8 @@ impl GuestLongFormOperation for GoogleLongFormOperation {
             .as_ref()
             .ok_or_else(|| TtsError::UnsupportedOperation("No audio data available".to_string()))?;
 
-        // Combine all audio chunks
         let combined_audio: Vec<u8> = chunks.iter().flatten().cloned().collect();
 
-        // Calculate actual duration based on audio data and encoding
         let sample_rate = self
             .request_template
             .borrow()
@@ -607,7 +588,6 @@ impl GuestLongFormOperation for GoogleLongFormOperation {
     }
 }
 
-// Main Google Component
 struct GoogleComponent;
 
 impl GoogleComponent {
@@ -647,7 +627,6 @@ impl VoicesGuest for GoogleComponent {
     fn get_voice(voice_id: String) -> Result<Voice, TtsError> {
         let client = Self::create_client()?;
 
-        // List all voices and find the one with matching name
         let response = client.list_voices(None)?;
 
         let voice_data = response
@@ -700,7 +679,6 @@ impl SynthesisGuest for GoogleComponent {
         voice: golem_tts::golem::tts::voices::VoiceBorrow<'_>,
         options: Option<SynthesisOptions>,
     ) -> Result<SynthesisResult, TtsError> {
-        // Validate input before processing using conversions
         validate_synthesis_input(&input, options.as_ref())?;
 
         let client = Self::create_client()?;
@@ -708,12 +686,9 @@ impl SynthesisGuest for GoogleComponent {
         let voice_name = voice_impl.get_id();
         let language_code = voice_impl.get_language();
 
-        // Check if text needs chunking (Google Cloud TTS limit is 5000 bytes)
         if input.content.len() > 5000 {
-            // Split text intelligently with Google's 5000 byte limit
             let chunks = split_text_intelligently(&input.content, 5000);
             
-            // Synthesize each chunk and collect audio
             let mut audio_chunks = Vec::new();
             for chunk in chunks {
                 let chunk_input = TextInput {
@@ -731,18 +706,15 @@ impl SynthesisGuest for GoogleComponent {
                 audio_chunks.push(chunk_audio);
             }
             
-            // Get format for combining audio
             let format = options
                 .as_ref()
                 .and_then(|o| o.audio_config)
                 .map(|ac| ac.format)
                 .unwrap_or(AudioFormat::Mp3);
             
-            // Combine audio chunks
             let combined_audio = combine_audio_chunks(audio_chunks, &format);
             
-            // Create result with combined audio
-            let encoding = &AudioEncoding::Mp3; // Default encoding
+            let encoding = &AudioEncoding::Mp3;
             let sample_rate = options
                 .as_ref()
                 .and_then(|o| o.audio_config)
@@ -756,7 +728,6 @@ impl SynthesisGuest for GoogleComponent {
                 sample_rate,
             ))
         } else {
-            // Regular synthesis for normal text
             let (request, _) =
                 synthesis_options_to_tts_request(&input, &voice_name, &language_code, options);
 
@@ -784,7 +755,6 @@ impl SynthesisGuest for GoogleComponent {
         voice: golem_tts::golem::tts::voices::VoiceBorrow<'_>,
         options: Option<SynthesisOptions>,
     ) -> Result<Vec<SynthesisResult>, TtsError> {
-        // Validate all inputs first using conversions
         for input in &inputs {
             validate_synthesis_input(input, options.as_ref())?;
         }
@@ -797,12 +767,9 @@ impl SynthesisGuest for GoogleComponent {
             let voice_name = voice_impl.get_id();
             let language_code = voice_impl.get_language();
 
-            // Check if text needs chunking (Google Cloud TTS limit is 5000 bytes)
             if input.content.len() > 5000 {
-                // Split text intelligently with Google's 5000 byte limit
                 let chunks = split_text_intelligently(&input.content, 5000);
                 
-                // Synthesize each chunk and collect audio
                 let mut audio_chunks = Vec::new();
                 for chunk in chunks {
                     let chunk_input = TextInput {
@@ -820,18 +787,15 @@ impl SynthesisGuest for GoogleComponent {
                     audio_chunks.push(chunk_audio);
                 }
                 
-                // Get format for combining audio
                 let format = options
                     .as_ref()
                     .and_then(|o| o.audio_config)
                     .map(|ac| ac.format)
                     .unwrap_or(AudioFormat::Mp3);
                 
-                // Combine audio chunks
                 let combined_audio = combine_audio_chunks(audio_chunks, &format);
                 
-                // Create result with combined audio
-                let encoding = &AudioEncoding::Mp3; // Default encoding
+                let encoding = &AudioEncoding::Mp3;
                 let sample_rate = options
                     .as_ref()
                     .and_then(|o| o.audio_config)
@@ -845,7 +809,6 @@ impl SynthesisGuest for GoogleComponent {
                     sample_rate,
                 ));
             } else {
-                // Regular synthesis for normal text
                 let (request, _) = synthesis_options_to_tts_request(
                     &input,
                     &voice_name,
@@ -878,7 +841,6 @@ impl SynthesisGuest for GoogleComponent {
         _input: TextInput,
         _voice: golem_tts::golem::tts::voices::VoiceBorrow<'_>,
     ) -> Result<Vec<TimingInfo>, TtsError> {
-        // Google Cloud TTS doesn't provide timing information
         Err(TtsError::UnsupportedOperation(
             "Timing marks not supported by Google Cloud TTS".to_string(),
         ))
@@ -984,7 +946,6 @@ impl AdvancedGuest for GoogleComponent {
         let client = Self::create_client()?;
         let operation = GoogleLongFormOperation::new(content, output_location, client, None);
 
-        // Start processing
         operation.process_long_form()?;
 
         Ok(LongFormOperation::new(operation))

@@ -34,7 +34,6 @@ use std::cell::{Cell, RefCell};
 mod client;
 mod conversions;
 
-// AWS Polly Voice Resource Implementation
 struct PollyVoiceImpl {
     voice_data: AwsVoice,
     client: AwsPollyTtsApi,
@@ -104,11 +103,10 @@ impl GuestVoice for PollyVoiceImpl {
     }
 
     fn supports_ssml(&self) -> bool {
-        true // AWS Polly supports SSML for all voices
+        true 
     }
 
     fn get_sample_rates(&self) -> Vec<u32> {
-        // AWS Polly supports these specific sample rates for all engines
         vec![8000, 16000, 22050]
     }
 
@@ -117,28 +115,24 @@ impl GuestVoice for PollyVoiceImpl {
     }
 
     fn update_settings(&self, _settings: VoiceSettings) -> Result<(), TtsError> {
-        // AWS Polly doesn't support updating voice settings in the same way
         Err(TtsError::UnsupportedOperation(
             "Voice settings cannot be permanently updated in AWS Polly".to_string(),
         ))
     }
 
     fn delete(&self) -> Result<(), TtsError> {
-        // AWS Polly voices are managed by AWS and cannot be deleted
         Err(TtsError::UnsupportedOperation(
             "AWS Polly voices cannot be deleted".to_string(),
         ))
     }
 
     fn clone(&self) -> Result<Voice, TtsError> {
-        // AWS Polly doesn't support voice cloning in the traditional sense
         Err(TtsError::UnsupportedOperation(
             "Voice cloning not supported for AWS Polly voices".to_string(),
         ))
     }
 
     fn preview(&self, text: String) -> Result<Vec<u8>, TtsError> {
-        // Generate a short preview using the voice
         let preview_text = if text.len() > 100 {
             format!("{}...", &text[..97])
         } else {
@@ -152,7 +146,6 @@ impl GuestVoice for PollyVoiceImpl {
     }
 }
 
-// AWS Polly Voice Results Implementation
 struct PollyVoiceResults {
     voices: RefCell<Vec<VoiceInfo>>,
     current_index: Cell<usize>,
@@ -166,7 +159,7 @@ impl PollyVoiceResults {
         Self {
             voices: RefCell::new(voices),
             current_index: Cell::new(0),
-            has_more: Cell::new(has_voices), // Set to true if we have voices to return
+            has_more: Cell::new(has_voices), 
             total_count,
         }
     }
@@ -180,7 +173,7 @@ impl GuestVoiceResults for PollyVoiceResults {
     fn get_next(&self) -> Result<Vec<VoiceInfo>, TtsError> {
         let voices = self.voices.borrow();
         let start_index = self.current_index.get();
-        let batch_size = 10; // Return 10 voices at a time
+        let batch_size = 10; 
         let end_index = std::cmp::min(start_index + batch_size, voices.len());
 
         trace!("PollyVoiceResults::get_next - start: {}, end: {}, total: {}", start_index, end_index, voices.len());
@@ -203,8 +196,6 @@ impl GuestVoiceResults for PollyVoiceResults {
         self.total_count
     }
 }
-
-// Synthesis Stream Implementation (simplified for AWS Polly)
 struct PollySynthesisStream {
     voice_id: String,
     client: AwsPollyTtsApi,
@@ -237,11 +228,9 @@ impl GuestSynthesisStream for PollySynthesisStream {
             ));
         }
 
-        // For AWS Polly, we'll buffer text and synthesize in chunks
         let mut buffer = self.text_buffer.borrow_mut();
         buffer.push_str(&input.content);
 
-        // If buffer is getting large or contains sentence endings, process it
         if buffer.len() > 1000
             || buffer.ends_with('.')
             || buffer.ends_with('!')
@@ -278,7 +267,6 @@ impl GuestSynthesisStream for PollySynthesisStream {
             return Ok(());
         }
 
-        // Process any remaining text in buffer
         let remaining_text = {
             let mut buffer = self.text_buffer.borrow_mut();
             let text = buffer.clone();
@@ -337,7 +325,6 @@ impl GuestSynthesisStream for PollySynthesisStream {
     }
 }
 
-// Voice Conversion Stream (not supported by AWS Polly directly)
 struct PollyVoiceConversionStream {
     #[allow(dead_code)]
     voice_id: String,
@@ -376,7 +363,6 @@ impl GuestVoiceConversionStream for PollyVoiceConversionStream {
     }
 }
 
-// Pronunciation Lexicon Implementation
 struct PollyPronunciationLexicon {
     name: String,
     language: LanguageCode,
@@ -421,7 +407,6 @@ impl GuestPronunciationLexicon for PollyPronunciationLexicon {
         };
         self.entries.borrow_mut().push(entry);
 
-        // Sync with AWS Polly lexicon
         self.sync_lexicon()?;
         Ok(())
     }
@@ -429,7 +414,6 @@ impl GuestPronunciationLexicon for PollyPronunciationLexicon {
     fn remove_entry(&self, word: String) -> Result<(), TtsError> {
         self.entries.borrow_mut().retain(|entry| entry.word != word);
 
-        // Sync with AWS Polly lexicon
         self.sync_lexicon()?;
         Ok(())
     }
@@ -467,7 +451,6 @@ impl PollyPronunciationLexicon {
     }
 }
 
-// Long Form Operation Implementation using AWS Polly synthesis tasks
 struct PollyLongFormOperation {
     task_id: String,
     client: AwsPollyTtsApi,
@@ -498,7 +481,6 @@ impl PollyLongFormOperation {
 
         self.status.set(status);
 
-        // AWS Polly doesn't provide detailed progress, so we estimate
         let progress = match status {
             OperationStatus::Pending => 0.0,
             OperationStatus::Processing => 0.5,
@@ -514,7 +496,6 @@ impl PollyLongFormOperation {
 
 impl GuestLongFormOperation for PollyLongFormOperation {
     fn get_status(&self) -> OperationStatus {
-        // Update status from AWS before returning
         let _ = self.update_status();
         self.status.get()
     }
@@ -524,7 +505,6 @@ impl GuestLongFormOperation for PollyLongFormOperation {
     }
 
     fn cancel(&self) -> Result<(), TtsError> {
-        // AWS Polly doesn't support canceling synthesis tasks once started
         Err(TtsError::UnsupportedOperation(
             "Cannot cancel AWS Polly synthesis tasks".to_string(),
         ))
@@ -536,13 +516,13 @@ impl GuestLongFormOperation for PollyLongFormOperation {
         if let Some(output_uri) = task.output_uri {
             Ok(LongFormResult {
                 output_location: output_uri,
-                total_duration: 0.0, // Would need to calculate from the output
+                total_duration: 0.0,
                 chapter_durations: None,
                 metadata: golem_tts::golem::tts::types::SynthesisMetadata {
                     duration_seconds: 0.0,
                     character_count: task.request_characters.unwrap_or(0) as u32,
-                    word_count: 0,       // Would need to calculate
-                    audio_size_bytes: 0, // Would need to get from S3 object
+                    word_count: 0,      
+                    audio_size_bytes: 0, 
                     request_id: self.task_id.clone(),
                     provider_info: Some("AWS Polly".to_string()),
                 },
@@ -555,7 +535,6 @@ impl GuestLongFormOperation for PollyLongFormOperation {
     }
 }
 
-// Main AWS Polly Component
 struct AwsPollyComponent;
 
 impl AwsPollyComponent {
@@ -663,18 +642,14 @@ impl SynthesisGuest for AwsPollyComponent {
         voice: golem_tts::golem::tts::voices::VoiceBorrow<'_>,
         options: Option<SynthesisOptions>,
     ) -> Result<SynthesisResult, TtsError> {
-        // Validate input before processing using conversions
         validate_synthesis_input(&input, options.as_ref())?;
         
         let client = Self::create_client()?;
         let voice_id = voice.get::<PollyVoiceImpl>().get_id();
 
-        // Check if text needs chunking
         if input.content.len() > 3000 {
-            // Split text intelligently with AWS Polly's 3000 character limit
             let chunks = split_text_intelligently(&input.content, 3000);
             
-            // Synthesize each chunk and collect audio
             let mut audio_chunks = Vec::new();
             for chunk in chunks {
                 let chunk_input = TextInput {
@@ -691,17 +666,14 @@ impl SynthesisGuest for AwsPollyComponent {
                 audio_chunks.push(chunk_audio);
             }
             
-            // Get format for combining audio
             let format = options
                 .as_ref()
                 .and_then(|o| o.audio_config)
                 .map(|ac| ac.format)
                 .unwrap_or(AudioFormat::Mp3);
             
-            // Combine audio chunks
             let combined_audio = combine_audio_chunks(audio_chunks, &format);
             
-            // Create result with combined audio
             let sample_rate = options
                 .as_ref()
                 .and_then(|o| o.audio_config)
@@ -715,7 +687,6 @@ impl SynthesisGuest for AwsPollyComponent {
                 sample_rate,
             ))
         } else {
-            // Regular synthesis for normal text
             let params = synthesis_options_to_polly_params(options, voice_id, input.content.clone());
             let audio_data = client.synthesize_speech(params.clone())?;
 
@@ -744,15 +715,11 @@ impl SynthesisGuest for AwsPollyComponent {
         let mut results = Vec::new();
 
         for input in inputs {
-            // Validate each input before processing using conversions
             validate_synthesis_input(&input, options.as_ref())?;
             
-            // Check if text needs chunking
             if input.content.len() > 3000 {
-                // Split text intelligently with AWS Polly's 3000 character limit
                 let chunks = split_text_intelligently(&input.content, 3000);
                 
-                // Synthesize each chunk and collect audio
                 let mut audio_chunks = Vec::new();
                 for chunk in chunks {
                     let chunk_input = TextInput {
@@ -769,17 +736,14 @@ impl SynthesisGuest for AwsPollyComponent {
                     audio_chunks.push(chunk_audio);
                 }
                 
-                // Get format for combining audio
                 let format = options
                     .as_ref()
                     .and_then(|o| o.audio_config)
                     .map(|ac| ac.format)
                     .unwrap_or(AudioFormat::Mp3);
                 
-                // Combine audio chunks
                 let combined_audio = combine_audio_chunks(audio_chunks, &format);
                 
-                // Create result with combined audio
                 let sample_rate = options
                     .as_ref()
                     .and_then(|o| o.audio_config)
@@ -793,7 +757,6 @@ impl SynthesisGuest for AwsPollyComponent {
                     sample_rate,
                 ));
             } else {
-                // Regular synthesis for normal text
                 let params = synthesis_options_to_polly_params(
                     options.clone(),
                     voice_id.clone(),
@@ -823,8 +786,6 @@ impl SynthesisGuest for AwsPollyComponent {
         input: TextInput,
         voice: golem_tts::golem::tts::voices::VoiceBorrow<'_>,
     ) -> Result<Vec<TimingInfo>, TtsError> {
-        // AWS Polly supports speech marks, but this would require a separate API call
-        // For now, return empty timing info
         let voice_id = voice.get::<PollyVoiceImpl>().get_id();
         trace!(
             "Getting timing marks for voice: {}, text: {}",
@@ -923,7 +884,6 @@ impl AdvancedGuest for AwsPollyComponent {
         let client = Self::create_client()?;
         let lexicon = PollyPronunciationLexicon::new(name, language, entries, client);
 
-        // Create empty lexicon in AWS Polly
         lexicon.sync_lexicon()?;
 
         Ok(PronunciationLexicon::new(lexicon))
@@ -939,7 +899,6 @@ impl AdvancedGuest for AwsPollyComponent {
         let voice_id = voice.get::<PollyVoiceImpl>().get_id();
         let voice_language = voice.get::<PollyVoiceImpl>().get_language();
 
-        // Extract S3 bucket name from output location
         let bucket_name = if output_location.starts_with("s3://") {
             output_location
                 .strip_prefix("s3://")
@@ -982,7 +941,6 @@ impl ExtendedGuest for AwsPollyComponent {
         options: Option<SynthesisOptions>,
     ) -> Self::SynthesisStream {
         let client = Self::create_client().unwrap_or_else(|_| {
-            // Fallback client for unwrapped method
             AwsPollyTtsApi::new(
                 "dummy".to_string(),
                 "dummy".to_string(),
@@ -1000,7 +958,6 @@ impl ExtendedGuest for AwsPollyComponent {
         _options: Option<SynthesisOptions>,
     ) -> Self::VoiceConversionStream {
         let client = Self::create_client().unwrap_or_else(|_| {
-            // Fallback client for unwrapped method
             AwsPollyTtsApi::new(
                 "dummy".to_string(),
                 "dummy".to_string(),

@@ -14,14 +14,12 @@ use hex;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Helper function to calculate HMAC-SHA256 (same as  client)
 fn hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
     let mut mac = HmacSha256::new_from_slice(key).expect("HMAC can take key of any size");
     mac.update(data);
     mac.finalize().into_bytes().to_vec()
 }
 
-/// Simple URL encoding for query parameters
 fn url_encode(input: &str) -> String {
     input
         .chars()
@@ -32,7 +30,6 @@ fn url_encode(input: &str) -> String {
         .collect()
 }
 
-/// Rate limiting configuration for AWS Polly
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
@@ -53,7 +50,6 @@ impl Default for RateLimitConfig {
     }
 }
 
-/// AWS Polly engine types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum Engine {
     #[serde(rename = "standard")]
@@ -67,7 +63,6 @@ pub enum Engine {
     Generative,
 }
 
-/// AWS Polly output formats
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum OutputFormat {
     #[serde(rename = "json")]
@@ -81,7 +76,6 @@ pub enum OutputFormat {
     Pcm,
 }
 
-/// AWS Polly text types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub enum TextType {
     #[serde(rename = "text")]
@@ -91,7 +85,6 @@ pub enum TextType {
     Ssml,
 }
 
-/// AWS Polly speech mark types
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum SpeechMarkType {
     #[serde(rename = "sentence")]
@@ -104,7 +97,6 @@ pub enum SpeechMarkType {
     Word,
 }
 
-/// AWS Polly API client for text-to-speech operations
 #[derive(Debug)]
 pub struct AwsPollyTtsApi {
     access_key_id: String,
@@ -157,7 +149,6 @@ impl AwsPollyTtsApi {
         Ok(())
     }
 
-    /// Create an authenticated request (following Google client pattern)
     fn create_authenticated_request<T: Serialize>(
         &self,
         method: Method,
@@ -169,7 +160,6 @@ impl AwsPollyTtsApi {
             .map_err(|e| from_reqwest_error("Failed to send request", e))
     }
 
-    /// Make authenticated REST request with AWS Signature V4 for Polly
     fn make_rest_request<T: Serialize>(
         &self,
         method: Method,
@@ -179,7 +169,6 @@ impl AwsPollyTtsApi {
     ) -> Result<Response, reqwest::Error> {
         let mut url = format!("{}{}", self.base_url, path);
         
-        // Add query parameters if provided
         if let Some(params) = query_params {
             if !params.is_empty() {
                 url.push('?');
@@ -219,7 +208,6 @@ impl AwsPollyTtsApi {
         request_builder.send()
     }
 
-    /// Execute request with retry logic (following Google client pattern)
     fn execute_with_retry<F>(&self, operation: F) -> Result<Response, TtsError>
     where
         F: Fn() -> Result<Response, TtsError>,
@@ -276,17 +264,14 @@ impl AwsPollyTtsApi {
         Err(internal_error("Max retries exceeded"))
     }
 
-    /// Describe available voices using REST API
     pub fn describe_voices(
         &self,
         params: Option<DescribeVoicesParams>,
     ) -> Result<DescribeVoicesResponse, TtsError> {
         trace!("Describing voices");
 
-        // Validate credentials first
         self.validate_credentials()?;
 
-        // Build query parameters
         let mut query_params = Vec::new();
         if let Some(ref p) = params {
             if let Some(ref engine) = p.engine {
@@ -325,11 +310,9 @@ impl AwsPollyTtsApi {
         .and_then(parse_response)
     }
 
-    /// Synthesize speech from text using REST API
     pub fn synthesize_speech(&self, params: SynthesizeSpeechParams) -> Result<Vec<u8>, TtsError> {
         trace!("Synthesizing speech");
         
-        // Validate credentials first
         self.validate_credentials()?;
 
         let response = self.execute_with_retry(|| {
@@ -346,14 +329,12 @@ impl AwsPollyTtsApi {
             .map(|bytes| bytes.to_vec())
     }
 
-    /// Start speech synthesis task (for long-form content) using REST API
     pub fn start_speech_synthesis_task(
         &self,
         params: StartSpeechSynthesisTaskParams,
     ) -> Result<SpeechSynthesisTask, TtsError> {
         trace!("Starting speech synthesis task");
         
-        // Validate credentials first
         self.validate_credentials()?;
 
         self.execute_with_retry(|| {
@@ -367,14 +348,12 @@ impl AwsPollyTtsApi {
         .and_then(parse_response)
     }
 
-    /// Get speech synthesis task status using REST API
     pub fn get_speech_synthesis_task(
         &self,
         task_id: &str,
     ) -> Result<SpeechSynthesisTask, TtsError> {
         trace!("Getting speech synthesis task: {}", task_id);
         
-        // Validate credentials first
         self.validate_credentials()?;
 
         self.execute_with_retry(|| {
@@ -388,11 +367,9 @@ impl AwsPollyTtsApi {
         .and_then(parse_response)
     }
 
-    /// Put lexicon for custom pronunciations using REST API
     pub fn put_lexicon(&self, name: &str, content: &str) -> Result<(), TtsError> {
         trace!("Putting lexicon: {}", name);
 
-        // Validate credentials first
         self.validate_credentials()?;
 
         let request = PutLexiconRequest {
@@ -411,7 +388,6 @@ impl AwsPollyTtsApi {
         .map(|_| ())
     }
 
-    /// Create AWS Signature V4 authorization header for REST API
     fn create_rest_auth_header(
         &self, 
         method: &Method, 
@@ -423,7 +399,6 @@ impl AwsPollyTtsApi {
         let date = &timestamp[0..8];
         let host = format!("polly.{}.amazonaws.com", self.region);
         
-        // Build canonical query string
         let canonical_query_string = if let Some(params) = query_params {
             let mut sorted_params = params.to_vec();
             sorted_params.sort_by(|a, b| a.0.cmp(b.0));
@@ -436,7 +411,6 @@ impl AwsPollyTtsApi {
             String::new()
         };
         
-        // Step 1: Create canonical request
         let canonical_headers = format!("host:{}\nx-amz-date:{}", host, timestamp);
         let signed_headers = "host;x-amz-date";
         
@@ -452,17 +426,14 @@ impl AwsPollyTtsApi {
         
         let canonical_request_hash = self.sha256_hex(canonical_request.as_bytes());
         
-        // Step 2: Create string to sign
         let credential_scope = format!("{}/{}/polly/aws4_request", date, self.region);
         let string_to_sign = format!(
             "AWS4-HMAC-SHA256\n{}\n{}\n{}",
             timestamp, credential_scope, canonical_request_hash
         );
         
-        // Step 3: Calculate signature
         let signature = self.calculate_signature(&string_to_sign, date);
         
-        // Step 4: Create authorization header
         format!(
             "AWS4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}",
             self.access_key_id.split(':').next().unwrap_or(&self.access_key_id), 
@@ -512,8 +483,6 @@ impl Clone for AwsPollyTtsApi {
         }
     }
 }
-
-// Request/Response Types
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DescribeVoicesParams {

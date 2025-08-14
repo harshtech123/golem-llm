@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::time::Duration;
 
-/// Rate limiting configuration
 #[derive(Debug, Clone)]
 pub struct RateLimitConfig {
     pub max_retries: u32,
@@ -28,7 +27,6 @@ impl Default for RateLimitConfig {
     }
 }
 
-/// User quota information for rate limiting decisions
 #[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct QuotaInfo {
@@ -48,7 +46,7 @@ pub struct QuotaInfo {
     pub status: String,
 }
 
-/// The ElevenLabs TTS API client for managing voices and performing text-to-speech
+/// The ElevenLabs TTS API client 
 /// Based on https://elevenlabs.io/docs/api-reference/
 #[derive(Clone)]
 pub struct ElevenLabsTtsApi {
@@ -84,12 +82,10 @@ impl ElevenLabsTtsApi {
             .header("xi-api-key", &self.api_key)
     }
 
-    /// Get the model version for this client
     pub fn get_model_version(&self) -> &str {
         &self.model_version
     }
 
-    /// Execute a request with retry logic for rate limiting
     fn execute_with_retry<F>(&self, operation: F) -> Result<Response, TtsError>
     where
         F: Fn() -> Result<Response, TtsError>,
@@ -105,7 +101,6 @@ impl ElevenLabsTtsApi {
                     if status.is_success() {
                         return Ok(response);
                     } else if status.as_u16() == 429 || status.as_u16() == 503 {
-                        // Rate limit or service unavailable - retry
                         if attempt >= self.rate_limit_config.max_retries {
                             trace!(
                                 "Max retries ({}) exceeded for rate limiting",
@@ -122,7 +117,6 @@ impl ElevenLabsTtsApi {
                             self.rate_limit_config.max_retries
                         );
 
-                        // Extract retry-after header if available
                         let retry_delay = if let Some(retry_after) =
                             response.headers().get("retry-after")
                         {
@@ -147,7 +141,6 @@ impl ElevenLabsTtsApi {
                             self.rate_limit_config.max_delay,
                         );
                     } else {
-                        // Non-retryable error
                         return Err(tts_error_from_status(status));
                     }
                 }
@@ -156,7 +149,6 @@ impl ElevenLabsTtsApi {
         }
     }
 
-    /// Execute a request with retry logic for streaming responses
     fn execute_stream_with_retry<F>(&self, operation: F) -> Result<Response, TtsError>
     where
         F: Fn() -> Result<Response, TtsError>,
@@ -172,7 +164,6 @@ impl ElevenLabsTtsApi {
                     if status.is_success() {
                         return Ok(response);
                     } else if status.as_u16() == 429 || status.as_u16() == 503 {
-                        // Rate limit or service unavailable - retry
                         if attempt >= self.rate_limit_config.max_retries {
                             trace!(
                                 "Max retries ({}) exceeded for rate limiting",
@@ -201,7 +192,6 @@ impl ElevenLabsTtsApi {
                             self.rate_limit_config.max_delay,
                         );
                     } else {
-                        // Non-retryable error
                         return Err(tts_error_from_status(status));
                     }
                 }
@@ -210,7 +200,6 @@ impl ElevenLabsTtsApi {
         }
     }
 
-    /// Get a list of available voices
     pub fn list_voices(
         &self,
         params: Option<ListVoicesParams>,
@@ -265,7 +254,6 @@ impl ElevenLabsTtsApi {
         parse_response(response)
     }
 
-    /// Get a specific voice by ID
     pub fn get_voice(&self, voice_id: &str) -> Result<Voice, TtsError> {
         trace!("Getting voice: {voice_id}");
 
@@ -280,7 +268,6 @@ impl ElevenLabsTtsApi {
         parse_response(response)
     }
 
-    /// Convert text to speech
     pub fn text_to_speech(
         &self,
         voice_id: &str,
@@ -336,7 +323,6 @@ impl ElevenLabsTtsApi {
         }
     }
 
-    /// Process long-form content with intelligent chunking and batch processing
     pub fn synthesize_long_form_batch(
         &self,
         voice_id: &str,
@@ -346,7 +332,6 @@ impl ElevenLabsTtsApi {
     ) -> Result<Vec<Vec<u8>>, TtsError> {
         trace!("Synthesizing long-form content with batch processing");
 
-        // Split content into manageable chunks
         let chunks = self.split_content_intelligently(content, max_chunk_size);
         let mut audio_chunks = Vec::new();
 
@@ -358,13 +343,12 @@ impl ElevenLabsTtsApi {
                 chunk.len()
             );
 
-            // Check if model supports language_code parameter
             let supports_language_code = !self.model_version.contains("multilingual");
 
             let request = TextToSpeechRequest {
                 text: chunk.clone(),
                 model_id: Some(self.model_version.clone()),
-                language_code: if supports_language_code { Some("en".to_string()) } else { None }, // Only set for models that support it
+                language_code: if supports_language_code { Some("en".to_string()) } else { None },
                 voice_settings: None,
                 pronunciation_dictionary_locators: None,
                 seed: None,
@@ -381,14 +365,13 @@ impl ElevenLabsTtsApi {
                 previous_request_ids: None,
                 next_request_ids: None,
                 apply_text_normalization: Some("auto".to_string()),
-                apply_language_text_normalization: Some(false), // Disable to avoid compatibility issues
-                use_pvc_as_ivc: Some(false), // Disable for compatibility
+                apply_language_text_normalization: Some(false),
+                use_pvc_as_ivc: Some(false),
             };
 
             let audio_data = self.text_to_speech(voice_id, &request, options.cloned())?;
             audio_chunks.push(audio_data);
 
-            // Add small delay between requests to be respectful to API limits
             if i < chunks.len() - 1 {
                 std::thread::sleep(Duration::from_millis(100));
             }
@@ -397,7 +380,6 @@ impl ElevenLabsTtsApi {
         Ok(audio_chunks)
     }
 
-    /// Split content intelligently at sentence boundaries, respecting character limits
     fn split_content_intelligently(&self, content: &str, max_chunk_size: usize) -> Vec<String> {
         if content.len() <= max_chunk_size {
             return vec![content.to_string()];
@@ -406,7 +388,6 @@ impl ElevenLabsTtsApi {
         let mut chunks = Vec::new();
         let mut current_chunk = String::new();
 
-        // Split by sentences first
         let sentences: Vec<&str> = content
             .split(['.', '!', '?'])
             .filter(|s| !s.trim().is_empty())
@@ -418,10 +399,8 @@ impl ElevenLabsTtsApi {
                 continue;
             }
 
-            // Add sentence ending punctuation back
             let sentence_with_punct = format!("{}.", sentence);
 
-            // If adding this sentence would exceed the limit, finalize current chunk
             if !current_chunk.is_empty()
                 && (current_chunk.len() + sentence_with_punct.len() + 1) > max_chunk_size
             {
@@ -429,7 +408,6 @@ impl ElevenLabsTtsApi {
                 current_chunk = String::new();
             }
 
-            // If a single sentence is too long, split it at word boundaries
             if sentence_with_punct.len() > max_chunk_size {
                 let word_chunks =
                     self.split_at_word_boundaries(&sentence_with_punct, max_chunk_size);
@@ -448,7 +426,6 @@ impl ElevenLabsTtsApi {
             }
         }
 
-        // Add any remaining content
         if !current_chunk.trim().is_empty() {
             chunks.push(current_chunk.trim().to_string());
         }
@@ -456,7 +433,6 @@ impl ElevenLabsTtsApi {
         chunks
     }
 
-    /// Split text at word boundaries when sentence splitting isn't sufficient
     fn split_at_word_boundaries(&self, text: &str, max_size: usize) -> Vec<String> {
         let words: Vec<&str> = text.split_whitespace().collect();
         let mut chunks = Vec::new();
@@ -481,7 +457,6 @@ impl ElevenLabsTtsApi {
         chunks
     }
 
-    /// Get user quota information for rate limiting decisions
     #[allow(dead_code)]
     pub fn get_quota_info(&self) -> Result<QuotaInfo, TtsError> {
         trace!("Getting user quota information");
@@ -497,7 +472,6 @@ impl ElevenLabsTtsApi {
         parse_response(response)
     }
 
-    /// Stream text to speech (returns response body for streaming)
     pub fn text_to_speech_stream(
         &self,
         voice_id: &str,
@@ -545,7 +519,6 @@ impl ElevenLabsTtsApi {
         Ok(response)
     }
 
-    /// Get available models
     pub fn get_models(&self) -> Result<Vec<Model>, TtsError> {
         trace!("Getting available models");
 
@@ -560,7 +533,6 @@ impl ElevenLabsTtsApi {
         parse_response(response)
     }
 
-    /// Get user subscription info
     #[allow(dead_code)]
     pub fn get_user_subscription(&self) -> Result<UserSubscription, TtsError> {
         trace!("Getting user subscription info");
@@ -576,26 +548,19 @@ impl ElevenLabsTtsApi {
         parse_response(response)
     }
 
-    /// Create a voice clone
     pub fn create_voice(&self, request: &CreateVoiceRequest) -> Result<Voice, TtsError> {
         trace!("Creating voice clone: {}", request.name);
 
         let url = format!("{}/v1/voices/add", self.base_url);
 
-        // ElevenLabs voice cloning requires multipart/form-data, not JSON
-        // Let's use the manual multipart implementation we created earlier
-  
-        // Create multipart form data manually
         let boundary = format!("----elevenlabs-{}", uuid::Uuid::new_v4());
         let mut form_data = Vec::new();
 
-        // Add name field
         form_data.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
         form_data.extend_from_slice(b"Content-Disposition: form-data; name=\"name\"\r\n\r\n");
         form_data.extend_from_slice(request.name.as_bytes());
         form_data.extend_from_slice(b"\r\n");
 
-        // Add description field if present
         if let Some(ref description) = request.description {
             form_data.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
             form_data.extend_from_slice(b"Content-Disposition: form-data; name=\"description\"\r\n\r\n");
@@ -603,7 +568,6 @@ impl ElevenLabsTtsApi {
             form_data.extend_from_slice(b"\r\n");
         }
 
-        // Add labels field if present
         if let Some(ref labels) = request.labels {
             form_data.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
             form_data.extend_from_slice(b"Content-Disposition: form-data; name=\"labels\"\r\n\r\n");
@@ -611,7 +575,6 @@ impl ElevenLabsTtsApi {
             form_data.extend_from_slice(b"\r\n");
         }
 
-        // Add audio files
         for (i, file) in request.files.iter().enumerate() {
             form_data.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
             form_data.extend_from_slice(
@@ -622,7 +585,6 @@ impl ElevenLabsTtsApi {
             form_data.extend_from_slice(b"\r\n");
         }
 
-        // Close the form
         form_data.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
 
 
@@ -658,7 +620,6 @@ impl ElevenLabsTtsApi {
         parse_response(response)
     }
 
-    /// Delete a voice
     pub fn delete_voice(&self, voice_id: &str) -> Result<(), TtsError> {
         trace!("Deleting voice: {voice_id}");
 
@@ -677,7 +638,6 @@ impl ElevenLabsTtsApi {
         }
     }
 
-    /// Speech-to-speech voice conversion (for voice-conversion WIT interface)
     pub fn speech_to_speech(
         &self,
         voice_id: &str,
@@ -716,7 +676,6 @@ impl ElevenLabsTtsApi {
             }
         }
 
-        // Convert audio to base64 for JSON request (similar to voice cloning)
         use base64::Engine;
         let audio_base64 = base64::engine::general_purpose::STANDARD.encode(&request.audio_data);
 
@@ -753,7 +712,6 @@ impl ElevenLabsTtsApi {
         }
     }
 
-    /// Generate sound effects from text description (for sound-effects WIT interface)
     pub fn create_sound_effect(
         &self,
         request: &SoundEffectRequest,
@@ -800,7 +758,6 @@ impl ElevenLabsTtsApi {
     }
 }
 
-// Request/Response Types
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListVoicesParams {
@@ -901,7 +858,7 @@ pub struct TextToSpeechRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_request_ids: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub apply_text_normalization: Option<String>, // "auto", "on", "off"
+    pub apply_text_normalization: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub apply_language_text_normalization: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -982,7 +939,7 @@ pub struct CreateVoiceJsonRequest {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub files: Vec<String>, // Base64-encoded audio files
+    pub files: Vec<String>, 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub labels: Option<String>,
 }
@@ -992,7 +949,6 @@ pub struct AudioFile {
     pub data: Vec<u8>,
 }
 
-// Speech-to-Speech (Voice Conversion) Types
 #[derive(Debug, Clone)]
 pub struct SpeechToSpeechRequest {
     pub audio_data: Vec<u8>,
@@ -1003,7 +959,7 @@ pub struct SpeechToSpeechRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SpeechToSpeechJsonRequest {
-    pub audio: String, // Base64-encoded audio
+    pub audio: String,
     pub model_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice_settings: Option<VoiceSettings>,
@@ -1023,7 +979,6 @@ pub struct SpeechToSpeechParams {
     pub remove_background_noise: Option<bool>,
 }
 
-// Sound Effects Types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SoundEffectRequest {
     pub text: String,
