@@ -300,11 +300,13 @@ mod durable_impl {
         input: TextInput,
     }
 
+    #[allow(dead_code)]
     #[derive(Debug, Clone, PartialEq, IntoValue, FromValueAndType)]
     struct CreateStreamInput {
         options: Option<SynthesisOptions>,
     }
 
+    #[allow(dead_code)]
     #[derive(Debug, Clone, PartialEq, IntoValue, FromValueAndType)]
     struct CreateVoiceConversionStreamInput {
         options: Option<SynthesisOptions>,
@@ -371,16 +373,19 @@ mod durable_impl {
         word: String,
     }
 
+    #[allow(dead_code)]
     #[derive(Debug, Clone, PartialEq, FromValueAndType, IntoValue)]
     struct LongFormResultOutput {
         result: String,
     }
 
+    #[allow(dead_code)]
     #[derive(Debug, Clone, PartialEq, FromValueAndType, IntoValue)]
     struct UpdateVoiceSettingsInput {
         settings: VoiceSettings,
     }
 
+    #[allow(dead_code)]
     #[derive(Debug, Clone, PartialEq, FromValueAndType, IntoValue)]
     struct PreviewVoiceInput {
         text: String,
@@ -634,6 +639,7 @@ mod durable_impl {
         },
     }
 
+    #[allow(dead_code)]
     pub struct DurableVoiceConversionStream<Impl: ExtendedGuest> {
         state: RefCell<Option<DurableVoiceConversionStreamState<Impl>>>,
         subscription: RefCell<Option<Pollable>>,
@@ -840,6 +846,7 @@ mod durable_impl {
     }
 
     // Durable Voice resource
+    #[allow(dead_code)]
     pub struct DurableVoice<Impl> {
         id: String,
         name: String,
@@ -857,6 +864,7 @@ mod durable_impl {
 
     impl<Impl: ExtendedGuest> DurableVoice<Impl> {
         #[allow(clippy::too_many_arguments)]
+        #[allow(dead_code)]
         pub fn new(
             id: String,
             name: String,

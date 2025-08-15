@@ -560,5 +560,4 @@ mod tests {
         assert_eq!(container, None);
         assert_eq!(sample_rate, 22050);
     }
-
 }
