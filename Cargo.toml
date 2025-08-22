@@ -30,11 +30,17 @@ members = [
     "video/veo",
     "video/stability",
     "exec/exec",
+    "stt/stt",
+    "stt/whisper",
+    "stt/deepgram",
+    "stt/aws",
+    "stt/azure",
+    "stt/google",
     "tts/tts",
     "tts/aws",
     "tts/deepgram",
     "tts/elevenlabs",
-    "tts/google"
+    "tts/google",
     ]
 
 [profile.release]
@@ -44,9 +50,10 @@ opt-level = 's'
 
 [workspace.dependencies]
 golem-llm = { path = "llm/llm", version = "0.0.0", default-features = false }
-golem-search = { path = "search/search", version = "0.0.0", default-features = false}
-golem-graph = { path = "graph/graph" , version = "0.0.0" ,default-features =false}
-golem-video = { path = "video/video", version = "0.0.0", default-features = false}
+golem-search = { path = "search/search", version = "0.0.0", default-features = false }
+golem-graph = { path = "graph/graph", version = "0.0.0", default-features = false }
+golem-video = { path = "video/video", version = "0.0.0", default-features = false }
+golem-stt = { path = "stt/stt", version = "0.0.0", default-features = false }
 golem-tts = { path = "tts/tts" , version = "0.0.0" , default-features= false}
 futures = "0.3.31"
 golem-rust = "=1.5.5"
