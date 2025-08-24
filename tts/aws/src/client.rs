@@ -390,6 +390,143 @@ impl AwsPollyTtsApi {
         .map(|_| ())
     }
 
+    pub fn get_s3_object_metadata(&self, s3_uri: &str) -> Result<S3ObjectMetadata, TtsError> {
+        trace!("Getting S3 object metadata for: {}", s3_uri);
+
+        let (bucket, key) = parse_s3_uri(s3_uri)?;
+        
+        let s3_endpoint = format!("https://{}.s3.{}.amazonaws.com", bucket, self.region);
+        let path = format!("/{}", key);
+
+        self.validate_credentials()?;
+
+        let response = self.execute_s3_request(Method::HEAD, &s3_endpoint, &path, None::<&()>)?;
+        
+        let content_length = response
+            .headers()
+            .get("content-length")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
+
+        let last_modified = response
+            .headers()
+            .get("last-modified")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string());
+
+        Ok(S3ObjectMetadata {
+            size_bytes: content_length,
+            last_modified,
+            content_type,
+            bucket: bucket.to_string(),
+            key: key.to_string(),
+        })
+    }
+
+    fn execute_s3_request<T: Serialize>(
+        &self,
+        method: Method,
+        endpoint: &str,
+        path: &str,
+        body: Option<&T>,
+    ) -> Result<Response, TtsError> {
+        let url = format!("{}{}", endpoint, path);
+        let timestamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+
+        let request_body = if let Some(body) = body {
+            serde_json::to_string(body).unwrap_or_default()
+        } else {
+            String::new()
+        };
+
+        let payload_hash = self.sha256_hex(request_body.as_bytes());
+        let authorization = self.create_s3_auth_header(&method, path, &timestamp, &payload_hash, endpoint);
+
+        trace!("AWS S3 request to: {} {}", method, url);
+
+        let mut request_builder = self
+            .client
+            .request(method, &url)
+            .header("Authorization", authorization)
+            .header("X-Amz-Date", timestamp);
+
+        if !request_body.is_empty() {
+            request_builder = request_builder
+                .header("Content-Type", "application/json")
+                .body(request_body);
+        }
+
+        request_builder
+            .send()
+            .map_err(|e| from_reqwest_error("Failed to send S3 request", e))
+    }
+
+    fn create_s3_auth_header(
+        &self,
+        method: &Method,
+        path: &str,
+        timestamp: &str,
+        payload_hash: &str,
+        endpoint: &str,
+    ) -> String {
+        let date = &timestamp[0..8];
+        
+        let host = endpoint.replace("https://", "").replace("http://", "");
+        
+        let canonical_headers = format!("host:{}\nx-amz-date:{}", host, timestamp);
+        let signed_headers = "host;x-amz-date";
+
+        let canonical_request = format!(
+            "{}\n{}\n\n{}\n\n{}\n{}",
+            method.as_str(),
+            path,
+            canonical_headers,
+            signed_headers,
+            payload_hash
+        );
+
+        let canonical_request_hash = self.sha256_hex(canonical_request.as_bytes());
+
+        let credential_scope = format!("{}/{}/s3/aws4_request", date, self.region);
+        let string_to_sign = format!(
+            "AWS4-HMAC-SHA256\n{}\n{}\n{}",
+            timestamp, credential_scope, canonical_request_hash
+        );
+
+        let signature = self.calculate_s3_signature(&string_to_sign, date);
+
+        format!(
+            "AWS4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={}",
+            self.access_key_id
+                .split(':')
+                .next()
+                .unwrap_or(&self.access_key_id),
+            credential_scope,
+            signed_headers,
+            signature
+        )
+    }
+
+    fn calculate_s3_signature(&self, string_to_sign: &str, date: &str) -> String {
+        let date_key = hmac_sha256(
+            format!("AWS4{}", self.secret_access_key).as_bytes(),
+            date.as_bytes(),
+        );
+        let date_region_key = hmac_sha256(&date_key, self.region.as_bytes());
+        let date_region_service_key = hmac_sha256(&date_region_key, b"s3");
+        let signing_key = hmac_sha256(&date_region_service_key, b"aws4_request");
+
+        let signature = hmac_sha256(&signing_key, string_to_sign.as_bytes());
+        hex::encode(signature)
+    }
+
     fn create_rest_auth_header(
         &self,
         method: &Method,
@@ -704,6 +841,37 @@ pub struct LexiconDescription {
     pub attributes: Option<LexiconAttributes>,
     #[serde(rename = "Name", skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct S3ObjectMetadata {
+    pub size_bytes: u64,
+    pub last_modified: Option<String>,
+    pub content_type: Option<String>,
+    pub bucket: String,
+    pub key: String,
+}
+
+fn parse_s3_uri(s3_uri: &str) -> Result<(&str, &str), TtsError> {
+    if !s3_uri.starts_with("s3://") {
+        return Err(TtsError::InvalidConfiguration(format!(
+            "Invalid S3 URI format: {}. Expected s3://bucket/key",
+            s3_uri
+        )));
+    }
+
+    let without_prefix = &s3_uri[5..]; 
+    let parts: Vec<&str> = without_prefix.splitn(2, '/').collect();
+    
+    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
+        return Err(TtsError::InvalidConfiguration(format!(
+            "Invalid S3 URI format: {}. Expected s3://bucket/key",
+            s3_uri
+        )));
+    }
+
+    Ok((parts[0], parts[1]))
 }
 
 fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, TtsError> {
