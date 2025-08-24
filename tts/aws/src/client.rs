@@ -394,14 +394,14 @@ impl AwsPollyTtsApi {
         trace!("Getting S3 object metadata for: {}", s3_uri);
 
         let (bucket, key) = parse_s3_uri(s3_uri)?;
-        
+
         let s3_endpoint = format!("https://{}.s3.{}.amazonaws.com", bucket, self.region);
         let path = format!("/{}", key);
 
         self.validate_credentials()?;
 
         let response = self.execute_s3_request(Method::HEAD, &s3_endpoint, &path, None::<&()>)?;
-        
+
         let content_length = response
             .headers()
             .get("content-length")
@@ -447,7 +447,8 @@ impl AwsPollyTtsApi {
         };
 
         let payload_hash = self.sha256_hex(request_body.as_bytes());
-        let authorization = self.create_s3_auth_header(&method, path, &timestamp, &payload_hash, endpoint);
+        let authorization =
+            self.create_s3_auth_header(&method, path, &timestamp, &payload_hash, endpoint);
 
         trace!("AWS S3 request to: {} {}", method, url);
 
@@ -477,9 +478,9 @@ impl AwsPollyTtsApi {
         endpoint: &str,
     ) -> String {
         let date = &timestamp[0..8];
-        
+
         let host = endpoint.replace("https://", "").replace("http://", "");
-        
+
         let canonical_headers = format!("host:{}\nx-amz-date:{}", host, timestamp);
         let signed_headers = "host;x-amz-date";
 
@@ -861,9 +862,9 @@ fn parse_s3_uri(s3_uri: &str) -> Result<(&str, &str), TtsError> {
         )));
     }
 
-    let without_prefix = &s3_uri[5..]; 
+    let without_prefix = &s3_uri[5..];
     let parts: Vec<&str> = without_prefix.splitn(2, '/').collect();
-    
+
     if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
         return Err(TtsError::InvalidConfiguration(format!(
             "Invalid S3 URI format: {}. Expected s3://bucket/key",

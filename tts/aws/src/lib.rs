@@ -21,8 +21,8 @@ use golem_tts::golem::tts::synthesis::{
     Guest as SynthesisGuest, SynthesisOptions, ValidationResult,
 };
 use golem_tts::golem::tts::types::{
-    AudioChunk, AudioFormat, LanguageCode, SynthesisResult, TextInput, TimingInfo, TimingMarkType, TtsError,
-    VoiceGender, VoiceQuality, VoiceSettings,
+    AudioChunk, AudioFormat, LanguageCode, SynthesisResult, TextInput, TimingInfo, TimingMarkType,
+    TtsError, VoiceGender, VoiceQuality, VoiceSettings,
 };
 use golem_tts::golem::tts::voices::{
     Guest as VoicesGuest, GuestVoice, GuestVoiceResults, LanguageInfo, Voice, VoiceFilter,
@@ -157,7 +157,13 @@ struct PollyVoiceResults {
 }
 
 impl PollyVoiceResults {
-    fn new(voices: Vec<VoiceInfo>, total_count: Option<u32>, next_token: Option<String>, client: AwsPollyTtsApi, filter: Option<VoiceFilter>) -> Self {
+    fn new(
+        voices: Vec<VoiceInfo>,
+        total_count: Option<u32>,
+        next_token: Option<String>,
+        client: AwsPollyTtsApi,
+        filter: Option<VoiceFilter>,
+    ) -> Self {
         let has_voices = !voices.is_empty();
         Self {
             voices: RefCell::new(voices),
@@ -195,7 +201,7 @@ impl GuestVoiceResults for PollyVoiceResults {
             trace!("Returning batch of {} voices", batch.len());
 
             self.current_index.set(end_index);
-            
+
             let has_more_local = end_index < voices.len();
             let has_more_remote = self.next_token.borrow().is_some();
             self.has_more.set(has_more_local || has_more_remote);
@@ -204,7 +210,7 @@ impl GuestVoiceResults for PollyVoiceResults {
         }
 
         if let Some(token) = self.next_token.borrow().clone() {
-            drop(voices); 
+            drop(voices);
 
             let mut params = voice_filter_to_describe_params(self.filter.borrow().clone());
             if let Some(ref mut p) = params {
@@ -228,19 +234,19 @@ impl GuestVoiceResults for PollyVoiceResults {
             *self.next_token.borrow_mut() = response.next_token;
 
             self.voices.borrow_mut().extend(new_voice_infos);
-            
+
             let batch_size = 10;
             let new_voices = self.voices.borrow();
             let end_index = std::cmp::min(start_index + batch_size, new_voices.len());
-            
+
             if start_index < new_voices.len() {
                 let batch = new_voices[start_index..end_index].to_vec();
                 self.current_index.set(end_index);
-                
+
                 let has_more_local = end_index < new_voices.len();
                 let has_more_remote = self.next_token.borrow().is_some();
                 self.has_more.set(has_more_local || has_more_remote);
-                
+
                 return Ok(batch);
             }
         }
@@ -573,39 +579,36 @@ impl GuestLongFormOperation for PollyLongFormOperation {
 
         if let Some(output_uri) = task.output_uri {
             let character_count = task.request_characters.unwrap_or(0) as u32;
-            
+
             let estimated_word_count = if character_count > 0 {
                 (character_count as f32 / 5.0).ceil() as u32
             } else {
                 0
             };
-            
+
             let estimated_duration = if estimated_word_count > 0 {
                 (estimated_word_count as f32 / 150.0) * 60.0
             } else {
                 0.0
             };
-            
+
             let actual_audio_size = match self.client.get_s3_object_metadata(&output_uri) {
                 Ok(metadata) => {
-                    trace!("Retrieved S3 object metadata: {} bytes", metadata.size_bytes);
+                    trace!(
+                        "Retrieved S3 object metadata: {} bytes",
+                        metadata.size_bytes
+                    );
                     metadata.size_bytes as u32
-                },
+                }
                 Err(e) => {
                     trace!("Failed to get S3 object metadata, using estimation: {}", e);
                     if estimated_duration > 0.0 {
                         let format = task.output_format.as_deref().unwrap_or("mp3");
                         match format {
-                            "mp3" => {
-                                ((estimated_duration * 128000.0) / 8.0) as u32
-                            },
-                            "pcm" => {
-                                (estimated_duration * 22050.0 * 2.0) as u32
-                            },
-                            "ogg_vorbis" => {
-                                ((estimated_duration * 64000.0) / 8.0) as u32
-                            },
-                            _ => 0
+                            "mp3" => ((estimated_duration * 128000.0) / 8.0) as u32,
+                            "pcm" => (estimated_duration * 22050.0 * 2.0) as u32,
+                            "ogg_vorbis" => ((estimated_duration * 64000.0) / 8.0) as u32,
+                            _ => 0,
                         }
                     } else {
                         0
@@ -894,7 +897,7 @@ impl SynthesisGuest for AwsPollyComponent {
     ) -> Result<Vec<TimingInfo>, TtsError> {
         let client = Self::create_client()?;
         let voice_id = voice.get::<PollyVoiceImpl>().get_id();
-        
+
         trace!(
             "Getting timing marks for voice: {}, text: {}",
             voice_id,
@@ -909,35 +912,36 @@ impl SynthesisGuest for AwsPollyComponent {
         ]);
 
         let response_data = client.synthesize_speech(params)?;
-        
-        let response_text = String::from_utf8(response_data)
-            .map_err(|_| TtsError::InternalError("Invalid UTF-8 in speech marks response".to_string()))?;
-        
+
+        let response_text = String::from_utf8(response_data).map_err(|_| {
+            TtsError::InternalError("Invalid UTF-8 in speech marks response".to_string())
+        })?;
+
         let mut timing_marks = Vec::new();
-        
+
         for line in response_text.lines() {
             if line.trim().is_empty() {
                 continue;
             }
-            
+
             match serde_json::from_str::<serde_json::Value>(line) {
                 Ok(mark) => {
                     if let (Some(mark_type), Some(start_time), Some(end_time), Some(_value)) = (
                         mark.get("type").and_then(|v| v.as_str()),
                         mark.get("time").and_then(|v| v.as_f64()),
-                        mark.get("time").and_then(|v| v.as_f64()), 
+                        mark.get("time").and_then(|v| v.as_f64()),
                         mark.get("value").and_then(|v| v.as_str()),
                     ) {
                         let timing_type = match mark_type {
                             "word" => Some(TimingMarkType::Word),
-                            "sentence" => Some(TimingMarkType::Sentence), 
+                            "sentence" => Some(TimingMarkType::Sentence),
                             _ => continue,
                         };
-                        
+
                         timing_marks.push(TimingInfo {
-                            start_time_seconds: (start_time / 1000.0) as f32, 
-                            end_time_seconds: Some((end_time / 1000.0) as f32), 
-                            text_offset: None, 
+                            start_time_seconds: (start_time / 1000.0) as f32,
+                            end_time_seconds: Some((end_time / 1000.0) as f32),
+                            text_offset: None,
                             mark_type: timing_type,
                         });
                     }
@@ -947,9 +951,13 @@ impl SynthesisGuest for AwsPollyComponent {
                 }
             }
         }
-        
-        timing_marks.sort_by(|a, b| a.start_time_seconds.partial_cmp(&b.start_time_seconds).unwrap_or(std::cmp::Ordering::Equal));
-        
+
+        timing_marks.sort_by(|a, b| {
+            a.start_time_seconds
+                .partial_cmp(&b.start_time_seconds)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
         trace!("Generated {} timing marks", timing_marks.len());
         Ok(timing_marks)
     }

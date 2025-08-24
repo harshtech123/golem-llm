@@ -286,7 +286,7 @@ pub fn combine_audio_chunks(chunks: Vec<Vec<u8>>, format: &AudioFormat) -> Vec<u
 
     match format {
         AudioFormat::Pcm => chunks.into_iter().flatten().collect(),
-        
+
         AudioFormat::Mp3 => {
             let mut result = Vec::new();
             for (i, chunk) in chunks.into_iter().enumerate() {
@@ -298,8 +298,8 @@ pub fn combine_audio_chunks(chunks: Vec<Vec<u8>>, format: &AudioFormat) -> Vec<u
                 }
             }
             result
-        },
-        
+        }
+
         AudioFormat::OggOpus => {
             let mut result = Vec::new();
             for (i, chunk) in chunks.into_iter().enumerate() {
@@ -307,12 +307,12 @@ pub fn combine_audio_chunks(chunks: Vec<Vec<u8>>, format: &AudioFormat) -> Vec<u
                     result.extend_from_slice(&chunk);
                 } else {
                     let continuation_data = extract_ogg_continuation_data(&chunk);
-                    result.extend_from_slice(&continuation_data);
+                    result.extend_from_slice(continuation_data);
                 }
             }
             result
-        },
-        
+        }
+
         _ => chunks.into_iter().flatten().collect(),
     }
 }
@@ -325,52 +325,49 @@ fn find_mp3_audio_start(data: &[u8]) -> usize {
             | (data[9] as u32 & 0x7F);
         return std::cmp::min(10 + size as usize, data.len());
     }
-    
+
     for i in 0..data.len().saturating_sub(1) {
         if data[i] == 0xFF && (data[i + 1] & 0xE0) == 0xE0 {
             return i;
         }
     }
-    
-    0 
+
+    0
 }
 
 fn extract_ogg_continuation_data(data: &[u8]) -> &[u8] {
     let mut offset = 0;
-    
-    while offset + 27 < data.len() {
-        if &data[offset..offset+4] == b"OggS" {
 
-            if offset + 26 < data.len() {
-                let header_type = data[offset + 5];
-                let page_segments = data[offset + 26] as usize;
-                
-                let is_continuation = (header_type & 0x01) != 0;
-                
-                if offset == 0 && !is_continuation {
-                    let segment_table_size = page_segments;
-                    let page_header_size = 27 + segment_table_size;
-                    
-                    if offset + page_header_size < data.len() {
-                        let mut page_body_size = 0;
-                        for i in 0..page_segments {
-                            if offset + 27 + i < data.len() {
-                                page_body_size += data[offset + 27 + i] as usize;
-                            }
+    while offset + 27 < data.len() {
+        if &data[offset..offset + 4] == b"OggS" && offset + 26 < data.len() {
+            let header_type = data[offset + 5];
+            let page_segments = data[offset + 26] as usize;
+
+            let is_continuation = (header_type & 0x01) != 0;
+
+            if offset == 0 && !is_continuation {
+                let segment_table_size = page_segments;
+                let page_header_size = 27 + segment_table_size;
+
+                if offset + page_header_size < data.len() {
+                    let mut page_body_size = 0;
+                    for i in 0..page_segments {
+                        if offset + 27 + i < data.len() {
+                            page_body_size += data[offset + 27 + i] as usize;
                         }
-                        
-                        offset += page_header_size + page_body_size;
-                        continue;
                     }
+
+                    offset += page_header_size + page_body_size;
+                    continue;
                 }
-                
-                return &data[offset..];
             }
+
+            return &data[offset..];
         }
-        
+
         offset += 1;
     }
-    
+
     let safe_offset = std::cmp::min(64, data.len());
     &data[safe_offset..]
 }
@@ -391,8 +388,8 @@ pub fn estimate_audio_duration(audio_data: &[u8], sample_rate: u32, format: &Aud
             }
         }
         AudioFormat::Wav | AudioFormat::Pcm => {
-            let channels = 1; 
-            let bytes_per_sample = 2; 
+            let channels = 1;
+            let bytes_per_sample = 2;
             let bytes_per_second = sample_rate * channels * bytes_per_sample;
             (audio_data.len() as f32) / (bytes_per_second as f32)
         }
@@ -400,22 +397,24 @@ pub fn estimate_audio_duration(audio_data: &[u8], sample_rate: u32, format: &Aud
             if let Some(duration) = parse_ogg_duration(audio_data) {
                 duration
             } else {
-                let estimated_bitrate_bps = 64000; 
+                let estimated_bitrate_bps = 64000;
                 let bytes_per_second = estimated_bitrate_bps / 8;
                 (audio_data.len() as f32) / (bytes_per_second as f32)
             }
         }
         _ => {
             let compression_factor = match format {
-                AudioFormat::Aac => 10.0, 
-                AudioFormat::Flac => 2.0, 
+                AudioFormat::Aac => 10.0,
+                AudioFormat::Flac => 2.0,
                 _ => 8.0,
             };
-            
+
             let estimated_raw_size = (audio_data.len() as f32) * compression_factor;
-            let estimated_duration = estimated_raw_size / (sample_rate as f32 * 2.0); 
-            
-            estimated_duration.max(0.1).min((audio_data.len() as f32) / 1000.0)
+            let estimated_duration = estimated_raw_size / (sample_rate as f32 * 2.0);
+
+            estimated_duration
+                .max(0.1)
+                .min((audio_data.len() as f32) / 1000.0)
         }
     }
 }
@@ -424,19 +423,19 @@ fn parse_mp3_duration(data: &[u8]) -> Option<f32> {
     if data.len() < 4 {
         return None;
     }
-    
+
     for i in 0..data.len().saturating_sub(4) {
         if data[i] == 0xFF && (data[i + 1] & 0xE0) == 0xE0 {
             let header = u32::from_be_bytes([data[i], data[i + 1], data[i + 2], data[i + 3]]);
-            
+
             let version = (header >> 19) & 0x3;
             let layer = (header >> 17) & 0x3;
             let bitrate_index = (header >> 12) & 0xF;
             let sample_rate_index = (header >> 10) & 0x3;
-            
+
             if let (Some(bitrate), Some(_sample_rate)) = (
                 get_mp3_bitrate(version, layer, bitrate_index),
-                get_mp3_sample_rate(version, sample_rate_index)
+                get_mp3_sample_rate(version, sample_rate_index),
             ) {
                 let bits_per_second = bitrate * 1000;
                 let bytes_per_second = bits_per_second / 8;
@@ -444,7 +443,7 @@ fn parse_mp3_duration(data: &[u8]) -> Option<f32> {
             }
         }
     }
-    
+
     None
 }
 
@@ -472,61 +471,65 @@ fn get_mp3_sample_rate(version: u32, index: u32) -> Option<u32> {
 }
 
 fn parse_ogg_duration(data: &[u8]) -> Option<f32> {
-
     let mut offset = 0;
     let mut last_granule_position = 0u64;
-    let mut sample_rate = 48000u32; 
-    
+    let mut sample_rate = 48000u32;
+
     while offset + 27 < data.len() {
-        if &data[offset..offset+4] == b"OggS" {
+        if &data[offset..offset + 4] == b"OggS" {
             let version = data[offset + 4];
             if version != 0 {
                 break;
             }
-            
+
             if offset + 13 < data.len() {
                 let granule_bytes = &data[offset + 6..offset + 14];
                 let granule_position = u64::from_le_bytes([
-                    granule_bytes[0], granule_bytes[1], granule_bytes[2], granule_bytes[3],
-                    granule_bytes[4], granule_bytes[5], granule_bytes[6], granule_bytes[7],
+                    granule_bytes[0],
+                    granule_bytes[1],
+                    granule_bytes[2],
+                    granule_bytes[3],
+                    granule_bytes[4],
+                    granule_bytes[5],
+                    granule_bytes[6],
+                    granule_bytes[7],
                 ]);
-                
+
                 if granule_position != u64::MAX {
                     last_granule_position = granule_position;
                 }
             }
-            
+
             if offset + 26 < data.len() {
                 let page_segments = data[offset + 26] as usize;
                 let segment_table_start = offset + 27;
-                
-                if page_segments > 0 && segment_table_start + page_segments < data.len() {
 
+                if page_segments > 0 && segment_table_start + page_segments < data.len() {
                     let mut page_body_size = 0;
                     for i in 0..page_segments {
                         page_body_size += data[segment_table_start + i] as usize;
                     }
-                    
+
                     let page_body_start = segment_table_start + page_segments;
-                    
+
                     if page_body_size >= 19 && page_body_start + 19 <= data.len() {
                         let page_body = &data[page_body_start..page_body_start + 19];
-                        
-                        if &page_body[0..8] == b"OpusHead" {
-                            
-                            if page_body.len() >= 16 {
-                                let rate_bytes = &page_body[12..16];
-                                sample_rate = u32::from_le_bytes([
-                                    rate_bytes[0], rate_bytes[1], rate_bytes[2], rate_bytes[3]
-                                ]);
 
-                                if sample_rate == 0 {
-                                    sample_rate = 48000;
-                                }
+                        if &page_body[0..8] == b"OpusHead" && page_body.len() >= 16 {
+                            let rate_bytes = &page_body[12..16];
+                            sample_rate = u32::from_le_bytes([
+                                rate_bytes[0],
+                                rate_bytes[1],
+                                rate_bytes[2],
+                                rate_bytes[3],
+                            ]);
+
+                            if sample_rate == 0 {
+                                sample_rate = 48000;
                             }
                         }
                     }
-                    
+
                     offset = page_body_start + page_body_size;
                 } else {
                     break;
@@ -538,7 +541,7 @@ fn parse_ogg_duration(data: &[u8]) -> Option<f32> {
             offset += 1;
         }
     }
-    
+
     if last_granule_position > 0 && sample_rate > 0 {
         let duration_seconds = (last_granule_position as f64) / 48000.0;
         Some(duration_seconds as f32)
