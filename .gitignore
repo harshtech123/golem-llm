@@ -1,6 +1,8 @@
 *.iml
 .idea
+.zed
 openapi
 target
 tmp
 components
+.DS_Store
