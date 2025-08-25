@@ -50,7 +50,8 @@ golem-graph = { path = "graph/graph", version = "0.0.0", default-features = fals
 golem-video = { path = "video/video", version = "0.0.0", default-features = false }
 golem-stt = { path = "stt/stt", version = "0.0.0", default-features = false }
 futures = "0.3.31"
-golem-rust = "=1.7.2"
+#golem-rust = "=1.7.2"
+golem-rust = { git="https://github.com/golemcloud/golem", branch = "intovalue-fix" }
 log = "0.4.27"
 reqwest = { git = "https://github.com/golemcloud/reqwest", branch = "update-may-2025", features = [
     "json",
