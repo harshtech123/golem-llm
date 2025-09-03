@@ -375,7 +375,7 @@ interface schema {
     use types.{property-value};
     use errors.{graph-error};
     use connection.{connection-config};
-    
+
     /// Property type definitions for schema
     enum property-type {
         boolean,

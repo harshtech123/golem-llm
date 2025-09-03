@@ -226,7 +226,7 @@ mod durable_impl {
         }
 
         fn add_to_type_builder<T: TypeNodeBuilder>(builder: T) -> T::Result {
-            let builder = builder.record();
+            let builder = builder.record(Some("SessionRunResult".to_string()), None);
             let builder = Result::<ExecResult, Error>::add_to_type_builder(builder.field("result"));
             let builder = Option::<Snapshot>::add_to_type_builder(builder.field("snapshot"));
             builder.finish()

@@ -1527,7 +1527,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "r-efi",
- "wasi 0.14.2+wasi-0.2.4",
+ "wasi 0.14.1+wasi-0.2.3",
 ]
 
 [[package]]
@@ -1575,7 +1575,7 @@ dependencies = [
  "log 0.4.27",
  "rquickjs",
  "rustpython",
- "wasi 0.13.1+wasi-0.2.0",
+ "wasi 0.14.1+wasi-0.2.3",
  "wasi-logger",
  "wit-bindgen 0.40.0",
  "wit-bindgen-rt 0.41.0",
@@ -1688,7 +1688,7 @@ dependencies = [
  "log 0.4.27",
  "serde",
  "serde_json",
- "wasi 0.13.1+wasi-0.2.0",
+ "wasi 0.14.1+wasi-0.2.3",
  "wit-bindgen-rt 0.41.0",
  "wstd",
 ]
@@ -2861,7 +2861,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.53.2",
 ]
 
 [[package]]
@@ -5704,18 +5704,9 @@ dependencies = [
 
 [[package]]
 name = "wasi"
-version = "0.13.1+wasi-0.2.0"
+version = "0.14.1+wasi-0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f43d1c36145feb89a3e61aa0ba3e582d976a8ab77f1474aa0adb80800fe0cf8"
-dependencies = [
- "wit-bindgen-rt 0.24.0",
-]
-
-[[package]]
-name = "wasi"
-version = "0.14.2+wasi-0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9683f9a5a998d873c0d21fcbe3c083009670149a8fab228644b8bd36b2c48cb3"
+checksum = "ad7df608df60a1c33e247881838b0f809512086e3e3bb1c18323b77eeb1f844e"
 dependencies = [
  "wit-bindgen-rt 0.39.0",
 ]
@@ -6487,7 +6478,7 @@ dependencies = [
  "serde",
  "serde_json",
  "slab",
- "wasi 0.14.2+wasi-0.2.4",
+ "wasi 0.14.1+wasi-0.2.3",
  "wstd-macro",
 ]
 
