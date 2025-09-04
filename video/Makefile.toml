@@ -169,3 +169,27 @@ golem-cli --dev-mode app clean
 golem-cli --dev-mode app build -b kling-debug
 golem-cli --dev-mode app clean
 '''
+
+[tasks.release-build-test-components]
+dependencies = ["release-build"]
+description = "Builds video test components with golem-cli"
+script = '''
+cd ../test/video
+
+golem-cli --version
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b veo-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b stability-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b kling-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b runway-release
+
+cd ../video-advanced
+
+golem-cli --version
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b kling-release
+golem-cli --dev-mode app clean
+'''

@@ -105,6 +105,22 @@ else
 end
 '''
 
+[tasks.release-build-test-components]
+description = "Builds all test components with golem-cli"
+script_runner = "@duckscript"
+script = '''
+domains = array llm websearch search video exec graph stt
+
+# if there is no domain passed run for every domain
+if is_empty ${1}
+    for domain in ${domains}
+        exec --fail-on-error cargo make --cwd ${domain} release-build-test-components
+    end
+else
+    exec --fail-on-error cargo make --cwd ${1} release-build-test-components
+end
+'''
+
 [tasks.build-all]
 script_runner = "@duckscript"
 script = '''

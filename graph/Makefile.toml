@@ -152,3 +152,21 @@ golem-cli --dev-mode app build -b janusgraph-debug
 golem-cli --dev-mode app clean
 golem-cli --dev-mode app build -b neo4j-debug
 '''
+
+[tasks.release-build-test-components]
+dependencies = ["release-build"]
+install_crate = "cargo-binstall"
+description = "Builds graph test components with golem-cli"
+script = '''
+cargo-binstall golem-cli@1.3.0-rc2 --locked --no-confirm
+cargo-binstall wac-cli --locked --no-confirm
+cd ../test/graph
+
+golem-cli --version
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b arangodb-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b janusgraph-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b neo4j-release
+'''

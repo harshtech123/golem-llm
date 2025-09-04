@@ -197,3 +197,22 @@ golem-cli --dev-mode app build -b opensearch-debug
 golem-cli --dev-mode app clean
 golem-cli --dev-mode app build -b typesense-debug
 '''
+
+[tasks.release-build-test-components]
+dependencies = ["release-build"]
+description = "Builds search test components with golem-cli"
+script = '''
+cd ../test/search
+
+golem-cli --version
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b algolia-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b elasticsearch-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b meilisearch-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b opensearch-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b typesense-release
+'''

@@ -89,7 +89,7 @@ jobs:
       - name: Install wac-cli
         run: cargo binstall --force wac-cli --locked --no-confirm
       - name: Build all test components
-        run: cargo make build-test-components
+        run: cargo make release-build-test-components
   golem-exec-tests:
     runs-on: ubuntu-latest
     steps:

@@ -237,3 +237,24 @@ golem-cli --dev-mode app build -b ollama-debug
 golem-cli --dev-mode app clean
 golem-cli --dev-mode app build -b bedrock-debug
 '''
+
+[tasks.release-build-test-components]
+dependencies = ["release-build"]
+description = "Builds llm test components with golem-cli"
+script = '''
+cd ../test/llm
+
+golem-cli --version
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b anthropic-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b grok-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b openai-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b openrouter-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b ollama-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b bedrock-release
+'''

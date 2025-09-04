@@ -204,3 +204,21 @@ golem-cli --dev-mode app build -b deepgram-debug
 golem-cli --dev-mode app build -b google-debug
 golem-cli --dev-mode app build -b whisper-debug
 '''
+
+[tasks.release-build-test-components]
+dependencies = ["release-build"]
+install_crate = "cargo-binstall"
+description = "Builds stt test components with golem-cli"
+script = '''
+cargo-binstall golem-cli@1.3.0-rc2 --locked --no-confirm
+cargo-binstall wac-cli --locked --no-confirm
+cd ../test/stt
+
+golem-cli --version
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b aws-release
+golem-cli --dev-mode app build -b azure-release
+golem-cli --dev-mode app build -b deepgram-release
+golem-cli --dev-mode app build -b google-release
+golem-cli --dev-mode app build -b whisper-release
+'''
