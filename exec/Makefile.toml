@@ -151,7 +151,7 @@ golem-cli --dev-mode app build
 '''
 
 [tasks.release-build-test-components]
-dependencies = ["release-uild"]
+dependencies = ["release-build"]
 install_crate = "cargo-binstall"
 description = "Builds exec test components with golem-cli"
 script = '''
