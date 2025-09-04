@@ -129,10 +129,10 @@ jobs:
       - name: Build and test golem:exec implementations
         run: |
           set -eo pipefail
-          cargo make --cwd exec build
+          cargo make --cwd exec release-build
           cd test/exec
           golem profile config local set-format json        
-          golem app deploy
+          golem app -b release deploy
           golem worker invoke test:exec-js/test-1 test01 | jq -e '(.result_wave[0]=="true")'            
           golem worker invoke test:exec-js/test-2 test02 | jq -e '(.result_wave[0]=="true")'            
           golem worker invoke test:exec-js/test-3 test03 | jq -e '(.result_wave[0]=="true")'            
@@ -298,13 +298,13 @@ jobs:
       - name: Build and test graph integration
         run: |
           set -eo pipefail
-          cargo make --cwd graph build-arangodb
-          cargo make --cwd graph build-janusgraph
-          cargo make --cwd graph build-neo4j
+          cargo make --cwd graph release-build-arangodb
+          cargo make --cwd graph release-build-janusgraph
+          cargo make --cwd graph release-build-neo4j
           cd test/graph
           
           echo "Testing ArangoDB integration..."
-          golem app deploy -b arangodb-debug test:graph test:helper
+          golem app deploy -b arangodb-release test:graph test:helper
           golem worker new -e ARANGODB_HOST=localhost -e ARANGODB_USER="" -e ARANGODB_PASSWORD="" -e ARANGODB_PORT="8529" -e ARANGODB_DATABASE="test" test:graph/arangodb-1
           golem worker invoke test:graph/arangodb-1 test1 | grep -v "ERROR: "
           golem worker invoke test:graph/arangodb-1 test2 | grep -v "ERROR: "
@@ -314,10 +314,10 @@ jobs:
           golem worker invoke test:graph/arangodb-1 test6 | grep -v "ERROR: "
           golem worker invoke test:graph/arangodb-1 test7 | grep -v "ERROR: "
           echo "ArangoDB tests completed successfully"
-          golem app clean -b arangodb-debug 
+          golem app clean -b arangodb-release 
           
           echo "Testing JanusGraph integration..."
-          golem app deploy -b janusgraph-debug test:graph test:helper
+          golem app deploy -b janusgraph-release test:graph test:helper
           sleep 10
           golem worker new -e JANUSGRAPH_HOST=localhost -e JANUSGRAPH_USER="" -e JANUSGRAPH_PASSWORD="" -e JANUSGRAPH_PORT="8182" test:graph/janusgraph-1
           golem worker invoke test:graph/janusgraph-1 test1 | grep -v "ERROR: "
@@ -328,10 +328,10 @@ jobs:
           golem worker invoke test:graph/janusgraph-1 test6 | grep -v "ERROR: "
           golem worker invoke test:graph/janusgraph-1 test7 | grep -v "ERROR: "
           echo "JanusGraph tests completed successfully"
-          golem app clean -b janusgraph-debug 
+          golem app clean -b janusgraph-release 
           
           echo "Testing Neo4j integration..."
-          golem app deploy -b neo4j-debug test:graph test:helper
+          golem app deploy -b neo4j-release test:graph test:helper
           sleep 10
           golem worker new -e NEO4J_HOST=localhost -e NEO4J_USER=neo4j -e NEO4J_PASSWORD=password -e NEO4J_PORT="7474" -e NEO4J_DATABASE=neo4j test:graph/neo4j-1
           golem worker invoke test:graph/neo4j-1 test1 | grep -v "ERROR: "
@@ -342,7 +342,7 @@ jobs:
           golem worker invoke test:graph/neo4j-1 test6 | grep -v "ERROR: "
           golem worker invoke test:graph/neo4j-1 test7 | grep -v "ERROR: "
           echo "Neo4j tests completed successfully"
-          golem app clean -b neo4j-debug 
+          golem app clean -b neo4j-release 
 
           echo "All graph integration tests completed successfully!"
 

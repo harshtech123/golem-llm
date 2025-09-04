@@ -62,7 +62,7 @@ end
 script_runner = "@duckscript"
 script = '''
 #!/bin/bash
-domains = array llm websearch search exec graph stt
+domains = array llm websearch search video exec graph stt
 
 # if there is no domain passed run for every domain
 if is_empty ${1}
