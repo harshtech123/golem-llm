@@ -85,7 +85,7 @@ jobs:
       - name: Install cargo-component
         run: cargo binstall --force cargo-component@0.21.1
       - name: Install golem-cli
-        run: cargo binstall --force golem-cli@1.3.0-dev.25 --locked --no-confirm
+        run: cargo binstall --force golem-cli@1.3.0-rc2 --locked --no-confirm
       - name: Install wac-cli
         run: cargo binstall --force wac-cli --locked --no-confirm
       - name: Build all test components
@@ -119,7 +119,7 @@ jobs:
         run: |
           set -e
           echo "Installing Golem server"
-          sudo curl -L https://github.com/golemcloud/golem-cli/releases/download/v1.3.0-dev.25/golem-x86_64-unknown-linux-gnu -o ./golem
+          sudo curl -L https://github.com/golemcloud/golem-cli/releases/download/v1.3.0-rc2/golem-x86_64-unknown-linux-gnu -o ./golem
           sudo chmod +x ./golem
           sudo mv ./golem /usr/local/bin/golem
           golem --version
@@ -194,7 +194,7 @@ jobs:
         run: |
           set -e
           echo "Installing Golem server"
-          sudo curl -L https://github.com/golemcloud/golem-cli/releases/download/v1.3.0-dev.25/golem-x86_64-unknown-linux-gnu -o ./golem
+          sudo curl -L https://github.com/golemcloud/golem-cli/releases/download/v1.3.0-rc2/golem-x86_64-unknown-linux-gnu -o ./golem
           sudo chmod +x ./golem
           sudo mv ./golem /usr/local/bin/golem
           golem --version
@@ -288,7 +288,7 @@ jobs:
         run: |
           set -e
           echo "Installing Golem server"
-          sudo curl -L https://github.com/golemcloud/golem-cli/releases/download/v1.3.0-dev.25/golem-x86_64-unknown-linux-gnu -o ./golem
+          sudo curl -L https://github.com/golemcloud/golem-cli/releases/download/v1.3.0-rc2/golem-x86_64-unknown-linux-gnu -o ./golem
           sudo chmod +x ./golem
           sudo mv ./golem /usr/local/bin/golem
           golem --version
