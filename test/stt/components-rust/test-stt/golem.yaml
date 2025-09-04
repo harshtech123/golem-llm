@@ -156,7 +156,7 @@ components:
             targetPath: /samples/mm1.wav
             permissions: read-only
         build:
-          - command: cargo component build --no-default-features --features aws
+          - command: cargo component build --release --no-default-features --features aws
             sources:
               - src
               - wit-generated
@@ -183,7 +183,7 @@ components:
             targetPath: /samples/mm1.wav
             permissions: read-only
         build:
-          - command: cargo component build --no-default-features --features azure
+          - command: cargo component build --release --no-default-features --features azure
             sources:
               - src
               - wit-generated
@@ -210,7 +210,7 @@ components:
             targetPath: /samples/mm1.wav
             permissions: read-only
         build:
-          - command: cargo component build --no-default-features --features deepgram
+          - command: cargo component build --release --no-default-features --features deepgram
             sources:
               - src
               - wit-generated
@@ -237,7 +237,7 @@ components:
             targetPath: /samples/mm1.wav
             permissions: read-only
         build:
-          - command: cargo component build --no-default-features --features google
+          - command: cargo component build --release --no-default-features --features google
             sources:
               - src
               - wit-generated
@@ -264,7 +264,7 @@ components:
             targetPath: /samples/mm1.wav
             permissions: read-only
         build:
-          - command: cargo component build --no-default-features --features whisper
+          - command: cargo component build --release --no-default-features --features whisper
             sources:
               - src
               - wit-generated
