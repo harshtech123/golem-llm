@@ -43,11 +43,12 @@ impl EventSource {
     pub fn new(response: Response) -> Result<Self, Error> {
         match check_response(response) {
             Ok(mut response) => {
+                let (handle, body) = response.get_raw_input_stream();
                 let handle = unsafe {
                     std::mem::transmute::<
                         reqwest::InputStream,
                         golem_rust::bindings::wasi::io::streams::InputStream,
-                    >(response.get_raw_input_stream())
+                    >(handle)
                 };
 
                 let stream = if response
@@ -58,9 +59,9 @@ impl EventSource {
                     .unwrap()
                     .contains("ndjson")
                 {
-                    StreamType::NdJsonStream(NdJsonStream::new(handle))
+                    StreamType::NdJsonStream(NdJsonStream::new(handle, body))
                 } else {
-                    StreamType::EventStream(EventStream::new(handle))
+                    StreamType::EventStream(EventStream::new(handle, body))
                 };
                 Ok(Self {
                     response,

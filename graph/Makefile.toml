@@ -145,10 +145,10 @@ cargo-binstall wac-cli --locked --no-confirm
 cd ../test/graph
 
 golem-cli --version
-golem-cli--dev-mode app clean
-golem-cli--dev-mode app build -b arangodb-debug
-golem-cli--dev-mode app clean
-golem-cli--dev-mode app build -b janusgraph-debug
-golem-cli--dev-mode app clean
-golem-cli--dev-mode app build -b neo4j-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b arangodb-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b janusgraph-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b neo4j-debug
 '''
