@@ -74,7 +74,10 @@ impl Guest for Component {
                     console.log(`Total Sum: ${sum}`);
                 });
             "# },
-            &empty_run_options(),
+            &RunOptions {
+                stdin: Some("1\n2\n3\n".to_string()),
+                ..empty_run_options()
+            },
         );
 
         restart.here();
