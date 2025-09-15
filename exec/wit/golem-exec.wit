@@ -81,7 +81,7 @@ interface executor {
   /// - `lang` specifies the programming language and version.
   /// - `modules` are additional code files to include in the execution context. these can be imported in `snippet` in a language-specific way.
   /// - `snippet` is the top level code to execute.
-  /// - `options` are controlling the script runner environment, see the run-options records
+  /// - `options` is controlling the script runner environment, see the run-options record for more details
   ///
   /// The returned value captures the stdout and stderr of the executed snippet.
   run: func(
@@ -106,10 +106,7 @@ interface executor {
     /// Execute a code snippet in the session in a blocking way
     ///
     /// - `snippet` is the top level code to execute.
-    /// - `args` are command line arguments passed to the program.
-    /// - `stdin` is optional input to provide to the program.
-    /// - `env` is a list of environment variables to set for the execution.
-    /// - `limits` are optional resource limits for the execution.
+    /// - `options` is controlling the script runner environment, see the run-options record for more details
     ///
     /// The returned value captures the stdout and stderr of the executed snippet.
     run: func(
