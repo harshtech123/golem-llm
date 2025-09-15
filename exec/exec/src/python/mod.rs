@@ -1,5 +1,5 @@
 use crate::durability::{EmptySnapshot, SessionSnapshot};
-use crate::golem::exec::executor::{Error, ExecResult, File, Language, Limits};
+use crate::golem::exec::executor::{Error, ExecResult, File, Language, RunOptions};
 use crate::golem::exec::types::{LanguageKind, StageResult};
 use crate::{get_contents_as_string, io_error, stage_result_failure};
 use indoc::indoc;
@@ -33,15 +33,12 @@ pub struct PythonComponent;
 impl PythonComponent {
     pub fn run(
         lang: Language,
-        snippet: String,
         files: Vec<File>,
-        stdin: Option<String>,
-        args: Vec<String>,
-        env: Vec<(String, String)>,
-        constraints: Option<Limits>,
+        snippet: String,
+        options: RunOptions,
     ) -> Result<ExecResult, Error> {
         let session = PythonSession::new(lang, files);
-        session.run(snippet, args, stdin, env, constraints)
+        session.run(snippet, options)
     }
 }
 
@@ -124,14 +121,7 @@ impl PythonSession {
         }
     }
 
-    pub fn run(
-        &self,
-        snippet: String,
-        args: Vec<String>,
-        stdin: Option<String>,
-        env: Vec<(String, String)>,
-        _constraints: Option<Limits>,
-    ) -> Result<ExecResult, Error> {
+    pub fn run(&self, snippet: String, options: RunOptions) -> Result<ExecResult, Error> {
         self.ensure_initialized()?;
         ensure_language_is_supported(&self.lang)?;
 
@@ -149,11 +139,13 @@ impl PythonSession {
             let scope = vm.new_scope_with_builtins();
             scope.globals.set_item(
                 "__external_stdin",
-                vm.new_pyobj(stdin.unwrap_or_default()),
+                vm.new_pyobj(options.stdin.unwrap_or_default()),
                 vm,
             )?;
 
-            let env_pairs = env
+            let env_pairs = options
+                .env
+                .unwrap_or_default()
                 .iter()
                 .map(|(k, v)| vm.new_pyobj((k, v)))
                 .collect::<Vec<_>>();
@@ -163,7 +155,14 @@ impl PythonSession {
 
             scope.globals.set_item(
                 "__argv",
-                vm.new_pyobj(args.iter().map(|s| vm.new_pyobj(s)).collect::<Vec<_>>()),
+                vm.new_pyobj(
+                    options
+                        .args
+                        .unwrap_or_default()
+                        .iter()
+                        .map(|s| vm.new_pyobj(s))
+                        .collect::<Vec<_>>(),
+                ),
                 vm,
             )?;
 

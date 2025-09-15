@@ -1,6 +1,6 @@
 use crate::durability::{DurableExec, EmptySnapshot, SessionSnapshot};
 use crate::golem::exec::executor::{
-    Error, ExecResult, File, Guest, GuestSession, Language, Limits,
+    Error, ExecResult, File, Guest, GuestSession, Language, RunOptions,
 };
 use crate::golem::exec::types::LanguageKind;
 use crate::{get_contents, io_error, stage_result_failure};
@@ -13,19 +13,16 @@ impl Guest for Component {
 
     fn run(
         lang: Language,
-        snippet: String,
         modules: Vec<File>,
-        stdin: Option<String>,
-        args: Vec<String>,
-        env: Vec<(String, String)>,
-        constraints: Option<Limits>,
+        snippet: String,
+        options: RunOptions,
     ) -> Result<ExecResult, Error> {
         match &lang.kind {
             LanguageKind::Javascript => {
                 #[cfg(feature = "javascript")]
                 {
                     let session = crate::javascript::JavaScriptSession::new(lang, modules);
-                    session.run(snippet, args, stdin, env, constraints)
+                    session.run(snippet, options)
                 }
                 #[cfg(not(feature = "javascript"))]
                 {
@@ -36,7 +33,7 @@ impl Guest for Component {
                 #[cfg(feature = "python")]
                 {
                     let session = crate::python::PythonSession::new(lang, modules);
-                    session.run(snippet, args, stdin, env, constraints)
+                    session.run(snippet, options)
                 }
                 #[cfg(not(feature = "python"))]
                 {
@@ -121,19 +118,12 @@ impl GuestSession for Session {
         Ok(())
     }
 
-    fn run(
-        &self,
-        snippet: String,
-        args: Vec<String>,
-        stdin: Option<String>,
-        env: Vec<(String, String)>,
-        constraints: Option<Limits>,
-    ) -> Result<ExecResult, Error> {
+    fn run(&self, snippet: String, options: RunOptions) -> Result<ExecResult, Error> {
         match self {
             #[cfg(feature = "javascript")]
-            Session::Javascript(session) => session.run(snippet, args, stdin, env, constraints),
+            Session::Javascript(session) => session.run(snippet, options),
             #[cfg(feature = "python")]
-            Session::Python(session) => session.run(snippet, args, stdin, env, constraints),
+            Session::Python(session) => session.run(snippet, options),
             Session::Unsupported => Err(Error::UnsupportedLanguage),
         }
     }
