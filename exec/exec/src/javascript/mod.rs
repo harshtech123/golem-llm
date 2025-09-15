@@ -183,8 +183,8 @@ impl JavaScriptSession {
         let state = maybe_state.as_ref().unwrap();
         let start = Instant::now();
 
-        if let Some(constraints) = options.constraints {
-            if let Some(memory_bytes) = constraints.memory_bytes {
+        if let Some(limits) = options.limits {
+            if let Some(memory_bytes) = limits.memory_bytes {
                 state.rt.set_memory_limit(memory_bytes as usize).await;
             }
         }
@@ -196,7 +196,7 @@ impl JavaScriptSession {
                 options.args.unwrap_or_default(),
                 options.env.unwrap_or_default(),
                 state.cwd.clone(),
-                options.constraints.and_then(|c| c.file_size_bytes),
+                options.limits.and_then(|c| c.file_size_bytes),
             ).map_err(js_engine_error)?;
             builtin::timeout::init_abort(ctx)
         })
@@ -219,7 +219,7 @@ impl JavaScriptSession {
                 })
                 .await
         };
-        let result = if let Some(timeout_ms) = options.constraints.and_then(|c| c.time_ms) {
+        let result = if let Some(timeout_ms) = options.limits.and_then(|c| c.time_ms) {
             future
                 .timeout(Duration::from_millis(timeout_ms))
                 .map_err(|err| match err.kind() {

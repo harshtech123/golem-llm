@@ -3,7 +3,9 @@ mod bindings;
 
 use crate::bindings::exports::test::exec_js_exports::test_exec_js_api::*;
 use crate::bindings::golem::exec::executor::run;
-use crate::bindings::golem::exec::types::{Encoding, Error, File, Language, LanguageKind, Limits};
+use crate::bindings::golem::exec::types::{
+    Encoding, Error, File, Language, LanguageKind, Limits, RunOptions,
+};
 use crate::bindings::test::helper_client::test_helper_client::TestHelperApi;
 use golem_rust::{atomically, generate_idempotency_key};
 use indoc::indoc;
@@ -19,18 +21,13 @@ impl Guest for Component {
                 kind: LanguageKind::Javascript,
                 version: None,
             },
-            indoc!(
-                r#"
-            const x = 40 + 2;
-            const name = "world";
-            console.log(`Hello, ${name}!`, x);
-            "#
-            ),
             &[],
-            None,
-            &[],
-            &[],
-            None,
+            indoc! { r#"
+                const x = 40 + 2;
+                const name = "world";
+                console.log(`Hello, ${name}!`, x);
+            "# },
+            &empty_run_options(),
         );
 
         restart.here();
@@ -55,8 +52,8 @@ impl Guest for Component {
                 kind: LanguageKind::Javascript,
                 version: None,
             },
-            indoc!(
-                r#"
+            &[],
+            indoc! { r#"
                 import { createInterface } from "node:readline";
 
                 const rl = createInterface({
@@ -76,13 +73,8 @@ impl Guest for Component {
                 rl.on('close', () => {
                     console.log(`Total Sum: ${sum}`);
                 });
-            "#
-            ),
-            &[],
-            Some("1\n2\n3\n"),
-            &[],
-            &[],
-            None,
+            "# },
+            &empty_run_options(),
         );
 
         restart.here();
@@ -107,8 +99,8 @@ impl Guest for Component {
                 kind: LanguageKind::Javascript,
                 version: None,
             },
-            indoc!(
-                r#"
+            &[],
+            indoc! { r#"
                 import { createInterface } from "node:readline";
 
                 const rl = createInterface({
@@ -129,13 +121,11 @@ impl Guest for Component {
                 }
 
                 await calculateSum();
-            "#
-            ),
-            &[],
-            Some("1\n2\n3\n"),
-            &[],
-            &[],
-            None,
+            "# },
+            &RunOptions {
+                stdin: Some("1\n2\n3\n".to_string()),
+                ..empty_run_options()
+            },
         );
 
         restart.here();
@@ -160,17 +150,15 @@ impl Guest for Component {
                 kind: LanguageKind::Javascript,
                 version: None,
             },
-            indoc!(
-                r#"
+            &[],
+            indoc! { r#"
                 import { argv } from "node:process";
                 console.log(...argv);
-                "#
-            ),
-            &[],
-            None,
-            &["arg1".to_string(), "arg2".to_string()],
-            &[],
-            None,
+            "#},
+            &RunOptions {
+                args: Some(vec!["arg1".to_string(), "arg2".to_string()]),
+                ..empty_run_options()
+            },
         );
 
         restart.here();
@@ -195,17 +183,15 @@ impl Guest for Component {
                 kind: LanguageKind::Javascript,
                 version: None,
             },
-            indoc!(
-                r#"
+            &[],
+            indoc! { r#"
                 import { env } from "node:process";
                 console.log(env.INPUT);
-                "#
-            ),
-            &[],
-            None,
-            &[],
-            &[("INPUT".to_string(), "test_value".to_string())],
-            None,
+            "# },
+            &RunOptions {
+                env: Some(vec![("INPUT".to_string(), "test_value".to_string())]),
+                ..empty_run_options()
+            },
         );
 
         restart.here();
@@ -229,28 +215,21 @@ impl Guest for Component {
                 kind: LanguageKind::Javascript,
                 version: None,
             },
-            indoc!(
-                r#"
-                import { x, name } from "test/module.js";
-                console.log(`Hello, ${name}!`, x);
-                "#
-            ),
             &[File {
                 name: "test/module.js".to_string(),
-                content: indoc!(
-                    r#"
-                        export const x = 40 + 2;
-                        export const name = "world";
-                        "#
-                )
+                content: indoc! { r#"
+                    export const x = 40 + 2;
+                    export const name = "world";
+                "# }
                 .as_bytes()
                 .to_vec(),
                 encoding: Some(Encoding::Utf8),
             }],
-            None,
-            &[],
-            &[],
-            None,
+            indoc! { r#"
+                import { x, name } from "test/module.js";
+                console.log(`Hello, ${name}!`, x);
+            "# },
+            &empty_run_options(),
         );
 
         restart.here();
@@ -277,12 +256,10 @@ impl Guest for Component {
             },
             &[File {
                 name: "test/module.js".to_string(),
-                content: indoc!(
-                    r#"
-                        export const x = 40 + 2;
-                        export const name = "world";
-                        "#
-                )
+                content: indoc! { r#"
+                    export const x = 40 + 2;
+                    export const name = "world";
+                "# }
                 .as_bytes()
                 .to_vec(),
                 encoding: Some(Encoding::Utf8),
@@ -291,16 +268,11 @@ impl Guest for Component {
 
         let r1 = session
             .run(
-                indoc!(
-                    r#"
-                import { x, name } from "test/module.js";
-                console.log(`Hello, ${name}!`, x);
-                "#
-                ),
-                &[],
-                None,
-                &[],
-                None,
+                indoc! { r#"
+                    import { x, name } from "test/module.js";
+                    console.log(`Hello, ${name}!`, x);
+                "# },
+                &empty_run_options(),
             )
             .map_or_else(
                 |err| {
@@ -315,16 +287,14 @@ impl Guest for Component {
 
         let r2 = session
             .run(
-                indoc!(
-                    r#"
-                import { argv } from "node:process";
-                console.log(...argv);
-                "#
-                ),
-                &["arg1".to_string(), "arg2".to_string()],
-                None,
-                &[],
-                None,
+                indoc! { r#"
+                    import { argv } from "node:process";
+                    console.log(...argv);
+                "# },
+                &RunOptions {
+                    args: Some(vec!["arg1".to_string(), "arg2".to_string()]),
+                    ..empty_run_options()
+                },
             )
             .map_or_else(
                 |err| {
@@ -341,16 +311,14 @@ impl Guest for Component {
 
         let r3 = session
             .run(
-                indoc!(
-                    r#"
-                import { argv } from "node:process";
-                console.log(...argv);
-                "#
-                ),
-                &["arg3".to_string()],
-                None,
-                &[],
-                None,
+                indoc! { r#"
+                    import { argv } from "node:process";
+                    console.log(...argv);
+                "# },
+                &RunOptions {
+                    args: Some(vec!["arg13".to_string()]),
+                    ..empty_run_options()
+                },
             )
             .map_or_else(
                 |err| {
@@ -363,33 +331,37 @@ impl Guest for Component {
                 },
             );
 
-        const READLINE_SNIPPET: &str = indoc!(
-            r#"
-                import { createInterface } from "node:readline";
+        const READLINE_SNIPPET: &str = indoc! { r#"
+            import { createInterface } from "node:readline";
 
-                const rl = createInterface({
-                    input: process.stdin,
-                    output: process.stdout
-                });
+            const rl = createInterface({
+                input: process.stdin,
+                output: process.stdout
+            });
 
-                let sum = 0;
+            let sum = 0;
 
-                async function calculateSum() {
-                    for await (const line of rl) {
-                        const number = parseFloat(line);
-                        if (!isNaN(number)) {
-                            sum += number;
-                        }
+            async function calculateSum() {
+                for await (const line of rl) {
+                    const number = parseFloat(line);
+                    if (!isNaN(number)) {
+                        sum += number;
                     }
-                    console.log(`Total Sum: ${sum}`);
                 }
+                console.log(`Total Sum: ${sum}`);
+            }
 
-                await calculateSum();
-            "#
-        );
+            await calculateSum();
+        "# };
 
         let r4 = session
-            .run(READLINE_SNIPPET, &[], Some("1\n2\n3\n"), &[], None)
+            .run(
+                READLINE_SNIPPET,
+                &RunOptions {
+                    stdin: Some("1\n2\n3\n".to_string()),
+                    ..empty_run_options()
+                },
+            )
             .map_or_else(
                 |err| {
                     println!("Error: {}", err);
@@ -401,7 +373,13 @@ impl Guest for Component {
                 },
             );
         let r5 = session
-            .run(READLINE_SNIPPET, &[], Some("4\n100\n"), &[], None)
+            .run(
+                READLINE_SNIPPET,
+                &RunOptions {
+                    stdin: Some("4\n100\n".to_string()),
+                    ..empty_run_options()
+                },
+            )
             .map_or_else(
                 |err| {
                     println!("Error: {}", err);
@@ -443,18 +421,13 @@ impl Guest for Component {
 
         let r2 = session
             .run(
-                indoc!(
-                    r#"
-                import { readFileSync, writeFileSync } from "node:fs";
-                const content = readFileSync("test/input.txt", "utf8");
-                console.log(content);
-                writeFileSync("test/output.txt", content + " - Processed by Golem");
-                "#
-                ),
-                &[],
-                None,
-                &[],
-                None,
+                indoc! { r#"
+                    import { readFileSync, writeFileSync } from "node:fs";
+                    const content = readFileSync("test/input.txt", "utf8");
+                    console.log(content);
+                    writeFileSync("test/output.txt", content + " - Processed by Golem");
+                "# },
+                &empty_run_options(),
             )
             .map_or_else(
                 |err| {
@@ -481,7 +454,7 @@ impl Guest for Component {
             },
         );
 
-        r1 && r2 && r3
+        r1 & &r2 & &r3
     }
 
     fn test09() -> bool {
@@ -511,28 +484,23 @@ impl Guest for Component {
 
         let r2 = session
             .run(
-                indoc!(
-                    r#"
-                import { readFile, writeFile } from "node:fs";
-                readFile("test/input.txt", "utf8", (content, error) => {
-                    if (error) {
-                        console.error("Error reading file:", error);
-                        return;
-                    }
-                    console.log(content);
-                    writeFile("test/output.txt", content + " - Processed by Golem", (error) => {
-                        if (error) {
-                            console.error("Error writing file:", error);
-                            return;
-                        }
-                    });
-                });
-                "#
-                ),
-                &[],
-                None,
-                &[],
-                None,
+                indoc! { r#"
+                        import { readFile, writeFile } from "node:fs";
+                        readFile("test/input.txt", "utf8", (content, error) => {
+                            if (error) {
+                                console.error("Error reading file:", error);
+                                return;
+                            }
+                            console.log(content);
+                            writeFile("test/output.txt", content + " - Processed by Golem", (error) => {
+                                if (error) {
+                                    console.error("Error writing file:", error);
+                                    return;
+                                }
+                            });
+                        });
+                    "# },
+                &empty_run_options(),
             )
             .map_or_else(
                 |err| {
@@ -569,8 +537,7 @@ impl Guest for Component {
 
         let r5 = session
             .run(
-                indoc!(
-                    r#"
+                indoc! { r#"
                     import { readFile, writeFile } from "node:fs";
                     import { cwd } from "node:process";
 
@@ -588,12 +555,8 @@ impl Guest for Component {
                             }
                         });
                     });
-                "#
-                ),
-                &[],
-                None,
-                &[],
-                None,
+                "# },
+                &empty_run_options(),
             )
             .map_or_else(
                 |err| {
@@ -627,25 +590,23 @@ impl Guest for Component {
                 kind: LanguageKind::Javascript,
                 version: None,
             },
-            indoc!(
-                r#"
-            let x = 0;
-            setInterval(() => {
-                x += 1;
-                console.log(x);
-            }, 250);
-            "#
-            ),
             &[],
-            None,
-            &[],
-            &[],
-            Some(Limits {
-                time_ms: Some(1000),
-                memory_bytes: None,
-                file_size_bytes: None,
-                max_processes: None,
-            }),
+            indoc! { r#"
+                let x = 0;
+                setInterval(() => {
+                    x += 1;
+                    console.log(x);
+                }, 250);
+            "# },
+            &RunOptions {
+                limits: Some(Limits {
+                    time_ms: Some(1000),
+                    memory_bytes: None,
+                    file_size_bytes: None,
+                    max_processes: None,
+                }),
+                ..empty_run_options()
+            },
         ) {
             Ok(result) => {
                 println!("Result: {:?}", result);
@@ -669,17 +630,12 @@ impl Guest for Component {
 
         let r1 = session
             .run(
-                indoc!(
-                    r#"
-                import { writeFileSync } from "node:fs";
-                const content = new Array(1024).fill(0);
-                writeFileSync("output.bin", content);
-                "#
-                ),
-                &[],
-                None,
-                &[],
-                None,
+                indoc! { r#"
+                    import { writeFileSync } from "node:fs";
+                    const content = new Array(1024).fill(0);
+                    writeFileSync("output.bin", content);
+                "# },
+                &empty_run_options(),
             )
             .map_or_else(
                 |err| {
@@ -694,22 +650,21 @@ impl Guest for Component {
 
         let r2 = session
             .run(
-                indoc!(
-                    r#"
-                import { writeFileSync } from "node:fs";
-                const content = new Array(1024).fill(0);
-                writeFileSync("output2.bin", content);
-                "#
-                ),
-                &[],
-                None,
-                &[],
-                Some(Limits {
-                    time_ms: None,
-                    memory_bytes: None,
-                    file_size_bytes: Some(512),
-                    max_processes: None,
-                }),
+                indoc! { r#"
+                    import { writeFileSync } from "node:fs";
+                    const content = new Array(1024).fill(0);
+                    writeFileSync("output2.bin", content);
+                    "#
+                },
+                &RunOptions {
+                    limits: Some(Limits {
+                        time_ms: None,
+                        memory_bytes: None,
+                        file_size_bytes: Some(512),
+                        max_processes: None,
+                    }),
+                    ..empty_run_options()
+                },
             )
             .map_or_else(
                 |err| {
@@ -755,6 +710,15 @@ impl Restart {
                 panic!("Simulating crash")
             }
         });
+    }
+}
+
+fn empty_run_options() -> RunOptions {
+    RunOptions {
+        stdin: None,
+        args: None,
+        env: None,
+        limits: None,
     }
 }
 
