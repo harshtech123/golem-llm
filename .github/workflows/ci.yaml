@@ -133,24 +133,24 @@ jobs:
           cd test/exec
           golem profile config local set-format json        
           golem app -b release deploy
-          golem worker invoke test:exec-js/test-1 test01 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-2 test02 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-3 test03 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-4 test04 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-5 test05 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-6 test06 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-7 test07 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-8 test08 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-9 test09 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-10 test10 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-11 test11 | jq -e '(.result_wave[0]=="true")'
-          golem worker invoke test:exec-py/test-1 test1 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-py/test-2 test2 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-py/test-3 test3 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-py/test-4 test4 | jq -e '(.result_wave[0]=="true")'            
-          #golem worker invoke test:exec-py/test-5 test5 | jq -e '(.result_wave[0]=="true")' # TODO: REENABLE AFTER INVESTIGATION            
-          #golem worker invoke test:exec-py/test-6 test6 | jq -e '(.result_wave[0]=="true")' # TODO: REENABLE AFTER INVESTIGATION           
-          golem worker invoke test:exec-py/test-7 test7 | jq -e '(.result_wave[0]=="true")'            
+          golem agent  invoke test:exec-js/test-1 test01 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-js/test-2 test02 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-js/test-3 test03 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-js/test-4 test04 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-js/test-5 test05 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-js/test-6 test06 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-js/test-7 test07 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-js/test-8 test08 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-js/test-9 test09 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-js/test-10 test10 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-js/test-11 test11 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-py/test-1 test1 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-py/test-2 test2 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-py/test-3 test3 | jq -e '(.result_wave[0]=="true")'
+          golem agent  invoke test:exec-py/test-4 test4 | jq -e '(.result_wave[0]=="true")'
+          #golem agent  invoke test:exec-py/test-5 test5 | jq -e '(.result_wave[0]=="true")' # TODO: REENABLE AFTER INVESTIGATION
+          #golem agent  invoke test:exec-py/test-6 test6 | jq -e '(.result_wave[0]=="true")' # TODO: REENABLE AFTER INVESTIGATION
+          golem agent  invoke test:exec-py/test-7 test7 | jq -e '(.result_wave[0]=="true")'
 
   ollama-integration-tests:
     runs-on: ubuntu-latest
@@ -207,15 +207,15 @@ jobs:
           cargo make --cwd llm build-ollama
           cd test/llm
           golem app deploy -b ollama-debug test:llm test:helper
-          golem worker new -e GOLEM_OLLAMA_BASE_URL=http://localhost:11434 test:llm/ollama-1
-          golem worker invoke test:llm/ollama-1 test1 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test2 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test3 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test4 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test5 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test6 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test7 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test8 | grep -v "ERROR: "
+          golem agent  new -e GOLEM_OLLAMA_BASE_URL=http://localhost:11434 test:llm/ollama-1
+          golem agent  invoke test:llm/ollama-1 test1 | grep -v "ERROR: "
+          golem agent  invoke test:llm/ollama-1 test2 | grep -v "ERROR: "
+          golem agent  invoke test:llm/ollama-1 test3 | grep -v "ERROR: "
+          golem agent  invoke test:llm/ollama-1 test4 | grep -v "ERROR: "
+          golem agent  invoke test:llm/ollama-1 test5 | grep -v "ERROR: "
+          golem agent  invoke test:llm/ollama-1 test6 | grep -v "ERROR: "
+          golem agent  invoke test:llm/ollama-1 test7 | grep -v "ERROR: "
+          golem agent  invoke test:llm/ollama-1 test8 | grep -v "ERROR: "
   graph-integration-tests:
     runs-on: ubuntu-latest
     steps:
@@ -305,42 +305,42 @@ jobs:
           
           echo "Testing ArangoDB integration..."
           golem app deploy -b arangodb-release test:graph test:helper
-          golem worker new -e ARANGODB_HOST=localhost -e ARANGODB_USER="" -e ARANGODB_PASSWORD="" -e ARANGODB_PORT="8529" -e ARANGODB_DATABASE="test" test:graph/arangodb-1
-          golem worker invoke test:graph/arangodb-1 test1 | grep -v "ERROR: "
-          golem worker invoke test:graph/arangodb-1 test2 | grep -v "ERROR: "
-          golem worker invoke test:graph/arangodb-1 test3 | grep -v "ERROR: "
-          golem worker invoke test:graph/arangodb-1 test4 | grep -v "ERROR: "
-          golem worker invoke test:graph/arangodb-1 test5 | grep -v "ERROR: "
-          golem worker invoke test:graph/arangodb-1 test6 | grep -v "ERROR: "
-          golem worker invoke test:graph/arangodb-1 test7 | grep -v "ERROR: "
+          golem agent  new -e ARANGODB_HOST=localhost -e ARANGODB_USER="" -e ARANGODB_PASSWORD="" -e ARANGODB_PORT="8529" -e ARANGODB_DATABASE="test" test:graph/arangodb-1
+          golem agent  invoke test:graph/arangodb-1 test1 | grep -v "ERROR: "
+          golem agent  invoke test:graph/arangodb-1 test2 | grep -v "ERROR: "
+          golem agent  invoke test:graph/arangodb-1 test3 | grep -v "ERROR: "
+          golem agent  invoke test:graph/arangodb-1 test4 | grep -v "ERROR: "
+          golem agent  invoke test:graph/arangodb-1 test5 | grep -v "ERROR: "
+          golem agent  invoke test:graph/arangodb-1 test6 | grep -v "ERROR: "
+          golem agent  invoke test:graph/arangodb-1 test7 | grep -v "ERROR: "
           echo "ArangoDB tests completed successfully"
           golem app clean -b arangodb-release 
           
           echo "Testing JanusGraph integration..."
           golem app deploy -b janusgraph-release test:graph test:helper
           sleep 10
-          golem worker new -e JANUSGRAPH_HOST=localhost -e JANUSGRAPH_USER="" -e JANUSGRAPH_PASSWORD="" -e JANUSGRAPH_PORT="8182" test:graph/janusgraph-1
-          golem worker invoke test:graph/janusgraph-1 test1 | grep -v "ERROR: "
-          golem worker invoke test:graph/janusgraph-1 test2 | grep -v "ERROR: "
-          golem worker invoke test:graph/janusgraph-1 test3 | grep -v "ERROR: "
-          golem worker invoke test:graph/janusgraph-1 test4 | grep -v "ERROR: "
-          golem worker invoke test:graph/janusgraph-1 test5 | grep -v "ERROR: "
-          golem worker invoke test:graph/janusgraph-1 test6 | grep -v "ERROR: "
-          golem worker invoke test:graph/janusgraph-1 test7 | grep -v "ERROR: "
+          golem agent  new -e JANUSGRAPH_HOST=localhost -e JANUSGRAPH_USER="" -e JANUSGRAPH_PASSWORD="" -e JANUSGRAPH_PORT="8182" test:graph/janusgraph-1
+          golem agent  invoke test:graph/janusgraph-1 test1 | grep -v "ERROR: "
+          golem agent  invoke test:graph/janusgraph-1 test2 | grep -v "ERROR: "
+          golem agent  invoke test:graph/janusgraph-1 test3 | grep -v "ERROR: "
+          golem agent  invoke test:graph/janusgraph-1 test4 | grep -v "ERROR: "
+          golem agent  invoke test:graph/janusgraph-1 test5 | grep -v "ERROR: "
+          golem agent  invoke test:graph/janusgraph-1 test6 | grep -v "ERROR: "
+          golem agent  invoke test:graph/janusgraph-1 test7 | grep -v "ERROR: "
           echo "JanusGraph tests completed successfully"
           golem app clean -b janusgraph-release 
           
           echo "Testing Neo4j integration..."
           golem app deploy -b neo4j-release test:graph test:helper
           sleep 10
-          golem worker new -e NEO4J_HOST=localhost -e NEO4J_USER=neo4j -e NEO4J_PASSWORD=password -e NEO4J_PORT="7474" -e NEO4J_DATABASE=neo4j test:graph/neo4j-1
-          golem worker invoke test:graph/neo4j-1 test1 | grep -v "ERROR: "
-          golem worker invoke test:graph/neo4j-1 test2 | grep -v "ERROR: "
-          golem worker invoke test:graph/neo4j-1 test3 | grep -v "ERROR: "
-          golem worker invoke test:graph/neo4j-1 test4 | grep -v "ERROR: "
-          golem worker invoke test:graph/neo4j-1 test5 | grep -v "ERROR: "
-          golem worker invoke test:graph/neo4j-1 test6 | grep -v "ERROR: "
-          golem worker invoke test:graph/neo4j-1 test7 | grep -v "ERROR: "
+          golem agent  new -e NEO4J_HOST=localhost -e NEO4J_USER=neo4j -e NEO4J_PASSWORD=password -e NEO4J_PORT="7474" -e NEO4J_DATABASE=neo4j test:graph/neo4j-1
+          golem agent  invoke test:graph/neo4j-1 test1 | grep -v "ERROR: "
+          golem agent  invoke test:graph/neo4j-1 test2 | grep -v "ERROR: "
+          golem agent  invoke test:graph/neo4j-1 test3 | grep -v "ERROR: "
+          golem agent  invoke test:graph/neo4j-1 test4 | grep -v "ERROR: "
+          golem agent  invoke test:graph/neo4j-1 test5 | grep -v "ERROR: "
+          golem agent  invoke test:graph/neo4j-1 test6 | grep -v "ERROR: "
+          golem agent  invoke test:graph/neo4j-1 test7 | grep -v "ERROR: "
           echo "Neo4j tests completed successfully"
           golem app clean -b neo4j-release 
 

@@ -94,13 +94,13 @@ golem app deploy -b openai-debug
 Depending on the provider selected, an environment variable has to be set for the worker to be started, containing the ENVIRONMENT variable (eg.API key) for the given provider:
 
 ```bash
-golem worker new test:llm/debug --env OPENAI_API_KEY=xxx --env GOLEM_LLM_LOG=trace
+golem agent  new test:llm/debug --env OPENAI_API_KEY=xxx --env GOLEM_LLM_LOG=trace
 ```
 
 Then you can invoke the test functions on this worker:
 
 ```bash
-golem worker invoke test:llm/debug test1 --stream 
+golem agent  invoke test:llm/debug test1 --stream 
 ```
 
 
