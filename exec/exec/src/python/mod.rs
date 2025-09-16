@@ -11,6 +11,7 @@ use rustpython::{vm, InterpreterConfig};
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU32;
+use std::{fs, io};
 use wstd::time::Instant;
 
 static TEMP_DIR_COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -395,7 +396,21 @@ impl Drop for PythonSession {
             state.interpreter.finalize(state.last_error.take());
         }
 
-        let _ = std::fs::remove_dir_all(&self.data_root);
-        let _ = std::fs::remove_dir_all(&self.module_root);
+        let _ = remove_dir_all(&self.data_root);
+        let _ = remove_dir_all(&self.module_root);
     }
+}
+
+pub fn remove_dir_all<P: AsRef<Path>>(path: P) -> io::Result<()> {
+    for child in fs::read_dir(&path)? {
+        let child = child?;
+        let metadata = child.metadata()?;
+        let path = child.path();
+        if metadata.is_dir() {
+            remove_dir_all(&path)?;
+        } else if metadata.is_file() {
+            fs::remove_file(&path)?;
+        }
+    }
+    fs::remove_dir(&path)
 }
