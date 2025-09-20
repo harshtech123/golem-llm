@@ -35,6 +35,13 @@ generate_unused_types = true
 
 [package.metadata.component.bindings.with]
 "golem:vector/types@1.0.0" = "golem_vector::golem::vector::types"
+"golem:vector/collections@1.0.0" = "golem_vector::golem::vector::collections"
+"golem:vector/namespaces@1.0.0" = "golem_vector::golem::vector::namespaces"
+"golem:vector/analytics@1.0.0" = "golem_vector::golem::vector::analytics"
+"golem:vector/connection@1.0.0" = "golem_vector::golem::vector::connection"
+"golem:vector/vectors@1.0.0" = "golem_vector::golem::vector::vectors"
+"golem:vector/search@1.0.0" = "golem_vector::golem::vector::search"
+"golem:vector/search-extended@1.0.0" = "golem_vector::golem::vector::search_extended"
 
 [package.metadata.component.target]
 path = "wit"

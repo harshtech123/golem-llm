@@ -72,8 +72,8 @@ interface types {
         number-val(f64),
         integer-val(s64),
         boolean-val(bool),
-        array-val(list<metadata-value>),
-        object-val(list<tuple<string, metadata-value>>),
+        array-val(list<metadata-func>),
+        object-val(list<tuple<string, metadata-func>>),
         null-val,
         /// Geographic coordinates
         geo-val(geo-coordinates),
@@ -81,6 +81,11 @@ interface types {
         datetime-val(string),
         /// Binary data
         blob-val(list<u8>),
+    }
+
+    resource metadata-func {
+        // retrieves the underlying data from a handle.
+        get: func() -> metadata-value;
     }
     
     /// Geographic coordinates
@@ -137,13 +142,19 @@ interface types {
         /// Simple condition
         condition(filter-condition),
         /// Logical AND of multiple expressions
-        and(list<filter-expression>),
+        and(list<filter-func>),
         /// Logical OR of multiple expressions
-        or(list<filter-expression>),
+        or(list<filter-func>),
         /// Logical NOT of expression
-        not(filter-expression),
+        not(filter-func),
     }
-    
+
+    /// filter function resource
+    resource filter-func {
+        // retrieves the underlying data from a handle.
+        get: func() -> filter-expression;
+    }
+
     /// Vector record for storage operations
     record vector-record {
         /// Unique identifier
@@ -197,7 +208,7 @@ interface types {
 
 /// Collection/index management and configuration
 interface collections {
-    use types.{id, distance-metric, vector-error};
+    use types.{id, distance-metric, vector-error, metadata};
     
     /// Index configuration parameters
     record index-config {
@@ -216,7 +227,7 @@ interface collections {
         index-ready: bool,
         created-at: option<u64>,
         updated-at: option<u64>,
-        provider-stats: option<types.metadata>,
+        provider-stats: option<metadata>,
     }
     
     /// Create or update collection (upsert)
@@ -226,11 +237,11 @@ interface collections {
         dimension: u32,
         metric: distance-metric,
         index-config: option<index-config>,
-        metadata: option<types.metadata>
+        metadata: option<metadata>
     ) -> result<collection-info, vector-error>;
     
     /// List all collections
-    list-collections: func() -> result<list<collection-info>, vector-error>;
+    list-collections: func() -> result<list<string>, vector-error>;
     
     /// Get collection information
     get-collection: func(name: string) -> result<collection-info, vector-error>;
@@ -239,7 +250,7 @@ interface collections {
     update-collection: func(
         name: string,
         description: option<string>,
-        metadata: option<types.metadata>
+        metadata: option<metadata>
     ) -> result<collection-info, vector-error>;
     
     /// Delete collection and all vectors
@@ -393,11 +404,11 @@ interface search {
         search-params: option<list<tuple<string, string>>>
     ) -> result<list<list<search-result>>, vector-error>;
 }
-}
 
 /// Extended search capabilities (provider-dependent)
 interface search-extended {
     use types.{id, vector-data, search-result, filter-expression, vector-error, metadata-value};
+    use search.{search-query};
     
     /// Recommendation example types
     variant recommendation-example {
@@ -451,7 +462,7 @@ interface search-extended {
     /// Grouped search for diverse results
     search-groups: func(
         collection: string,
-        query: search.search-query,
+        query: search-query,
         group-by: string,
         group-size: u32,
         max-groups: u32,
@@ -639,10 +650,10 @@ interface connection {
 world vector-library {
     export types;
     export collections;
+    export search-extended;
+    export namespaces;
+    export analytics;
+    export connection;
     export vectors;
     export search;
-    export search-extended;
-    export analytics;
-    export namespaces;
-    export connection;
 }

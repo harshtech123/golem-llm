@@ -1,7 +1,6 @@
 //pub mod config;
 pub mod durability;
 //pub mod error;
-//pub mod query_utils;
 
 wit_bindgen::generate!({
     path: "../wit",
@@ -10,6 +9,7 @@ wit_bindgen::generate!({
     generate_unused_types: true,
     additional_derives: [
         PartialEq,
+        Clone,
         golem_rust::FromValueAndType,
         golem_rust::IntoValue
     ],
@@ -19,9 +19,64 @@ wit_bindgen::generate!({
 pub use crate::exports::golem;
 
 pub use __export_vector_library_impl as export_vector;
+use exports::golem::vector::types::{
+    self, GuestFilterFunc, GuestMetadataFunc,
+};
+use golem_rust::value_and_type::{FromValueAndType, IntoValue, TypeNodeBuilder};
+use golem_rust::wasm_rpc::{NodeBuilder, WitValueExtractor};
 
 use std::cell::RefCell;
 use std::str::FromStr;
+
+macro_rules! impl_resource_traits {
+    ($ResourceType:ty, $InnerType:ty) => {
+        impl Clone for $ResourceType {
+            fn clone(&self) -> Self {
+                Self::new(self.get::<$InnerType>().clone())
+            }
+        }
+
+        impl PartialEq for $ResourceType {
+            fn eq(&self, other: &Self) -> bool {
+                self.get::<$InnerType>() == other.get::<$InnerType>()
+            }
+        }
+
+        impl IntoValue for $ResourceType {
+            fn add_to_builder<B: NodeBuilder>(self, builder: B) -> B::Result {
+                self.get::<$InnerType>().clone().add_to_builder(builder)
+            }
+
+            fn add_to_type_builder<B: TypeNodeBuilder>(builder: B) -> B::Result {
+                <$InnerType>::add_to_type_builder(builder)
+            }
+        }
+
+        impl FromValueAndType for $ResourceType {
+            fn from_extractor<'a, 'b>(
+                extractor: &'a impl WitValueExtractor<'a, 'b>,
+            ) -> Result<Self, String> {
+                <$InnerType>::from_extractor(extractor).map(Self::new)
+            }
+        }
+    };
+}
+
+
+impl_resource_traits!(types::MetadataFunc, types::MetadataValue);
+impl_resource_traits!(types::FilterFunc, types::FilterExpression);
+
+impl GuestMetadataFunc for types::MetadataValue {
+    fn get(&self) -> types::MetadataValue {
+        self.clone()
+    }
+}
+
+impl GuestFilterFunc for types::FilterExpression {
+    fn get(&self) -> types::FilterExpression {
+        self.clone()
+    }
+}
 
 struct LoggingState {
     logging_initialized: bool,
