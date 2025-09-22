@@ -1,6 +1,6 @@
-//pub mod config;
+pub mod config;
 pub mod durability;
-//pub mod error;
+pub mod error;
 
 wit_bindgen::generate!({
     path: "../wit",
@@ -19,17 +19,21 @@ wit_bindgen::generate!({
 pub use crate::exports::golem;
 
 pub use __export_vector_library_impl as export_vector;
-use exports::golem::vector::types::{
+
+use crate::exports::golem::vector::types::{
     self, GuestFilterFunc, GuestMetadataFunc,
 };
 use golem_rust::value_and_type::{FromValueAndType, IntoValue, TypeNodeBuilder};
-use golem_rust::wasm_rpc::{NodeBuilder, WitValueExtractor};
+use golem_rust::wasm_rpc::{NodeBuilder, ResourceMode, Uri, WitValueExtractor};
 
 use std::cell::RefCell;
 use std::str::FromStr;
 
+const METADATA_FUNC_ID: u64 = 1;
+const FILTER_FUNC_ID: u64 = 2;
+
 macro_rules! impl_resource_traits {
-    ($ResourceType:ty, $InnerType:ty) => {
+    ($ResourceType:ty, $InnerType:ty, $UriString:literal, $TypeIdConstant:ident) => {
         impl Clone for $ResourceType {
             fn clone(&self) -> Self {
                 Self::new(self.get::<$InnerType>().clone())
@@ -44,11 +48,16 @@ macro_rules! impl_resource_traits {
 
         impl IntoValue for $ResourceType {
             fn add_to_builder<B: NodeBuilder>(self, builder: B) -> B::Result {
-                self.get::<$InnerType>().clone().add_to_builder(builder)
+                builder.handle(
+                    Uri {
+                        value: $UriString.to_string(),
+                    },
+                    self.handle() as u64,
+                )
             }
 
             fn add_to_type_builder<B: TypeNodeBuilder>(builder: B) -> B::Result {
-                <$InnerType>::add_to_type_builder(builder)
+                builder.handle($TypeIdConstant, ResourceMode::Owned)
             }
         }
 
@@ -62,9 +71,19 @@ macro_rules! impl_resource_traits {
     };
 }
 
+impl_resource_traits!(
+    types::MetadataFunc,
+    types::MetadataValue,
+    "golem:vector/types/metadata-func",
+    METADATA_FUNC_ID
+);
+impl_resource_traits!(
+    types::FilterFunc,
+    types::FilterExpression,
+    "golem:vector/types/filter-func",
+    FILTER_FUNC_ID
+);
 
-impl_resource_traits!(types::MetadataFunc, types::MetadataValue);
-impl_resource_traits!(types::FilterFunc, types::FilterExpression);
 
 impl GuestMetadataFunc for types::MetadataValue {
     fn get(&self) -> types::MetadataValue {
