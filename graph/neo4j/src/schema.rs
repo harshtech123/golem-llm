@@ -15,6 +15,7 @@ use log::trace;
 use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
+use golem_graph::golem::graph::transactions::GuestTransaction;
 
 impl SchemaGuest for GraphNeo4jComponent {
     type SchemaManager = SchemaManager;
@@ -437,3 +438,4 @@ impl GuestSchemaManager for SchemaManager {
         Ok(vec![])
     }
 }
+

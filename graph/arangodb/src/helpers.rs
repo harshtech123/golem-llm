@@ -182,7 +182,7 @@ pub(crate) fn config_from_env() -> Result<ConnectionConfig, GraphError> {
         .ok();
 
     Ok(ConnectionConfig {
-        hosts: vec![host],
+        hosts: Some(vec![host]),
         port,
         database_name,
         username: Some(username),
@@ -331,7 +331,7 @@ mod tests {
         env::set_var("ARANGODB_PASSWORD", "pass1");
         env::set_var("ARANGODB_PORT", "8529");
         let cfg = config_from_env().unwrap();
-        assert_eq!(cfg.hosts, vec!["localhost".to_string()]);
+        assert_eq!(cfg.hosts, Some(vec!["localhost".to_string()]));
         assert_eq!(cfg.port, Some(8529));
         assert_eq!(cfg.username, Some("user1".to_string()));
         assert_eq!(cfg.password, Some("pass1".to_string()));

@@ -2,10 +2,8 @@ mod client;
 mod connection;
 mod conversions;
 mod helpers;
-mod query;
 mod schema;
 mod transaction;
-mod traversal;
 
 use client::ArangoDbApi;
 use golem_graph::config::with_config_key;
@@ -35,7 +33,13 @@ impl ExtendedGuest for GraphArangoDbComponent {
     fn connect_internal(config: &ConnectionConfig) -> Result<Graph, GraphError> {
         let host = with_config_key(config, "ARANGO_HOST")
             .or_else(|| with_config_key(config, "ARANGODB_HOST"))
-            .or_else(|| config.hosts.first().cloned())
+            .or_else(|| {
+                config
+                    .hosts
+                    .as_ref()
+                    .and_then(|hosts| hosts.first())
+                    .cloned()
+            })
             .ok_or_else(|| GraphError::ConnectionFailed("Missing host".to_string()))?;
 
         let port = with_config_key(config, "ARANGO_PORT")

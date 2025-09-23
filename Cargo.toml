@@ -22,7 +22,7 @@ members = [
     "search/typesense",
     "graph/graph",
     "graph/arangodb",
-    "graph/janusgraph",
+    #"graph/janusgraph",
     "graph/neo4j",
     "video/video",
     "video/kling",

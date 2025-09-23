@@ -187,7 +187,7 @@ interface connection {
     /// Configuration for connecting to graph databases
     record connection-config {
         // Connection parameters
-        hosts: list<string>,
+        hosts: option<list<string>>,
         port: option<u16>,
         database-name: option<string>,
         
@@ -235,19 +235,22 @@ interface connection {
 
 /// All graph operations performed within transaction contexts
 interface transactions {
-    use types.{vertex, edge, path, element-id, property-map, property-value, filter-condition, sort-spec, direction};
-    use errors.{graph-error};
+    use types.{ vertex, edge, path, element-id, property-map, property-value, filter-condition, sort-spec, direction };
+    use query.{ query-parameters, query-options, query-execution-result };
+    use errors.{ graph-error };
 
     /// Transaction resource - all operations go through transactions
     resource transaction {
+        // === QUERY OPERATIONS ===
+        
+        /// Execute a database-specific query string
+        execute-query: func(options: execute-query-options) -> result<query-execution-result, graph-error>;
+
         // === VERTEX OPERATIONS ===
         
         /// Create a new vertex
-        create-vertex: func(vertex-type: string, properties: property-map) -> result<vertex, graph-error>;
-        
-        /// Create vertex with additional labels (for multi-label systems like Neo4j)
-        create-vertex-with-labels: func(vertex-type: string, additional-labels: list<string>, properties: property-map) -> result<vertex, graph-error>;
-        
+        create-vertex: func(options: create-vertex-options) -> result<vertex, graph-error>;
+
         /// Get vertex by ID
         get-vertex: func(id: element-id) -> result<option<vertex>, graph-error>;
         
@@ -261,13 +264,7 @@ interface transactions {
         delete-vertex: func(id: element-id, delete-edges: bool) -> result<_, graph-error>;
         
         /// Find vertices by type and optional filters
-        find-vertices: func(
-            vertex-type: option<string>,
-            filters: option<list<filter-condition>>,
-            sort: option<list<sort-spec>>,
-            limit: option<u32>,
-            offset: option<u32>
-        ) -> result<list<vertex>, graph-error>;
+        find-vertices: func(options: find-vertices-options) -> result<list<vertex>, graph-error>;
 
         // === EDGE OPERATIONS ===
         
@@ -292,31 +289,15 @@ interface transactions {
         delete-edge: func(id: element-id) -> result<_, graph-error>;
         
         /// Find edges by type and optional filters
-        find-edges: func(
-            edge-types: option<list<string>>,
-            filters: option<list<filter-condition>>,
-            sort: option<list<sort-spec>>,
-            limit: option<u32>,
-            offset: option<u32>
-        ) -> result<list<edge>, graph-error>;
+        find-edges: func(options: find-edges-options) -> result<list<edge>, graph-error>;
 
         // === TRAVERSAL OPERATIONS ===
         
         /// Get adjacent vertices through specified edge types
-        get-adjacent-vertices: func(
-            vertex-id: element-id,
-            direction: direction,
-            edge-types: option<list<string>>,
-            limit: option<u32>
-        ) -> result<list<vertex>, graph-error>;
+        get-adjacent-vertices: func(options: get-adjacent-vertices-options) -> result<list<vertex>, graph-error>;
         
         /// Get edges connected to a vertex
-        get-connected-edges: func(
-            vertex-id: element-id,
-            direction: direction,
-            edge-types: option<list<string>>,
-            limit: option<u32>
-        ) -> result<list<edge>, graph-error>;
+        get-connected-edges: func(options: get-connected-edges-options) -> result<list<edge>, graph-error>;
 
         // === BATCH OPERATIONS ===
         
@@ -352,6 +333,56 @@ interface transactions {
         
         /// Check if transaction is still active
         is-active: func() -> bool;
+    }
+
+    /// Options for execute-query
+    record execute-query-options {
+        transaction: borrow<transaction>,
+        query: string,
+        parameters: option<query-parameters>,
+        options: option<query-options>
+    }
+    
+    /// Options for create-vertex
+    record create-vertex-options {
+        vertex-type: string,
+        properties: option<property-map>,
+        /// For multi-label systems like Neo4j
+        labels: option<list<string>>,
+    }
+
+    /// Options for find-vertices
+    record find-vertices-options {
+        vertex-type: option<string>,
+        filters: option<list<filter-condition>>,
+        sort: option<list<sort-spec>>,
+        limit: option<u32>,
+        offset: option<u32>,
+    }
+
+    /// Options for find-edges
+    record find-edges-options {
+        edge-types: option<list<string>>,
+        filters: option<list<filter-condition>>,
+        sort: option<list<sort-spec>>,
+        limit: option<u32>,
+        offset: option<u32>,
+    }
+
+    /// Options for get-adjacent-vertices
+    record get-adjacent-vertices-options {
+        vertex-id: element-id,
+        direction: direction,
+        edge-types: option<list<string>>,
+        limit: option<u32>,
+    }
+
+    // Options for get-connected-edges
+    record get-connected-edges-options {
+        vertex-id: element-id,
+        direction: direction,
+        edge-types: option<list<string>>,
+        limit: option<u32>,
     }
 
     /// Vertex specification for batch creation
@@ -510,11 +541,10 @@ interface schema {
     get-schema-manager: func(config: option<connection-config>) -> result<schema-manager, graph-error>;
 }
 
-/// Generic query interface for database-specific query languages
+/// Generic query types for database-specific query languages
 interface query {
     use types.{vertex, edge, path, property-value};
     use errors.{graph-error};
-    use transactions.{transaction};
 
     /// Query result that maintains symmetry with data insertion formats
     variant query-result {
@@ -544,14 +574,6 @@ interface query {
         explanation: option<string>,  // Execution plan if requested
         profile-data: option<string>, // Performance data if requested
     }
-
-    /// Execute a database-specific query string
-    execute-query: func(
-        transaction: borrow<transaction>,
-        query: string,
-        parameters: option<query-parameters>,
-        options: option<query-options>
-    ) -> result<query-execution-result, graph-error>;
 }
 
 /// Graph traversal and pathfinding operations
