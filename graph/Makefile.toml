@@ -31,56 +31,56 @@ run_task = { name = [
 ] }
 
 [tasks.build-arangodb]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-graph-arangodb"]
 
 [tasks.build-arangodb-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-graph-arangodb", "--no-default-features"]
 
 
 [tasks.build-janusgraph]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-graph-janusgraph"]
 
 [tasks.build-janusgraph-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-graph-janusgraph", "--no-default-features"]
 
 
 [tasks.build-neo4j]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-graph-neo4j"]
 
 [tasks.build-neo4j-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-graph-neo4j", "--no-default-features"]
 
 
 [tasks.release-build-arangodb]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-graph-arangodb", "--release"]
 
 [tasks.release-build-arangodb-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-graph-arangodb", "--release", "--no-default-features"]
 
 
 [tasks.release-build-janusgraph]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-graph-janusgraph", "--release"]
 
 [tasks.release-build-janusgraph-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = [
     "build",
@@ -92,12 +92,12 @@ args = [
 
 
 [tasks.release-build-neo4j]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-graph-neo4j", "--release"]
 
 [tasks.release-build-neo4j-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-graph-neo4j", "--release", "--no-default-features"]
 
@@ -140,15 +140,33 @@ dependencies = ["build"]
 install_crate = "cargo-binstall"
 description = "Builds graph test components with golem-cli"
 script = '''
-cargo-binstall golem-cli@1.2.5 --locked --no-confirm
+cargo-binstall golem-cli@1.3.0-rc2 --locked --no-confirm
 cargo-binstall wac-cli --locked --no-confirm
 cd ../test/graph
 
 golem-cli --version
-golem-cli app clean
-golem-cli app build -b arangodb-debug
-golem-cli app clean
-golem-cli app build -b janusgraph-debug
-golem-cli app clean
-golem-cli app build -b neo4j-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b arangodb-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b janusgraph-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b neo4j-debug
+'''
+
+[tasks.release-build-test-components]
+dependencies = ["release-build"]
+install_crate = "cargo-binstall"
+description = "Builds graph test components with golem-cli"
+script = '''
+cargo-binstall golem-cli@1.3.0-rc2 --locked --no-confirm
+cargo-binstall wac-cli --locked --no-confirm
+cd ../test/graph
+
+golem-cli --version
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b arangodb-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b janusgraph-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b neo4j-release
 '''

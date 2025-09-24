@@ -9,11 +9,14 @@ use crate::conversion::{
 };
 use golem_video::config::with_config_key;
 use golem_video::durability::{DurableVideo, ExtendedGuest};
-use golem_video::exports::golem::video_generation::advanced::Guest as AdvancedGuest;
+use golem_video::exports::golem::video_generation::advanced::{
+    ExtendVideoOptions, GenerateVideoEffectsOptions, Guest as AdvancedGuest,
+    MultImageGenerationOptions,
+};
 use golem_video::exports::golem::video_generation::lip_sync::Guest as LipSyncGuest;
 use golem_video::exports::golem::video_generation::types::{
-    AudioSource, BaseVideo, EffectType, GenerationConfig, InputImage, Kv, LipSyncVideo, MediaInput,
-    VideoError, VideoResult, VoiceInfo,
+    AudioSource, BaseVideo, GenerationConfig, LipSyncVideo, MediaInput, VideoError, VideoResult,
+    VoiceInfo,
 };
 use golem_video::exports::golem::video_generation::video_generation::Guest as VideoGenerationGuest;
 
@@ -63,22 +66,16 @@ impl LipSyncGuest for RunwayComponent {
 }
 
 impl AdvancedGuest for RunwayComponent {
-    fn extend_video(
-        video_id: String,
-        prompt: Option<String>,
-        negative_prompt: Option<String>,
-        cfg_scale: Option<f32>,
-        provider_options: Option<Vec<Kv>>,
-    ) -> Result<String, VideoError> {
+    fn extend_video(options: ExtendVideoOptions) -> Result<String, VideoError> {
         with_config_key(Self::ENV_VAR_NAME, Err, |api_key| {
             let client = RunwayApi::new(api_key);
             extend_video(
                 &client,
-                video_id,
-                prompt,
-                negative_prompt,
-                cfg_scale,
-                provider_options,
+                options.video_id,
+                options.prompt,
+                options.negative_prompt,
+                options.cfg_scale,
+                options.provider_options,
             )
         })
     }
@@ -90,27 +87,29 @@ impl AdvancedGuest for RunwayComponent {
         })
     }
 
-    fn generate_video_effects(
-        input: InputImage,
-        effect: EffectType,
-        model: Option<String>,
-        duration: Option<f32>,
-        mode: Option<String>,
-    ) -> Result<String, VideoError> {
+    fn generate_video_effects(options: GenerateVideoEffectsOptions) -> Result<String, VideoError> {
         with_config_key(Self::ENV_VAR_NAME, Err, |api_key| {
             let client = RunwayApi::new(api_key);
-            generate_video_effects(&client, input, effect, model, duration, mode)
+            generate_video_effects(
+                &client,
+                options.input,
+                options.effect,
+                options.model,
+                options.duration,
+                options.mode,
+            )
         })
     }
 
-    fn multi_image_generation(
-        input_images: Vec<InputImage>,
-        prompt: Option<String>,
-        config: GenerationConfig,
-    ) -> Result<String, VideoError> {
+    fn multi_image_generation(options: MultImageGenerationOptions) -> Result<String, VideoError> {
         with_config_key(Self::ENV_VAR_NAME, Err, |api_key| {
             let client = RunwayApi::new(api_key);
-            multi_image_generation(&client, input_images, prompt, config)
+            multi_image_generation(
+                &client,
+                options.input_images,
+                options.prompt,
+                options.config,
+            )
         })
     }
 }

@@ -1,16 +1,17 @@
 #[allow(static_mut_refs)]
 mod bindings;
 
-use std::collections::HashSet;
 use crate::bindings::exports::test::graph_exports::test_graph_api::*;
+use crate::bindings::golem::graph::transactions::{
+    CreateEdgeOptions, CreateVertexOptions, ExecuteQueryOptions, GetAdjacentVerticesOptions,
+};
+use crate::bindings::golem::graph::types::{
+    GetNeighborhoodOptions, PathExistsOptions, PathOptions, QueryResult,
+};
 use crate::bindings::golem::graph::{
-    connection::{self, ConnectionConfig, connect},
-    schema::{self},
-    query::{self, QueryResult, QueryOptions},
-    transactions::{self, VertexSpec, EdgeSpec},
-    traversal::{self, NeighborhoodOptions, PathOptions},
-    types::{PropertyValue, Direction},
-    errors::GraphError,
+    connection::{connect, ConnectionConfig},
+    schema,
+    types::{Direction, PropertyValue},
 };
 
 struct Component;
@@ -57,11 +58,14 @@ fn get_test_host() -> String {
 
 // Helper function to ensure required collections exist for ArangoDB tests
 #[cfg(feature = "arangodb")]
-fn ensure_arangodb_collections(graph_connection: &crate::bindings::golem::graph::connection::Graph) -> Result<(), String> {
+fn ensure_arangodb_collections(
+    graph_connection: &crate::bindings::golem::graph::connection::Graph,
+) -> Result<(), String> {
     use crate::bindings::golem::graph::schema::{self, ContainerType};
-    
+    use std::collections::HashSet;
+
     println!("Setting up ArangoDB collections for testing...");
-    
+
     let schema_manager = match schema::get_schema_manager(None) {
         Ok(manager) => manager,
         Err(error) => return Err(format!("Failed to get schema manager: {:?}", error)),
@@ -85,14 +89,12 @@ fn ensure_arangodb_collections(graph_connection: &crate::bindings::golem::graph:
         Ok(containers) => containers,
         Err(error) => {
             println!("ERROR: Could not list existing containers: {:?}", error);
-            vec![] 
+            vec![]
         }
     };
 
-    let existing_names: HashSet<String> = existing_containers
-        .iter()
-        .map(|c| c.name.clone())
-        .collect();
+    let existing_names: HashSet<String> =
+        existing_containers.iter().map(|c| c.name.clone()).collect();
 
     for (name, container_type) in required_collections {
         if existing_names.contains(name) {
@@ -113,7 +115,9 @@ fn ensure_arangodb_collections(graph_connection: &crate::bindings::golem::graph:
 }
 
 #[cfg(not(feature = "arangodb"))]
-fn ensure_arangodb_collections(_graph_connection: &crate::bindings::golem::graph::connection::Graph) -> Result<(), String> {
+fn ensure_arangodb_collections(
+    _graph_connection: &crate::bindings::golem::graph::connection::Graph,
+) -> Result<(), String> {
     Ok(())
 }
 
@@ -121,23 +125,34 @@ impl Guest for Component {
     /// test1 demonstrates basic vertex creation and retrieval operations
     fn test1() -> String {
         println!("Starting test1: Basic vertex operations with {}", PROVIDER);
-        
+
         let config = ConnectionConfig {
-            hosts: vec![get_test_host()],
+            hosts: Some(vec![get_test_host()]),
             port: Some(TEST_PORT),
             database_name: Some(TEST_DATABASE.to_string()),
-            username: if TEST_USERNAME.is_empty() { None } else { Some(TEST_USERNAME.to_string()) },
-            password: if TEST_PASSWORD.is_empty() { None } else { Some(TEST_PASSWORD.to_string()) },
-            timeout_seconds: None,  
-            max_connections: None,  
+            username: if TEST_USERNAME.is_empty() {
+                None
+            } else {
+                Some(TEST_USERNAME.to_string())
+            },
+            password: if TEST_PASSWORD.is_empty() {
+                None
+            } else {
+                Some(TEST_PASSWORD.to_string())
+            },
+            timeout_seconds: None,
+            max_connections: None,
             provider_config: vec![],
         };
 
         println!("Connecting to graph database...");
-        let graph_connection = match connection::connect(&config) {
+        let graph_connection = match connect(&config) {
             Ok(conn) => conn,
             Err(error) => {
-                return format!("ERROR: Connection failed please ensure you are connected: {:?}", error);
+                return format!(
+                    "ERROR: Connection failed please ensure you are connected: {:?}",
+                    error
+                );
             }
         };
         if let Err(error) = ensure_arangodb_collections(&graph_connection) {
@@ -153,13 +168,20 @@ impl Guest for Component {
         };
 
         let properties = vec![
-            ("name".to_string(), PropertyValue::StringValue("Alice".to_string())),
+            (
+                "name".to_string(),
+                PropertyValue::StringValue("Alice".to_string()),
+            ),
             ("age".to_string(), PropertyValue::Int32(30)),
             ("active".to_string(), PropertyValue::Boolean(true)),
         ];
 
         println!("Creating vertex...");
-        let vertex = match transaction.create_vertex("Person", &properties) {
+        let vertex = match transaction.create_vertex(&CreateVertexOptions {
+            vertex_type: "Person".to_string(),
+            properties: Some(properties),
+            labels: None,
+        }) {
             Ok(v) => v,
             Err(error) => return format!("ERROR: Vertex creation failed: {:?}", error),
         };
@@ -194,15 +216,23 @@ impl Guest for Component {
     fn test2() -> String {
         println!("Starting test2: Edge operations with {}", PROVIDER);
         let mut results = Vec::new();
-        
+
         let config = ConnectionConfig {
-            hosts: vec![get_test_host()],
+            hosts: Some(vec![get_test_host()]),
             port: Some(TEST_PORT),
             database_name: Some(TEST_DATABASE.to_string()),
-            username: if TEST_USERNAME.is_empty() { None } else { Some(TEST_USERNAME.to_string()) },
-            password: if TEST_PASSWORD.is_empty() { None } else { Some(TEST_PASSWORD.to_string()) },
-            timeout_seconds: None,  
-            max_connections: None,  
+            username: if TEST_USERNAME.is_empty() {
+                None
+            } else {
+                Some(TEST_USERNAME.to_string())
+            },
+            password: if TEST_PASSWORD.is_empty() {
+                None
+            } else {
+                Some(TEST_PASSWORD.to_string())
+            },
+            timeout_seconds: None,
+            max_connections: None,
             provider_config: vec![],
         };
 
@@ -215,7 +245,7 @@ impl Guest for Component {
 
         if let Err(error) = ensure_arangodb_collections(&graph_connection) {
             println!("ERROR: Collection setup failed: {}", error);
-        } 
+        }
 
         let transaction = match graph_connection.begin_transaction() {
             Ok(tx) => tx,
@@ -226,61 +256,89 @@ impl Guest for Component {
 
         // Creating two vertices
         let person1_props = vec![
-            ("name".to_string(), PropertyValue::StringValue("Bob".to_string())),
+            (
+                "name".to_string(),
+                PropertyValue::StringValue("Bob".to_string()),
+            ),
             ("age".to_string(), PropertyValue::Int32(25)),
         ];
 
         let person2_props = vec![
-            ("name".to_string(), PropertyValue::StringValue("Carol".to_string())),
+            (
+                "name".to_string(),
+                PropertyValue::StringValue("Carol".to_string()),
+            ),
             ("age".to_string(), PropertyValue::Int32(28)),
         ];
 
-        let vertex1 = match transaction.create_vertex("Person", &person1_props) {
+        let vertex1 = match transaction.create_vertex(&CreateVertexOptions {
+            vertex_type: "Person".to_string(),
+            properties: Some(person1_props),
+            labels: None,
+        }) {
             Ok(v) => v,
             Err(error) => return format!("ERROR: First vertex creation failed: {:?}", error),
         };
 
-        let vertex2 = match transaction.create_vertex("Person", &person2_props) {
+        let vertex2 = match transaction.create_vertex(&CreateVertexOptions {
+            vertex_type: "Person".to_string(),
+            properties: Some(person2_props),
+            labels: None,
+        }) {
             Ok(v) => v,
             Err(error) => return format!("ERROR: Second vertex creation failed: {:?}", error),
         };
 
         let edge_props = vec![
-            ("relationship".to_string(), PropertyValue::StringValue("FRIEND".to_string())),
-            ("since".to_string(), PropertyValue::StringValue("2020-01-01".to_string())),
+            (
+                "relationship".to_string(),
+                PropertyValue::StringValue("FRIEND".to_string()),
+            ),
+            (
+                "since".to_string(),
+                PropertyValue::StringValue("2020-01-01".to_string()),
+            ),
             ("weight".to_string(), PropertyValue::Float32Value(0.8)),
         ];
 
-        let edge = match transaction.create_edge(
-            "KNOWS",
-            &vertex1.id.clone(),
-            &vertex2.id.clone(),
-            &edge_props,
-        ) {
+        let edge = match transaction.create_edge(&CreateEdgeOptions {
+            edge_type: "KNOWS".to_string(),
+            from_vertex: vertex1.id.clone(),
+            to_vertex: vertex2.id.clone(),
+            properties: Some(edge_props),
+        }) {
             Ok(e) => {
-                println!("INFO: Successfully created edge: {:?} -> {:?} (type: {})", e.from_vertex, e.to_vertex, e.edge_type);
+                println!(
+                    "INFO: Successfully created edge: {:?} -> {:?} (type: {})",
+                    e.from_vertex, e.to_vertex, e.edge_type
+                );
                 e
-            },
+            }
             Err(error) => return format!("ERROR: Edge creation failed: {:?}", error),
         };
 
         // Retrieve adjacent vertices
         let adjacent_vertices = match transaction.get_adjacent_vertices(
-            &vertex1.id.clone(),
-            Direction::Outgoing,
-            Some(&["KNOWS".to_string()]),
-            Some(10),
+            &GetAdjacentVerticesOptions {
+                vertex_id: vertex1.id.clone(),
+                direction: Direction::Outgoing,
+                edge_types: Some(vec!["KNOWS".to_string()]),
+                limit: Some(10),
+            },
         ) {
             Ok(vertices) => {
-                println!("INFO: Successfully found {} adjacent vertices using get_adjacent_vertices", vertices.len());
+                println!(
+                    "INFO: Successfully found {} adjacent vertices using get_adjacent_vertices",
+                    vertices.len()
+                );
                 results.push("Standard get_adjacent_vertices API succeeded".to_string());
                 vertices
-            },
+            }
             Err(error) => {
                 println!("ERROR: get_adjacent_vertices failed: {:?}", error);
                 results.push("get_adjacent_vertices failed".to_string());
-                return format!("ERROR: Adjacent vertices retrieval failed: {:?} | Provider: {} | Edge: {:?} -> {:?} | Results: {:?}", 
-                    error, PROVIDER, vertex1.id, vertex2.id, results);
+                return format!("ERROR: Adjacent vertices retrieval failed: {:?} | Provider: {} | Edge: {:?} -> {:?} | Results: {:?}",
+                               error, PROVIDER, vertex1.id, vertex2.id, results);
             }
         };
 
@@ -302,15 +360,22 @@ impl Guest for Component {
 
     /// test3 demonstrates transaction rollback and error handling
     fn test3() -> String {
-        
         let config = ConnectionConfig {
-            hosts: vec![get_test_host()],
+            hosts: Some(vec![get_test_host()]),
             port: Some(TEST_PORT),
             database_name: Some(TEST_DATABASE.to_string()),
-            username: if TEST_USERNAME.is_empty() { None } else { Some(TEST_USERNAME.to_string()) },
-            password: if TEST_PASSWORD.is_empty() { None } else { Some(TEST_PASSWORD.to_string()) },
-            timeout_seconds: None, 
-            max_connections: None, 
+            username: if TEST_USERNAME.is_empty() {
+                None
+            } else {
+                Some(TEST_USERNAME.to_string())
+            },
+            password: if TEST_PASSWORD.is_empty() {
+                None
+            } else {
+                Some(TEST_PASSWORD.to_string())
+            },
+            timeout_seconds: None,
+            max_connections: None,
             provider_config: vec![],
         };
 
@@ -334,17 +399,24 @@ impl Guest for Component {
 
         // Creating a vertex
         let properties = vec![
-            ("name".to_string(), PropertyValue::StringValue("TestUser".to_string())),
+            (
+                "name".to_string(),
+                PropertyValue::StringValue("TestUser".to_string()),
+            ),
             ("temp".to_string(), PropertyValue::Boolean(true)),
         ];
 
-        let vertex = match transaction.create_vertex("TempUser", &properties) {
+        let vertex = match transaction.create_vertex(&CreateVertexOptions {
+            vertex_type: "TempUser".to_string(),
+            properties: Some(properties),
+            labels: None,
+        }) {
             Ok(v) => v,
             Err(error) => return format!("ERROR: Vertex creation failed: {:?}", error),
         };
 
         let is_active_before = transaction.is_active();
-        
+
         // Intentionally rolling-back the transaction
         match transaction.rollback() {
             Ok(_) => println!("Transaction rolled back successfully"),
@@ -368,15 +440,23 @@ impl Guest for Component {
     fn test4() -> String {
         println!("Starting test4: Batch operations with {}", PROVIDER);
         let mut results = Vec::new();
-        
+
         let config = ConnectionConfig {
-            hosts: vec![get_test_host()],
+            hosts: Some(vec![get_test_host()]),
             port: Some(TEST_PORT),
             database_name: Some(TEST_DATABASE.to_string()),
-            username: if TEST_USERNAME.is_empty() { None } else { Some(TEST_USERNAME.to_string()) },
-            password: if TEST_PASSWORD.is_empty() { None } else { Some(TEST_PASSWORD.to_string()) },
-            timeout_seconds: None,  
-            max_connections: None,  
+            username: if TEST_USERNAME.is_empty() {
+                None
+            } else {
+                Some(TEST_USERNAME.to_string())
+            },
+            password: if TEST_PASSWORD.is_empty() {
+                None
+            } else {
+                Some(TEST_PASSWORD.to_string())
+            },
+            timeout_seconds: None,
+            max_connections: None,
             provider_config: vec![],
         };
 
@@ -400,29 +480,41 @@ impl Guest for Component {
 
         // Creating multiple vertices in a batch
         let vertex_specs = vec![
-            transactions::VertexSpec {
+            CreateVertexOptions {
                 vertex_type: "Company".to_string(),
-                additional_labels: None,
-                properties: vec![
-                    ("name".to_string(), PropertyValue::StringValue("TechCorp".to_string())),
+                labels: None,
+                properties: Some(vec![
+                    (
+                        "name".to_string(),
+                        PropertyValue::StringValue("TechCorp".to_string()),
+                    ),
                     ("founded".to_string(), PropertyValue::Int32(2010)),
-                ],
+                ]),
             },
-            transactions::VertexSpec {
+            CreateVertexOptions {
                 vertex_type: "Company".to_string(),
-                additional_labels: None,
-                properties: vec![
-                    ("name".to_string(), PropertyValue::StringValue("DataInc".to_string())),
+                labels: None,
+                properties: Some(vec![
+                    (
+                        "name".to_string(),
+                        PropertyValue::StringValue("DataInc".to_string()),
+                    ),
                     ("founded".to_string(), PropertyValue::Int32(2015)),
-                ],
+                ]),
             },
-            transactions::VertexSpec {
+            CreateVertexOptions {
                 vertex_type: "Employee".to_string(),
-                additional_labels: Some(vec!["Person".to_string()]),
-                properties: vec![
-                    ("name".to_string(), PropertyValue::StringValue("John".to_string())),
-                    ("role".to_string(), PropertyValue::StringValue("Developer".to_string())),
-                ],
+                labels: Some(vec!["Person".to_string()]),
+                properties: Some(vec![
+                    (
+                        "name".to_string(),
+                        PropertyValue::StringValue("John".to_string()),
+                    ),
+                    (
+                        "role".to_string(),
+                        PropertyValue::StringValue("Developer".to_string()),
+                    ),
+                ]),
             },
         ];
 
@@ -430,35 +522,45 @@ impl Guest for Component {
             Ok(v) => {
                 results.push("Standard batch vertex creation succeeded".to_string());
                 v
-            },
+            }
             Err(error) => {
                 results.push("Batch vertex creation failed".to_string());
-                return format!("ERROR: Batch vertex creation failed: {:?} | Results: {:?}", error, results);
+                return format!(
+                    "ERROR: Batch vertex creation failed: {:?} | Results: {:?}",
+                    error, results
+                );
             }
         };
 
         // Creating edges between the vertices
         if vertices.len() >= 3 {
-            let edge_specs = vec![
-                transactions::EdgeSpec {
-                    edge_type: "WORKS_FOR".to_string(),
-                    from_vertex: vertices[2].id.clone(),
-                    to_vertex: vertices[0].id.clone(), 
-                    properties: vec![
-                        ("start_date".to_string(), PropertyValue::StringValue("2022-01-01".to_string())),
-                        ("position".to_string(), PropertyValue::StringValue("Senior Developer".to_string())),
-                    ],
-                },
-            ];
+            let edge_specs = vec![CreateEdgeOptions {
+                edge_type: "WORKS_FOR".to_string(),
+                from_vertex: vertices[2].id.clone(),
+                to_vertex: vertices[0].id.clone(),
+                properties: Some(vec![
+                    (
+                        "start_date".to_string(),
+                        PropertyValue::StringValue("2022-01-01".to_string()),
+                    ),
+                    (
+                        "position".to_string(),
+                        PropertyValue::StringValue("Senior Developer".to_string()),
+                    ),
+                ]),
+            }];
 
             let edges = match transaction.create_edges(&edge_specs) {
                 Ok(e) => {
                     results.push("Standard batch edge creation succeeded".to_string());
                     e
-                },
+                }
                 Err(error) => {
                     results.push("Batch edge creation failed".to_string());
-                    return format!("ERROR: Batch edge creation failed: {:?} | Results: {:?}", error, results);
+                    return format!(
+                        "ERROR: Batch edge creation failed: {:?} | Results: {:?}",
+                        error, results
+                    );
                 }
             };
 
@@ -477,7 +579,11 @@ impl Guest for Component {
                 results
             )
         } else {
-            format!("ERROR: Expected at least 3 vertices, got {} | Results: {:?}", vertices.len(), results)
+            format!(
+                "ERROR: Expected at least 3 vertices, got {} | Results: {:?}",
+                vertices.len(),
+                results
+            )
         }
     }
 
@@ -485,15 +591,23 @@ impl Guest for Component {
     fn test5() -> String {
         println!("Starting test5: Traversal operations with {}", PROVIDER);
         let mut results = Vec::new();
-        
+
         let config = ConnectionConfig {
-            hosts: vec![get_test_host()],
+            hosts: Some(vec![get_test_host()]),
             port: Some(TEST_PORT),
             database_name: Some(TEST_DATABASE.to_string()),
-            username: if TEST_USERNAME.is_empty() { None } else { Some(TEST_USERNAME.to_string()) },
-            password: if TEST_PASSWORD.is_empty() { None } else { Some(TEST_PASSWORD.to_string()) },
-            timeout_seconds: None, 
-            max_connections: None, 
+            username: if TEST_USERNAME.is_empty() {
+                None
+            } else {
+                Some(TEST_USERNAME.to_string())
+            },
+            password: if TEST_PASSWORD.is_empty() {
+                None
+            } else {
+                Some(TEST_PASSWORD.to_string())
+            },
+            timeout_seconds: None,
+            max_connections: None,
             provider_config: vec![],
         };
 
@@ -512,72 +626,99 @@ impl Guest for Component {
         };
 
         // Create a small network: A -> B -> C
-        let vertex_a = match transaction.create_vertex("Node", &vec![
-            ("name".to_string(), PropertyValue::StringValue("A".to_string())),
-        ]) {
+        let vertex_a = match transaction.create_vertex(&CreateVertexOptions {
+            vertex_type: "Node".to_string(),
+            properties: Some(vec![(
+                "name".to_string(),
+                PropertyValue::StringValue("A".to_string()),
+            )]),
+            labels: None,
+        }) {
             Ok(v) => v,
             Err(error) => return format!("ERROR: Vertex A creation failed: {:?}", error),
         };
 
-        let vertex_b = match transaction.create_vertex("Node", &vec![
-            ("name".to_string(), PropertyValue::StringValue("B".to_string())),
-        ]) {
+        let vertex_b = match transaction.create_vertex(&CreateVertexOptions {
+            vertex_type: "Node".to_string(),
+            properties: Some(vec![(
+                "name".to_string(),
+                PropertyValue::StringValue("B".to_string()),
+            )]),
+            labels: None,
+        }) {
             Ok(v) => v,
             Err(error) => return format!("ERROR: Vertex B creation failed: {:?}", error),
         };
 
-        let vertex_c = match transaction.create_vertex("Node", &vec![
-            ("name".to_string(), PropertyValue::StringValue("C".to_string())),
-        ]) {
+        let vertex_c = match transaction.create_vertex(&CreateVertexOptions {
+            vertex_type: "Node".to_string(),
+            properties: Some(vec![(
+                "name".to_string(),
+                PropertyValue::StringValue("C".to_string()),
+            )]),
+            labels: None,
+        }) {
             Ok(v) => v,
             Err(error) => return format!("ERROR: Vertex C creation failed: {:?}", error),
         };
 
         // Creating edges
-        let _ = transaction.create_edge("CONNECTS", &vertex_a.id.clone(), &vertex_b.id.clone(), &vec![]);
-        let _ = transaction.create_edge("CONNECTS", &vertex_b.id.clone(), &vertex_c.id.clone(), &vec![]);
+        let _ = transaction.create_edge(&CreateEdgeOptions {
+            edge_type: "CONNECTS".to_string(),
+            from_vertex: vertex_a.id.clone(),
+            to_vertex: vertex_b.id.clone(),
+            properties: None,
+        });
+        let _ = transaction.create_edge(&CreateEdgeOptions {
+            edge_type: "CONNECTS".to_string(),
+            from_vertex: vertex_b.id.clone(),
+            to_vertex: vertex_c.id.clone(),
+            properties: None,
+        });
 
         // Testing neighborhood exploration
-        let neighborhood = match traversal::get_neighborhood(
-            &transaction,
-            &vertex_b.id.clone(),
-            &traversal::NeighborhoodOptions {
-                depth: 1,
-                direction: Direction::Both,
-                edge_types: Some(vec!["CONNECTS".to_string()]),
-                max_vertices: Some(10),
-            },
-        ) {
+        let neighborhood = match transaction.get_neighborhood(&GetNeighborhoodOptions {
+            center: vertex_b.id.clone(),
+            depth: 1,
+            direction: Direction::Both,
+            edge_types: Some(vec!["CONNECTS".to_string()]),
+            max_vertices: Some(10),
+        }) {
             Ok(subgraph) => {
                 results.push("Standard neighborhood exploration succeeded".to_string());
                 subgraph
-            },
+            }
             Err(error) => {
                 results.push("Neighborhood exploration failed".to_string());
-                return format!("ERROR: Neighborhood exploration failed: {:?} | Results: {:?}", error, results);
+                return format!(
+                    "ERROR: Neighborhood exploration failed: {:?} | Results: {:?}",
+                    error, results
+                );
             }
         };
 
         // Test pathfinding
-        let path_exists_result = match traversal::path_exists(
-            &transaction,
-            &vertex_a.id.clone(),
-            &vertex_c.id.clone(),
-            Some(&traversal::PathOptions {
+        let path_exists_result = match transaction.path_exists(&PathExistsOptions {
+            from_vertex: vertex_a.id.clone(),
+            to_vertex: vertex_c.id.clone(),
+            path: Some(PathOptions {
                 max_depth: Some(3),
                 edge_types: Some(vec!["CONNECTS".to_string()]),
                 vertex_types: None,
                 vertex_filters: None,
                 edge_filters: None,
             }),
-        ) {
+        }) {
             Ok(exists) => {
                 results.push("Standard path existence check succeeded".to_string());
                 exists
-            },
+            }
             Err(error) => {
                 results.push("Path existence check failed".to_string());
-                return format!("ERROR: Path existence check failed: {:?} | Results: {:?}", error, results);
+                return format!(
+                    "ERROR: Path existence check failed: {:?} | Results: {:?}",
+                    error, results
+                );
             }
         };
 
@@ -602,15 +743,23 @@ impl Guest for Component {
     fn test6() -> String {
         println!("Starting test6: Query operations with {}", PROVIDER);
         let mut results = Vec::new();
-        
+
         let config = ConnectionConfig {
-            hosts: vec![get_test_host()],
+            hosts: Some(vec![get_test_host()]),
             port: Some(TEST_PORT),
             database_name: Some(TEST_DATABASE.to_string()),
-            username: if TEST_USERNAME.is_empty() { None } else { Some(TEST_USERNAME.to_string()) },
-            password: if TEST_PASSWORD.is_empty() { None } else { Some(TEST_PASSWORD.to_string()) },
-            timeout_seconds: None,  
-            max_connections: None, 
+            username: if TEST_USERNAME.is_empty() {
+                None
+            } else {
+                Some(TEST_USERNAME.to_string())
+            },
+            password: if TEST_PASSWORD.is_empty() {
+                None
+            } else {
+                Some(TEST_PASSWORD.to_string())
+            },
+            timeout_seconds: None,
+            max_connections: None,
             provider_config: vec![],
         };
 
@@ -628,57 +777,84 @@ impl Guest for Component {
         };
 
         // Creating some test data first
-        let _ = transaction.create_vertex("Product", &vec![
-            ("name".to_string(), PropertyValue::StringValue("Widget".to_string())),
-            ("price".to_string(), PropertyValue::Float32Value(19.99)),
-        ]);
+        let _ = transaction.create_vertex(&CreateVertexOptions {
+            vertex_type: "Product".to_string(),
+            properties: Some(vec![
+                (
+                    "name".to_string(),
+                    PropertyValue::StringValue("Widget".to_string()),
+                ),
+                ("price".to_string(), PropertyValue::Float32Value(19.99)),
+            ]),
+            labels: None,
+        });
 
-        let _ = transaction.create_vertex("Product", &vec![
-            ("name".to_string(), PropertyValue::StringValue("Gadget".to_string())),
-            ("price".to_string(), PropertyValue::Float32Value(29.99)),
-        ]);
+        let _ = transaction.create_vertex(&CreateVertexOptions {
+            vertex_type: "Product".to_string(),
+            properties: Some(vec![
+                (
+                    "name".to_string(),
+                    PropertyValue::StringValue("Gadget".to_string()),
+                ),
+                ("price".to_string(), PropertyValue::Float32Value(29.99)),
+            ]),
+            labels: None,
+        });
 
         // Execute a provider-specific query
         let (query_string, parameters) = match PROVIDER {
             "neo4j" => {
                 results.push("Using Neo4j Cypher query with parameters".to_string());
-                ("MATCH (p:Product) WHERE p.price > $min_price RETURN p".to_string(),
-                 vec![("min_price".to_string(), PropertyValue::Float32Value(15.0))])
-            },
+                (
+                    "MATCH (p:Product) WHERE p.price > $min_price RETURN p".to_string(),
+                    vec![("min_price".to_string(), PropertyValue::Float32Value(15.0))],
+                )
+            }
             "arangodb" => {
                 results.push("Using ArangoDB AQL query with parameters".to_string());
-                ("FOR p IN Product FILTER p.price > @min_price RETURN p".to_string(),
-                 vec![("min_price".to_string(), PropertyValue::Float32Value(15.0))])
-            },
+                (
+                    "FOR p IN Product FILTER p.price > @min_price RETURN p".to_string(),
+                    vec![("min_price".to_string(), PropertyValue::Float32Value(15.0))],
+                )
+            }
             "janusgraph" => {
                 results.push("Using JanusGraph Gremlin query with parameters".to_string());
-                ("g.V().hasLabel('Product').has('price', gt(min_price))".to_string(),
-                 vec![("min_price".to_string(), PropertyValue::Float32Value(15.0))])
-            },
+                (
+                    "g.V().hasLabel('Product').has('price', gt(min_price))".to_string(),
+                    vec![("min_price".to_string(), PropertyValue::Float32Value(15.0))],
+                )
+            }
             _ => {
                 results.push("Using generic SQL-like query".to_string());
-                ("SELECT * FROM Product WHERE price > 15.0".to_string(), vec![])
+                (
+                    "SELECT * FROM Product WHERE price > 15.0".to_string(),
+                    vec![],
+                )
             }
         };
 
-        let query_result = match query::execute_query(
-            &transaction,
-            &query_string,
-            if parameters.is_empty() { None } else { Some(&parameters) },
-            Some(query::QueryOptions {
-                timeout_seconds: Some(30),
-                max_results: Some(100),
-                explain: false,
-                profile: false,
-            }),
-        ) {
+        let query_result = match transaction.execute_query(&ExecuteQueryOptions {
+            query: query_string,
+            parameters: if parameters.is_empty() {
+                None
+            } else {
+                Some(parameters)
+            },
+            timeout_seconds: Some(30),
+            max_results: Some(100),
+            explain: None,
+            profile: None,
+        }) {
             Ok(result) => {
                 results.push("Standard query execution succeeded".to_string());
                 result
-            },
+            }
             Err(error) => {
                 results.push("Query execution failed".to_string());
-                return format!("ERROR: Query execution failed: {:?} | Results: {:?}", error, results);
+                return format!(
+                    "ERROR: Query execution failed: {:?} | Results: {:?}",
+                    error, results
+                );
             }
         };
 
@@ -708,7 +884,7 @@ impl Guest for Component {
     /// test7 demonstrates schema management operations
     fn test7() -> String {
         println!("Starting test7: Schema operations with {}", PROVIDER);
-        
+
         // Testing schema manager creation
         let schema_manager = match schema::get_schema_manager(None) {
             Ok(manager) => manager,
@@ -763,4 +939,3 @@ impl Guest for Component {
 }
 
 bindings::export!(Component with_types_in bindings);
-

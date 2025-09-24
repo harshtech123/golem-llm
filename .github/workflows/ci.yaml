@@ -59,7 +59,7 @@ jobs:
       - uses: davidB/rust-cargo-make@v1
       - uses: cargo-bins/cargo-binstall@main
       - name: Install cargo-component
-        run: cargo binstall --force cargo-component@0.20.0
+        run: cargo binstall --force cargo-component@0.21.1
       - name: Build all
         run: cargo make build-all
   build-test-components:
@@ -83,13 +83,13 @@ jobs:
       - uses: davidB/rust-cargo-make@v1
       - uses: cargo-bins/cargo-binstall@main
       - name: Install cargo-component
-        run: cargo binstall --force cargo-component@0.20.0
+        run: cargo binstall --force cargo-component@0.21.1
       - name: Install golem-cli
-        run: cargo binstall --force golem-cli@1.2.5 --locked --no-confirm
+        run: cargo binstall --force golem-cli@1.3.0-rc4  --locked --no-confirm
       - name: Install wac-cli
         run: cargo binstall --force wac-cli --locked --no-confirm
       - name: Build all test components
-        run: cargo make build-test-components
+        run: cargo make release-build-test-components
   golem-exec-tests:
     runs-on: ubuntu-latest
     steps:
@@ -113,13 +113,13 @@ jobs:
       - name: Install tools
         run: |
           set -e
-          cargo binstall --force cargo-component@0.20.0
+          cargo binstall --force cargo-component@0.21.1
           cargo binstall wac-cli --locked --force --no-confirm
       - name: Install and Run latest Golem Server
         run: |
           set -e
           echo "Installing Golem server"
-          sudo curl -L https://github.com/golemcloud/golem-cli/releases/download/v1.2.5/golem-x86_64-unknown-linux-gnu -o ./golem
+          sudo curl -L https://github.com/golemcloud/golem/releases/download/v1.3.0-rc4/golem-x86_64-unknown-linux-gnu -o ./golem
           sudo chmod +x ./golem
           sudo mv ./golem /usr/local/bin/golem
           golem --version
@@ -129,28 +129,28 @@ jobs:
       - name: Build and test golem:exec implementations
         run: |
           set -eo pipefail
-          cargo make --cwd exec build
+          cargo make --cwd exec release-build
           cd test/exec
           golem profile config local set-format json        
-          golem app deploy
-          golem worker invoke test:exec-js/test-1 test01 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-2 test02 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-3 test03 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-4 test04 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-5 test05 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-6 test06 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-7 test07 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-8 test08 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-9 test09 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-10 test10 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-js/test-11 test11 | jq -e '(.result_wave[0]=="true")'
-          golem worker invoke test:exec-py/test-1 test1 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-py/test-2 test2 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-py/test-3 test3 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-py/test-4 test4 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-py/test-5 test5 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-py/test-6 test6 | jq -e '(.result_wave[0]=="true")'            
-          golem worker invoke test:exec-py/test-7 test7 | jq -e '(.result_wave[0]=="true")'            
+          golem app -b release deploy
+          golem agent invoke test:exec-js/test-1 test01 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-js/test-2 test02 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-js/test-3 test03 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-js/test-4 test04 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-js/test-5 test05 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-js/test-6 test06 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-js/test-7 test07 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-js/test-8 test08 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-js/test-9 test09 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-js/test-10 test10 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-js/test-11 test11 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-py/test-1 test1 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-py/test-2 test2 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-py/test-3 test3 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-py/test-4 test4 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-py/test-5 test5 | jq -e '(.result_wave[0]=="true")' 
+          golem agent invoke test:exec-py/test-6 test6 | jq -e '(.result_wave[0]=="true")'
+          golem agent invoke test:exec-py/test-7 test7 | jq -e '(.result_wave[0]=="true")'
 
   ollama-integration-tests:
     runs-on: ubuntu-latest
@@ -175,7 +175,7 @@ jobs:
       - name: Install tools
         run: |
           set -e
-          cargo binstall --force cargo-component@0.20.0
+          cargo binstall --force cargo-component@0.21.1
           cargo binstall wac-cli --locked --force --no-confirm
       - name: Start Ollama in Docker
         run: |
@@ -194,7 +194,7 @@ jobs:
         run: |
           set -e
           echo "Installing Golem server"
-          sudo curl -L https://github.com/golemcloud/golem-cli/releases/download/v1.2.5/golem-x86_64-unknown-linux-gnu -o ./golem
+          sudo curl -L https://github.com/golemcloud/golem/releases/download/v1.3.0-rc4/golem-x86_64-unknown-linux-gnu -o ./golem
           sudo chmod +x ./golem
           sudo mv ./golem /usr/local/bin/golem
           golem --version
@@ -207,15 +207,15 @@ jobs:
           cargo make --cwd llm build-ollama
           cd test/llm
           golem app deploy -b ollama-debug test:llm test:helper
-          golem worker new -e GOLEM_OLLAMA_BASE_URL=http://localhost:11434 test:llm/ollama-1
-          golem worker invoke test:llm/ollama-1 test1 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test2 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test3 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test4 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test5 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test6 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test7 | grep -v "ERROR: "
-          golem worker invoke test:llm/ollama-1 test8 | grep -v "ERROR: "
+          golem agent new -e GOLEM_OLLAMA_BASE_URL=http://localhost:11434 test:llm/ollama-1
+          golem agent invoke test:llm/ollama-1 test1 | grep -v "ERROR: "
+          golem agent invoke test:llm/ollama-1 test2 | grep -v "ERROR: "
+          golem agent invoke test:llm/ollama-1 test3 | grep -v "ERROR: "
+          golem agent invoke test:llm/ollama-1 test4 | grep -v "ERROR: "
+          golem agent invoke test:llm/ollama-1 test5 | grep -v "ERROR: "
+          golem agent invoke test:llm/ollama-1 test6 | grep -v "ERROR: "
+          golem agent invoke test:llm/ollama-1 test7 | grep -v "ERROR: "
+          golem agent invoke test:llm/ollama-1 test8 | grep -v "ERROR: "
   graph-integration-tests:
     runs-on: ubuntu-latest
     steps:
@@ -239,7 +239,7 @@ jobs:
       - name: Install tools
         run: |
           set -e
-          cargo binstall --force cargo-component@0.20.0
+          cargo binstall --force cargo-component@0.21.1
           cargo binstall wac-cli --locked --force --no-confirm
       - name: Start graph-providers in Docker
         run: |
@@ -288,7 +288,7 @@ jobs:
         run: |
           set -e
           echo "Installing Golem server"
-          sudo curl -L https://github.com/golemcloud/golem-cli/releases/download/v1.2.5/golem-x86_64-unknown-linux-gnu -o ./golem
+          sudo curl -L https://github.com/golemcloud/golem/releases/download/v1.3.0-rc4/golem-x86_64-unknown-linux-gnu -o ./golem
           sudo chmod +x ./golem
           sudo mv ./golem /usr/local/bin/golem
           golem --version
@@ -298,51 +298,51 @@ jobs:
       - name: Build and test graph integration
         run: |
           set -eo pipefail
-          cargo make --cwd graph build-arangodb
-          cargo make --cwd graph build-janusgraph
-          cargo make --cwd graph build-neo4j
+          cargo make --cwd graph release-build-arangodb
+          cargo make --cwd graph release-build-janusgraph
+          cargo make --cwd graph release-build-neo4j
           cd test/graph
           
           echo "Testing ArangoDB integration..."
-          golem app deploy -b arangodb-debug test:graph test:helper
-          golem worker new -e ARANGODB_HOST=localhost -e ARANGODB_USER="" -e ARANGODB_PASSWORD="" -e ARANGODB_PORT="8529" -e ARANGODB_DATABASE="test" test:graph/arangodb-1
-          golem worker invoke test:graph/arangodb-1 test1 | grep -v "ERROR: "
-          golem worker invoke test:graph/arangodb-1 test2 | grep -v "ERROR: "
-          golem worker invoke test:graph/arangodb-1 test3 | grep -v "ERROR: "
-          golem worker invoke test:graph/arangodb-1 test4 | grep -v "ERROR: "
-          golem worker invoke test:graph/arangodb-1 test5 | grep -v "ERROR: "
-          golem worker invoke test:graph/arangodb-1 test6 | grep -v "ERROR: "
-          golem worker invoke test:graph/arangodb-1 test7 | grep -v "ERROR: "
+          golem app deploy -b arangodb-release test:graph test:helper
+          golem agent new -e ARANGODB_HOST=localhost -e ARANGODB_USER="" -e ARANGODB_PASSWORD="" -e ARANGODB_PORT="8529" -e ARANGODB_DATABASE="test" test:graph/arangodb-1
+          golem agent invoke test:graph/arangodb-1 test1 | grep -v "ERROR: "
+          golem agent invoke test:graph/arangodb-1 test2 | grep -v "ERROR: "
+          golem agent invoke test:graph/arangodb-1 test3 | grep -v "ERROR: "
+          golem agent invoke test:graph/arangodb-1 test4 | grep -v "ERROR: "
+          golem agent invoke test:graph/arangodb-1 test5 | grep -v "ERROR: "
+          golem agent invoke test:graph/arangodb-1 test6 | grep -v "ERROR: "
+          golem agent invoke test:graph/arangodb-1 test7 | grep -v "ERROR: "
           echo "ArangoDB tests completed successfully"
-          golem app clean -b arangodb-debug 
+          golem app clean -b arangodb-release 
           
           echo "Testing JanusGraph integration..."
-          golem app deploy -b janusgraph-debug test:graph test:helper
+          golem app deploy -b janusgraph-release test:graph test:helper
           sleep 10
-          golem worker new -e JANUSGRAPH_HOST=localhost -e JANUSGRAPH_USER="" -e JANUSGRAPH_PASSWORD="" -e JANUSGRAPH_PORT="8182" test:graph/janusgraph-1
-          golem worker invoke test:graph/janusgraph-1 test1 | grep -v "ERROR: "
-          golem worker invoke test:graph/janusgraph-1 test2 | grep -v "ERROR: "
-          golem worker invoke test:graph/janusgraph-1 test3 | grep -v "ERROR: "
-          golem worker invoke test:graph/janusgraph-1 test4 | grep -v "ERROR: "
-          golem worker invoke test:graph/janusgraph-1 test5 | grep -v "ERROR: "
-          golem worker invoke test:graph/janusgraph-1 test6 | grep -v "ERROR: "
-          golem worker invoke test:graph/janusgraph-1 test7 | grep -v "ERROR: "
+          golem agent new -e JANUSGRAPH_HOST=localhost -e JANUSGRAPH_USER="" -e JANUSGRAPH_PASSWORD="" -e JANUSGRAPH_PORT="8182" test:graph/janusgraph-1
+          golem agent invoke test:graph/janusgraph-1 test1 | grep -v "ERROR: "
+          golem agent invoke test:graph/janusgraph-1 test2 | grep -v "ERROR: "
+          golem agent invoke test:graph/janusgraph-1 test3 | grep -v "ERROR: "
+          golem agent invoke test:graph/janusgraph-1 test4 | grep -v "ERROR: "
+          golem agent invoke test:graph/janusgraph-1 test5 | grep -v "ERROR: "
+          golem agent invoke test:graph/janusgraph-1 test6 | grep -v "ERROR: "
+          golem agent invoke test:graph/janusgraph-1 test7 | grep -v "ERROR: "
           echo "JanusGraph tests completed successfully"
-          golem app clean -b janusgraph-debug 
+          golem app clean -b janusgraph-release 
           
           echo "Testing Neo4j integration..."
-          golem app deploy -b neo4j-debug test:graph test:helper
+          golem app deploy -b neo4j-release test:graph test:helper
           sleep 10
-          golem worker new -e NEO4J_HOST=localhost -e NEO4J_USER=neo4j -e NEO4J_PASSWORD=password -e NEO4J_PORT="7474" -e NEO4J_DATABASE=neo4j test:graph/neo4j-1
-          golem worker invoke test:graph/neo4j-1 test1 | grep -v "ERROR: "
-          golem worker invoke test:graph/neo4j-1 test2 | grep -v "ERROR: "
-          golem worker invoke test:graph/neo4j-1 test3 | grep -v "ERROR: "
-          golem worker invoke test:graph/neo4j-1 test4 | grep -v "ERROR: "
-          golem worker invoke test:graph/neo4j-1 test5 | grep -v "ERROR: "
-          golem worker invoke test:graph/neo4j-1 test6 | grep -v "ERROR: "
-          golem worker invoke test:graph/neo4j-1 test7 | grep -v "ERROR: "
+          golem agent new -e NEO4J_HOST=localhost -e NEO4J_USER=neo4j -e NEO4J_PASSWORD=password -e NEO4J_PORT="7474" -e NEO4J_DATABASE=neo4j test:graph/neo4j-1
+          golem agent invoke test:graph/neo4j-1 test1 | grep -v "ERROR: "
+          golem agent invoke test:graph/neo4j-1 test2 | grep -v "ERROR: "
+          golem agent invoke test:graph/neo4j-1 test3 | grep -v "ERROR: "
+          golem agent invoke test:graph/neo4j-1 test4 | grep -v "ERROR: "
+          golem agent invoke test:graph/neo4j-1 test5 | grep -v "ERROR: "
+          golem agent invoke test:graph/neo4j-1 test6 | grep -v "ERROR: "
+          golem agent invoke test:graph/neo4j-1 test7 | grep -v "ERROR: "
           echo "Neo4j tests completed successfully"
-          golem app clean -b neo4j-debug 
+          golem app clean -b neo4j-release 
 
           echo "All graph integration tests completed successfully!"
 
@@ -352,6 +352,7 @@ jobs:
       - build-test-components
       - ollama-integration-tests
       - graph-integration-tests
+      - golem-exec-tests
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -375,7 +376,7 @@ jobs:
       - uses: davidB/rust-cargo-make@v1
       - uses: cargo-bins/cargo-binstall@main
       - name: Install cargo-component
-        run: cargo binstall --force cargo-component@0.20.0
+        run: cargo binstall --force cargo-component@0.21.1
       - name: Build all components in release
         run: cargo make release-build-all
       - name: Login GH CLI

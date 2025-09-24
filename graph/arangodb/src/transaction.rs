@@ -1,10 +1,25 @@
+use crate::helpers::{
+    element_id_to_string, parse_edge_from_document, parse_path_from_document,
+    parse_vertex_from_document,
+};
 use crate::{conversions, helpers, Transaction};
+use golem_graph::golem::graph::transactions::{
+    CreateEdgeOptions, CreateVertexOptions, ExecuteQueryOptions, FindAllPathsOptions,
+    FindShortestPathOptions, FindVerticesOptions, GetVerticesAtDistanceOptions, Path,
+    PathExistsOptions, QueryExecutionResult, Subgraph,
+};
+use golem_graph::golem::graph::types::{
+    FindEdgesOptions, GetAdjacentVerticesOptions, GetConnectedEdgesOptions, GetNeighborhoodOptions,
+    QueryResult, UpdateEdgeOptions, UpdateVertexOptions,
+};
 use golem_graph::golem::graph::{
     errors::GraphError,
-    transactions::{EdgeSpec, GuestTransaction, VertexSpec},
-    types::{Direction, Edge, ElementId, FilterCondition, PropertyMap, SortSpec, Vertex},
+    transactions::GuestTransaction,
+    types::{Direction, Edge, ElementId, Vertex},
 };
-use serde_json::json;
+use serde::Deserialize;
+use serde_json::{json, Value};
+use std::collections::HashMap;
 
 impl GuestTransaction for Transaction {
     fn commit(&self) -> Result<(), GraphError> {
@@ -15,34 +30,310 @@ impl GuestTransaction for Transaction {
         self.api.rollback_transaction(&self.transaction_id)
     }
 
-    fn create_vertex(
+    fn execute_query(
         &self,
-        vertex_type: String,
-        properties: PropertyMap,
-    ) -> Result<Vertex, GraphError> {
-        self.create_vertex_with_labels(vertex_type, vec![], properties)
+        options: ExecuteQueryOptions,
+    ) -> Result<QueryExecutionResult, GraphError> {
+        let mut bind_vars = serde_json::Map::new();
+        if let Some(p) = options.parameters {
+            for (key, value) in p {
+                bind_vars.insert(key, conversions::to_arango_value(value)?);
+            }
+        }
+
+        let query_json = serde_json::json!({
+            "query": options.query,
+            "bindVars": bind_vars,
+        });
+
+        let response = self
+            .api
+            .execute_in_transaction(&self.transaction_id, query_json)?;
+
+        let result_array = if let Some(array) = response.as_array() {
+            array.clone()
+        } else {
+            let structured_response: Result<ArangoQueryResponse, _> =
+                serde_json::from_value(response.clone());
+            match structured_response {
+                Ok(resp) => resp.result.into_iter().collect(),
+                Err(_) => {
+                    return Err(GraphError::InternalError(
+                        "Unexpected AQL query response format".to_string(),
+                    ));
+                }
+            }
+        };
+
+        let query_result_value = if result_array.is_empty() {
+            QueryResult::Values(vec![])
+        } else {
+            self.parse_query_results(result_array)?
+        };
+
+        Ok(QueryExecutionResult {
+            query_result_value,
+            execution_time_ms: None,
+            rows_affected: None,
+            explanation: None,
+            profile_data: None,
+        })
     }
 
-    fn create_vertex_with_labels(
+    fn find_shortest_path(
         &self,
-        vertex_type: String,
-        additional_labels: Vec<String>,
-        properties: PropertyMap,
-    ) -> Result<Vertex, GraphError> {
-        if !additional_labels.is_empty() {
+        options: FindShortestPathOptions,
+    ) -> Result<Option<Path>, GraphError> {
+        let from_id = id_to_aql(&options.from_vertex);
+        let to_id = id_to_aql(&options.to_vertex);
+        let edge_collections = options.path.and_then(|o| o.edge_types).unwrap_or_default();
+
+        let edge_collections_str = if edge_collections.is_empty() {
+            "knows, created".to_string()
+        } else {
+            edge_collections.join(", ")
+        };
+
+        let query_str = format!(
+            "FOR vertex, edge IN ANY SHORTEST_PATH @from_id TO @to_id {edge_collections_str} RETURN {{vertex: vertex, edge: edge}}"
+        );
+        let mut bind_vars = serde_json::Map::new();
+        bind_vars.insert("from_id".to_string(), json!(from_id));
+        bind_vars.insert("to_id".to_string(), json!(to_id));
+
+        let request = json!({
+            "query": query_str,
+            "bindVars": Value::Object(bind_vars.clone()),
+        });
+        let response = self
+            .api
+            .execute_in_transaction(&self.transaction_id, request)?;
+        let arr = response.as_array().ok_or_else(|| {
+            GraphError::InternalError("Invalid response for shortest path".to_string())
+        })?;
+
+        if arr.is_empty() {
+            return Ok(None);
+        }
+
+        let mut vertices = vec![];
+        let mut edges = vec![];
+
+        for item in arr {
+            if let Some(obj) = item.as_object() {
+                if let Some(v_doc) = obj.get("vertex").and_then(|v| v.as_object()) {
+                    let coll = v_doc
+                        .get("_id")
+                        .and_then(|id| id.as_str())
+                        .and_then(|s| s.split('/').next())
+                        .unwrap_or_default();
+                    let vertex = parse_vertex_from_document(v_doc, coll)?;
+                    vertices.push(vertex);
+                }
+                if let Some(e_doc) = obj.get("edge").and_then(|e| e.as_object()) {
+                    let coll = e_doc
+                        .get("_id")
+                        .and_then(|id| id.as_str())
+                        .and_then(|s| s.split('/').next())
+                        .unwrap_or_default();
+                    let edge = parse_edge_from_document(e_doc, coll)?;
+                    edges.push(edge);
+                }
+            }
+        }
+
+        let length = edges.len() as u32;
+        Ok(Some(Path {
+            vertices,
+            edges,
+            length,
+        }))
+    }
+
+    fn find_all_paths(&self, options: FindAllPathsOptions) -> Result<Vec<Path>, GraphError> {
+        if let Some(path_opts) = &options.path {
+            if path_opts.vertex_types.is_some()
+                || path_opts.vertex_filters.is_some()
+                || path_opts.edge_filters.is_some()
+            {
+                return Err(GraphError::UnsupportedOperation(
+                    "vertex_types, vertex_filters, and edge_filters are not supported".to_string(),
+                ));
+            }
+        }
+
+        let from_id = id_to_aql(&options.from_vertex);
+        let to_id = id_to_aql(&options.to_vertex);
+        let (min_depth, max_depth) = options
+            .path
+            .as_ref()
+            .and_then(|o| o.max_depth)
+            .map_or((1, 10), |d| (1, d));
+        let edge_collections = options.path.and_then(|o| o.edge_types).unwrap_or_default();
+
+        let edge_collections_str = if edge_collections.is_empty() {
+            "knows, created".to_string()
+        } else {
+            edge_collections.join(", ")
+        };
+        let limit_clause = options
+            .limit
+            .map_or(String::new(), |l| format!("LIMIT {l}"));
+
+        let query_str = format!(
+            "FOR v, e, p IN {min_depth}..{max_depth} OUTBOUND @from_id {edge_collections_str} OPTIONS {{uniqueVertices: 'path'}} FILTER v._id == @to_id {limit_clause} RETURN {{vertices: p.vertices, edges: p.edges}}"
+        );
+        let request = json!({
+            "query": query_str,
+            "bindVars": { "from_id": from_id, "to_id": to_id }
+        });
+
+        let response = self
+            .api
+            .execute_in_transaction(&self.transaction_id, request)?;
+        let arr = response.as_array().ok_or_else(|| {
+            GraphError::InternalError("Invalid response for all paths".to_string())
+        })?;
+
+        arr.iter()
+            .filter_map(|v| v.as_object())
+            .map(parse_path_from_document)
+            .collect()
+    }
+
+    fn get_neighborhood(&self, options: GetNeighborhoodOptions) -> Result<Subgraph, GraphError> {
+        let center_id = id_to_aql(&options.center);
+        let dir_str = match options.direction {
+            Direction::Outgoing => "OUTBOUND",
+            Direction::Incoming => "INBOUND",
+            Direction::Both => "ANY",
+        };
+        let edge_collections = options.edge_types.unwrap_or_default();
+        let edge_collections_str = if edge_collections.is_empty() {
+            "knows, created".to_string()
+        } else {
+            edge_collections.join(", ")
+        };
+        let limit_clause = options
+            .max_vertices
+            .map_or(String::new(), |l| format!("LIMIT {l}"));
+
+        let query_str = format!(
+            "FOR v, e IN 1..{} {} @center_id {} {} RETURN {{vertex: v, edge: e}}",
+            options.depth, dir_str, edge_collections_str, limit_clause
+        );
+        let request = json!({
+            "query": query_str,
+            "bindVars": { "center_id": center_id }
+        });
+
+        let response = self
+            .api
+            .execute_in_transaction(&self.transaction_id, request)?;
+        let arr = response.as_array().ok_or_else(|| {
+            GraphError::InternalError("Invalid response for neighborhood".to_string())
+        })?;
+
+        let mut verts = HashMap::new();
+        let mut edges = HashMap::new();
+        for item in arr {
+            if let Some(obj) = item.as_object() {
+                if let Some(v_doc) = obj.get("vertex").and_then(|v| v.as_object()) {
+                    let coll = v_doc
+                        .get("_id")
+                        .and_then(|id| id.as_str())
+                        .and_then(|s| s.split('/').next())
+                        .unwrap_or_default();
+                    let vert = parse_vertex_from_document(v_doc, coll)?;
+                    verts.insert(element_id_to_string(&vert.id), vert);
+                }
+                if let Some(e_doc) = obj.get("edge").and_then(|e| e.as_object()) {
+                    let coll = e_doc
+                        .get("_id")
+                        .and_then(|id| id.as_str())
+                        .and_then(|s| s.split('/').next())
+                        .unwrap_or_default();
+                    let edge = parse_edge_from_document(e_doc, coll)?;
+                    edges.insert(element_id_to_string(&edge.id), edge);
+                }
+            }
+        }
+
+        Ok(Subgraph {
+            vertices: verts.into_values().collect(),
+            edges: edges.into_values().collect(),
+        })
+    }
+
+    fn path_exists(&self, options: PathExistsOptions) -> Result<bool, GraphError> {
+        Ok(!self
+            .find_all_paths(FindAllPathsOptions {
+                from_vertex: options.from_vertex,
+                to_vertex: options.to_vertex,
+                path: options.path,
+                limit: Some(1),
+            })?
+            .is_empty())
+    }
+
+    fn get_vertices_at_distance(
+        &self,
+        options: GetVerticesAtDistanceOptions,
+    ) -> Result<Vec<Vertex>, GraphError> {
+        let start = id_to_aql(&options.source);
+        let dir_str = match options.direction {
+            Direction::Outgoing => "OUTBOUND",
+            Direction::Incoming => "INBOUND",
+            Direction::Both => "ANY",
+        };
+        let edge_collections = options.edge_types.unwrap_or_default();
+        let edge_collections_str = if edge_collections.is_empty() {
+            "knows, created".to_string()
+        } else {
+            edge_collections.join(", ")
+        };
+
+        let distance = options.distance;
+        let query_str = format!(
+            "FOR v IN {distance}..{distance} {dir_str} @start {edge_collections_str} RETURN v"
+        );
+        let request = json!({ "query": query_str, "bindVars": { "start": start } });
+
+        let response = self
+            .api
+            .execute_in_transaction(&self.transaction_id, request)?;
+        let arr = response.as_array().ok_or_else(|| {
+            GraphError::InternalError("Invalid response for vertices at distance".to_string())
+        })?;
+
+        arr.iter()
+            .filter_map(|v| v.as_object())
+            .map(|doc| {
+                let coll = doc
+                    .get("_id")
+                    .and_then(|id| id.as_str())
+                    .and_then(|s| s.split('/').next())
+                    .unwrap_or_default();
+                parse_vertex_from_document(doc, coll)
+            })
+            .collect()
+    }
+
+    fn create_vertex(&self, options: CreateVertexOptions) -> Result<Vertex, GraphError> {
+        if !options.labels.map(|l| l.is_empty()).unwrap_or_default() {
             return Err(GraphError::UnsupportedOperation(
                 "ArangoDB does not support multiple labels per vertex. Use vertex collections instead."
                     .to_string(),
             ));
         }
 
-        let props = conversions::to_arango_properties(properties)?;
+        let props = conversions::to_arango_properties(options.properties.unwrap_or_default())?;
 
         let query = json!({
             "query": "INSERT @props INTO @@collection OPTIONS { ignoreErrors: false } RETURN NEW",
             "bindVars": {
                 "props": props,
-                "@collection": vertex_type
+                "@collection": options.vertex_type
             }
         });
 
@@ -60,7 +351,7 @@ impl GuestTransaction for Transaction {
                 GraphError::InternalError("Missing vertex document in response".to_string())
             })?;
 
-        helpers::parse_vertex_from_document(vertex_doc, &vertex_type)
+        helpers::parse_vertex_from_document(vertex_doc, &options.vertex_type)
     }
 
     fn get_vertex(&self, id: ElementId) -> Result<Option<Vertex>, GraphError> {
@@ -104,64 +395,34 @@ impl GuestTransaction for Transaction {
         }
     }
 
-    fn update_vertex(&self, id: ElementId, properties: PropertyMap) -> Result<Vertex, GraphError> {
-        let key = helpers::element_id_to_key(&id)?;
-        let collection = helpers::collection_from_element_id(&id)?;
+    fn update_vertex(&self, options: UpdateVertexOptions) -> Result<Vertex, GraphError> {
+        let key = helpers::element_id_to_key(&options.id)?;
+        let collection = helpers::collection_from_element_id(&options.id)?;
 
-        let props = conversions::to_arango_properties(properties)?;
+        let props = conversions::to_arango_properties(options.properties)?;
 
-        let query = json!({
-            "query": "REPLACE @key WITH @props IN @@collection RETURN NEW",
-            "bindVars": {
-                "key": key,
-                "props": props,
-                "@collection": collection
+        let query = {
+            if options.partial.unwrap_or_default() {
+                json!({
+                    "query": "UPDATE @key WITH @props IN @@collection OPTIONS { keepNull: false, mergeObjects: true } RETURN NEW",
+                    "bindVars": {
+                        "key": key,
+                        "props": props,
+                        "@collection": collection
+                    }
+                })
+            } else {
+                json!({
+                    "query": "REPLACE @key WITH @props IN @@collection RETURN NEW",
+                    "bindVars": {
+                        "key": key,
+                        "props": props,
+                        "@collection": collection
+                    }
+                })
             }
-        });
-
-        let response = self
-            .api
-            .execute_in_transaction(&self.transaction_id, query)?;
-        let result_array = response.as_array().ok_or_else(|| {
-            GraphError::InternalError("Expected array in AQL response".to_string())
-        })?;
-        let vertex_doc = result_array
-            .first()
-            .and_then(|v| v.as_object())
-            .ok_or_else(|| GraphError::ElementNotFound(id.clone()))?;
-
-        helpers::parse_vertex_from_document(vertex_doc, collection)
-    }
-
-    fn update_vertex_properties(
-        &self,
-        id: ElementId,
-        updates: PropertyMap,
-    ) -> Result<Vertex, GraphError> {
-        let key = helpers::element_id_to_key(&id)?;
-        let collection = if let ElementId::StringValue(s) = &id {
-            s.split('/').next().unwrap_or_default()
-        } else {
-            ""
         };
 
-        if collection.is_empty() {
-            return Err(GraphError::InvalidQuery(
-                "ElementId for update_vertex_properties must be a full _id (e.g., 'collection/key')".to_string(),
-            ));
-        }
-
-        let props = conversions::to_arango_properties(updates)?;
-
-        let query = json!({
-            "query": "UPDATE @key WITH @props IN @@collection OPTIONS { keepNull: false, mergeObjects: true } RETURN NEW",
-            "bindVars": {
-                "key": key,
-                "props": props,
-                "@collection": collection
-            }
-        });
-
         let response = self
             .api
             .execute_in_transaction(&self.transaction_id, query)?;
@@ -171,7 +432,9 @@ impl GuestTransaction for Transaction {
         let vertex_doc = result_array
             .first()
             .and_then(|v| v.as_object())
-            .ok_or_else(|| GraphError::ElementNotFound(id.clone()))?;
+            .ok_or_else(|| GraphError::ElementNotFound(options.id.clone()))?;
+
+        // TODO: handle upsert if create_missing is defined
 
         helpers::parse_vertex_from_document(vertex_doc, collection)
     }
@@ -233,15 +496,8 @@ impl GuestTransaction for Transaction {
         Ok(())
     }
 
-    fn find_vertices(
-        &self,
-        vertex_type: Option<String>,
-        filters: Option<Vec<FilterCondition>>,
-        sort: Option<Vec<SortSpec>>,
-        limit: Option<u32>,
-        offset: Option<u32>,
-    ) -> Result<Vec<Vertex>, GraphError> {
-        let collection = vertex_type.ok_or_else(|| {
+    fn find_vertices(&self, options: FindVerticesOptions) -> Result<Vec<Vertex>, GraphError> {
+        let collection = options.vertex_type.ok_or_else(|| {
             GraphError::InvalidQuery("vertex_type must be provided for find_vertices".to_string())
         })?;
 
@@ -250,7 +506,7 @@ impl GuestTransaction for Transaction {
         bind_vars.insert("@collection".to_string(), json!(collection.clone()));
 
         let where_clause = golem_graph::query_utils::build_where_clause(
-            &filters,
+            &options.filters,
             "v",
             &mut bind_vars,
             &aql_syntax(),
@@ -260,13 +516,13 @@ impl GuestTransaction for Transaction {
             query_parts.push(where_clause);
         }
 
-        let sort_clause = golem_graph::query_utils::build_sort_clause(&sort, "v");
+        let sort_clause = golem_graph::query_utils::build_sort_clause(&options.sort, "v");
         if !sort_clause.is_empty() {
             query_parts.push(sort_clause);
         }
 
-        let limit_val = limit.unwrap_or(100);
-        let offset_val = offset.unwrap_or(0);
+        let limit_val = options.limit.unwrap_or(100);
+        let offset_val = options.offset.unwrap_or(0);
         query_parts.push(format!("LIMIT {offset_val}, {limit_val}"));
         query_parts.push("RETURN v".to_string());
 
@@ -296,16 +552,10 @@ impl GuestTransaction for Transaction {
         Ok(vertices)
     }
 
-    fn create_edge(
-        &self,
-        edge_type: String,
-        from_vertex: ElementId,
-        to_vertex: ElementId,
-        properties: PropertyMap,
-    ) -> Result<Edge, GraphError> {
-        let props = conversions::to_arango_properties(properties)?;
-        let from_id = helpers::element_id_to_string(&from_vertex);
-        let to_id = helpers::element_id_to_string(&to_vertex);
+    fn create_edge(&self, options: CreateEdgeOptions) -> Result<Edge, GraphError> {
+        let props = conversions::to_arango_properties(options.properties.unwrap_or_default())?;
+        let from_id = helpers::element_id_to_string(&options.from_vertex);
+        let to_id = helpers::element_id_to_string(&options.to_vertex);
 
         let query = json!({
             "query": "INSERT MERGE({ _from: @from, _to: @to }, @props) INTO @@collection RETURN NEW",
@@ -313,7 +563,7 @@ impl GuestTransaction for Transaction {
                 "from": from_id,
                 "to": to_id,
                 "props": props,
-                "@collection": edge_type
+                "@collection": options.edge_type
             }
         });
 
@@ -330,7 +580,7 @@ impl GuestTransaction for Transaction {
                 GraphError::InternalError("Missing edge document in response".to_string())
             })?;
 
-        helpers::parse_edge_from_document(edge_doc, &edge_type)
+        helpers::parse_edge_from_document(edge_doc, &options.edge_type)
     }
 
     fn get_edge(&self, id: ElementId) -> Result<Option<Edge>, GraphError> {
@@ -373,15 +623,15 @@ impl GuestTransaction for Transaction {
         }
     }
 
-    fn update_edge(&self, id: ElementId, properties: PropertyMap) -> Result<Edge, GraphError> {
-        let key = helpers::element_id_to_key(&id)?;
-        let collection = helpers::collection_from_element_id(&id)?;
+    fn update_edge(&self, options: UpdateEdgeOptions) -> Result<Edge, GraphError> {
+        let key = helpers::element_id_to_key(&options.id)?;
+        let collection = helpers::collection_from_element_id(&options.id)?;
 
         let current_edge = self
-            .get_edge(id.clone())?
-            .ok_or_else(|| GraphError::ElementNotFound(id.clone()))?;
+            .get_edge(options.id.clone())?
+            .ok_or_else(|| GraphError::ElementNotFound(options.id.clone()))?;
 
-        let mut props = conversions::to_arango_properties(properties)?;
+        let mut props = conversions::to_arango_properties(options.properties)?;
         props.insert(
             "_from".to_string(),
             json!(helpers::element_id_to_string(&current_edge.from_vertex)),
@@ -391,71 +641,40 @@ impl GuestTransaction for Transaction {
             json!(helpers::element_id_to_string(&current_edge.to_vertex)),
         );
 
-        let query = json!({
-            "query": "REPLACE @key WITH @props IN @@collection RETURN NEW",
-            "bindVars": {
-                "key": key,
-                "props": props,
-                "@collection": collection,
+        let query = {
+            if options.partial.unwrap_or_default() {
+                json!({
+                    "query": "UPDATE @key WITH @props IN @@collection OPTIONS { keepNull: false, mergeObjects: true } RETURN NEW",
+                    "bindVars": {
+                        "key": key,
+                        "props": props,
+                        "@collection": collection
+                    }
+                })
+            } else {
+                json!({
+                    "query": "REPLACE @key WITH @props IN @@collection RETURN NEW",
+                    "bindVars": {
+                        "key": key,
+                        "props": props,
+                        "@collection": collection,
+                    }
+                })
             }
-        });
-
-        let response = self
-            .api
-            .execute_in_transaction(&self.transaction_id, query)?;
-
-        let result_array = response.as_array().ok_or_else(|| {
-            GraphError::InternalError("Expected array in AQL response".to_string())
-        })?;
-
-        let edge_doc = result_array
-            .first()
-            .and_then(|v| v.as_object())
-            .ok_or_else(|| GraphError::ElementNotFound(id.clone()))?;
-
-        helpers::parse_edge_from_document(edge_doc, collection)
-    }
-
-    fn update_edge_properties(
-        &self,
-        id: ElementId,
-        updates: PropertyMap,
-    ) -> Result<Edge, GraphError> {
-        let key = helpers::element_id_to_key(&id)?;
-        let collection = if let ElementId::StringValue(s) = &id {
-            s.split('/').next().unwrap_or_default()
-        } else {
-            ""
         };
 
-        if collection.is_empty() {
-            return Err(GraphError::InvalidQuery(
-                "ElementId for update_edge_properties must be a full _id (e.g., 'collection/key')"
-                    .to_string(),
-            ));
-        }
-
-        let props = conversions::to_arango_properties(updates)?;
-
-        let query = json!({
-            "query": "UPDATE @key WITH @props IN @@collection OPTIONS { keepNull: false, mergeObjects: true } RETURN NEW",
-            "bindVars": {
-                "key": key,
-                "props": props,
-                "@collection": collection
-            }
-        });
-
         let response = self
             .api
             .execute_in_transaction(&self.transaction_id, query)?;
+
         let result_array = response.as_array().ok_or_else(|| {
             GraphError::InternalError("Expected array in AQL response".to_string())
         })?;
+
         let edge_doc = result_array
             .first()
             .and_then(|v| v.as_object())
-            .ok_or_else(|| GraphError::ElementNotFound(id.clone()))?;
+            .ok_or_else(|| GraphError::ElementNotFound(options.id.clone()))?;
 
         helpers::parse_edge_from_document(edge_doc, collection)
     }
@@ -487,24 +706,20 @@ impl GuestTransaction for Transaction {
         Ok(())
     }
 
-    fn find_edges(
-        &self,
-        edge_types: Option<Vec<String>>,
-        filters: Option<Vec<FilterCondition>>,
-        sort: Option<Vec<SortSpec>>,
-        limit: Option<u32>,
-        offset: Option<u32>,
-    ) -> Result<Vec<Edge>, GraphError> {
-        let collection = edge_types.and_then(|mut et| et.pop()).ok_or_else(|| {
-            GraphError::InvalidQuery("An edge_type must be provided for find_edges".to_string())
-        })?;
+    fn find_edges(&self, options: FindEdgesOptions) -> Result<Vec<Edge>, GraphError> {
+        let collection = options
+            .edge_types
+            .and_then(|mut et| et.pop())
+            .ok_or_else(|| {
+                GraphError::InvalidQuery("An edge_type must be provided for find_edges".to_string())
+            })?;
 
         let mut query_parts = vec![format!("FOR e IN @@collection")];
         let mut bind_vars = serde_json::Map::new();
         bind_vars.insert("@collection".to_string(), json!(collection.clone()));
 
         let where_clause = golem_graph::query_utils::build_where_clause(
-            &filters,
+            &options.filters,
             "e",
             &mut bind_vars,
             &aql_syntax(),
@@ -514,13 +729,13 @@ impl GuestTransaction for Transaction {
             query_parts.push(where_clause);
         }
 
-        let sort_clause = golem_graph::query_utils::build_sort_clause(&sort, "e");
+        let sort_clause = golem_graph::query_utils::build_sort_clause(&options.sort, "e");
         if !sort_clause.is_empty() {
             query_parts.push(sort_clause);
         }
 
-        let limit_val = limit.unwrap_or(100);
-        let offset_val = offset.unwrap_or(0);
+        let limit_val = options.limit.unwrap_or(100);
+        let offset_val = options.offset.unwrap_or(0);
         query_parts.push(format!("LIMIT {offset_val}, {limit_val}"));
         query_parts.push("RETURN e".to_string());
 
@@ -552,19 +767,16 @@ impl GuestTransaction for Transaction {
 
     fn get_adjacent_vertices(
         &self,
-        vertex_id: ElementId,
-        direction: Direction,
-        edge_types: Option<Vec<String>>,
-        _limit: Option<u32>,
+        options: GetAdjacentVerticesOptions,
     ) -> Result<Vec<Vertex>, GraphError> {
-        let start_node = helpers::element_id_to_string(&vertex_id);
-        let dir_str = match direction {
+        let start_node = helpers::element_id_to_string(&options.vertex_id);
+        let dir_str = match options.direction {
             Direction::Outgoing => "OUTBOUND",
             Direction::Incoming => "INBOUND",
             Direction::Both => "ANY",
         };
 
-        let collections = edge_types.unwrap_or_default().join(", ");
+        let collections = options.edge_types.unwrap_or_default().join(", ");
 
         let query = json!({
             "query": format!(
@@ -602,19 +814,16 @@ impl GuestTransaction for Transaction {
 
     fn get_connected_edges(
         &self,
-        vertex_id: ElementId,
-        direction: Direction,
-        edge_types: Option<Vec<String>>,
-        _limit: Option<u32>,
+        options: GetConnectedEdgesOptions,
     ) -> Result<Vec<Edge>, GraphError> {
-        let start_node = helpers::element_id_to_string(&vertex_id);
-        let dir_str = match direction {
+        let start_node = helpers::element_id_to_string(&options.vertex_id);
+        let dir_str = match options.direction {
             Direction::Outgoing => "OUTBOUND",
             Direction::Incoming => "INBOUND",
             Direction::Both => "ANY",
         };
 
-        let collections = edge_types.unwrap_or_default().join(", ");
+        let collections = options.edge_types.unwrap_or_default().join(", ");
 
         let query = json!({
             "query": format!(
@@ -650,126 +859,25 @@ impl GuestTransaction for Transaction {
         Ok(edges)
     }
 
-    fn create_vertices(&self, vertices: Vec<VertexSpec>) -> Result<Vec<Vertex>, GraphError> {
+    fn create_vertices(
+        &self,
+        vertices: Vec<CreateVertexOptions>,
+    ) -> Result<Vec<Vertex>, GraphError> {
         let mut created_vertices = vec![];
-        for vertex_spec in vertices {
-            let vertex = self.create_vertex_with_labels(
-                vertex_spec.vertex_type,
-                vertex_spec.additional_labels.unwrap_or_default(),
-                vertex_spec.properties,
-            )?;
+        for vertex_options in vertices {
+            let vertex = self.create_vertex(vertex_options)?;
             created_vertices.push(vertex);
         }
         Ok(created_vertices)
     }
 
-    fn create_edges(&self, edges: Vec<EdgeSpec>) -> Result<Vec<Edge>, GraphError> {
+    fn create_edges(&self, edges: Vec<CreateEdgeOptions>) -> Result<Vec<Edge>, GraphError> {
         let mut created_edges = vec![];
-        for edge_spec in edges {
-            let edge = self.create_edge(
-                edge_spec.edge_type,
-                edge_spec.from_vertex,
-                edge_spec.to_vertex,
-                edge_spec.properties,
-            )?;
+        for edge_options in edges {
+            let edge = self.create_edge(edge_options)?;
             created_edges.push(edge);
         }
         Ok(created_edges)
-    }
-
-    fn upsert_vertex(
-        &self,
-        id: Option<ElementId>,
-        vertex_type: String,
-        properties: PropertyMap,
-    ) -> Result<Vertex, GraphError> {
-        let props = conversions::to_arango_properties(properties)?;
-        let search = if let Some(i) = id.clone() {
-            let key = helpers::element_id_to_key(&i)?;
-            json!({ "_key": key })
-        } else {
-            return Err(GraphError::UnsupportedOperation(
-                "upsert_vertex without an ID requires key properties, which is not yet supported."
-                    .to_string(),
-            ));
-        };
-
-        let query = json!({
-            "query": "UPSERT @search INSERT @props UPDATE @props IN @@collection RETURN NEW",
-            "bindVars": {
-                "search": search,
-                "props": props,
-                "@collection": vertex_type
-            }
-        });
-
-        let response = self
-            .api
-            .execute_in_transaction(&self.transaction_id, query)?;
-        let result_array = response.as_array().ok_or_else(|| {
-            GraphError::InternalError("Expected array in AQL response".to_string())
-        })?;
-        let vertex_doc = result_array
-            .first()
-            .and_then(|v| v.as_object())
-            .ok_or_else(|| {
-                GraphError::InternalError("Missing vertex document in upsert response".to_string())
-            })?;
-
-        helpers::parse_vertex_from_document(vertex_doc, &vertex_type)
-    }
-
-    fn upsert_edge(
-        &self,
-        id: Option<ElementId>,
-        edge_type: String,
-        from_vertex: ElementId,
-        to_vertex: ElementId,
-        properties: PropertyMap,
-    ) -> Result<Edge, GraphError> {
-        let mut props = conversions::to_arango_properties(properties)?;
-        props.insert(
-            "_from".to_string(),
-            json!(helpers::element_id_to_string(&from_vertex)),
-        );
-        props.insert(
-            "_to".to_string(),
-            json!(helpers::element_id_to_string(&to_vertex)),
-        );
-
-        let search = if let Some(i) = id {
-            let key = helpers::element_id_to_key(&i)?;
-            json!({ "_key": key })
-        } else {
-            return Err(GraphError::UnsupportedOperation(
-                "upsert_edge without an ID requires key properties, which is not yet supported."
-                    .to_string(),
-            ));
-        };
-
-        let query = json!({
-            "query": "UPSERT @search INSERT @props UPDATE @props IN @@collection RETURN NEW",
-            "bindVars": {
-                "search": search,
-                "props": props,
-                "@collection": edge_type
-            }
-        });
-
-        let response = self
-            .api
-            .execute_in_transaction(&self.transaction_id, query)?;
-        let result_array = response.as_array().ok_or_else(|| {
-            GraphError::InternalError("Expected array in AQL response".to_string())
-        })?;
-        let edge_doc = result_array
-            .first()
-            .and_then(|v| v.as_object())
-            .ok_or_else(|| {
-                GraphError::InternalError("Missing edge document in upsert response".to_string())
-            })?;
-
-        helpers::parse_edge_from_document(edge_doc, &edge_type)
     }
 
     fn is_active(&self) -> bool {
@@ -777,6 +885,86 @@ impl GuestTransaction for Transaction {
             .get_transaction_status(&self.transaction_id)
             .map(|status| status == "running")
             .unwrap_or(false)
+    }
+}
+
+impl Transaction {
+    fn parse_query_results(&self, result_array: Vec<Value>) -> Result<QueryResult, GraphError> {
+        if let Some(first_value) = result_array.first() {
+            if let Ok(first_doc) = serde_json::from_value::<ArangoDocument>(first_value.clone()) {
+                if first_doc.is_edge() {
+                    let mut edges = Vec::new();
+                    for item in result_array {
+                        if let Ok(doc) = serde_json::from_value::<ArangoDocument>(item) {
+                            let collection = doc.extract_collection();
+                            let mut doc_map = serde_json::Map::new();
+                            if let Some(id) = doc.id {
+                                doc_map.insert("_id".to_string(), Value::String(id));
+                            }
+                            if let Some(from) = doc.from {
+                                doc_map.insert("_from".to_string(), Value::String(from));
+                            }
+                            if let Some(to) = doc.to {
+                                doc_map.insert("_to".to_string(), Value::String(to));
+                            }
+                            for (key, value) in doc.properties {
+                                doc_map.insert(key, value);
+                            }
+                            edges.push(crate::helpers::parse_edge_from_document(
+                                &doc_map,
+                                &collection,
+                            )?);
+                        }
+                    }
+                    return Ok(QueryResult::Edges(edges));
+                } else if first_doc.is_vertex() {
+                    let mut vertices = Vec::new();
+                    for item in result_array {
+                        if let Ok(doc) = serde_json::from_value::<ArangoDocument>(item) {
+                            let collection = doc.extract_collection();
+                            let mut doc_map = serde_json::Map::new();
+                            if let Some(id) = doc.id {
+                                doc_map.insert("_id".to_string(), Value::String(id));
+                            }
+                            if let Some(key) = doc.key {
+                                doc_map.insert("_key".to_string(), Value::String(key));
+                            }
+                            for (key, value) in doc.properties {
+                                doc_map.insert(key, value);
+                            }
+                            vertices.push(crate::helpers::parse_vertex_from_document(
+                                &doc_map,
+                                &collection,
+                            )?);
+                        }
+                    }
+                    return Ok(QueryResult::Vertices(vertices));
+                }
+            }
+
+            if first_value.is_object() {
+                let mut maps = Vec::new();
+                for item in result_array {
+                    if let Some(obj) = item.as_object() {
+                        let mut map_row = Vec::new();
+                        for (key, value) in obj {
+                            map_row.push((
+                                key.clone(),
+                                conversions::from_arango_value(value.clone())?,
+                            ));
+                        }
+                        maps.push(map_row);
+                    }
+                }
+                return Ok(QueryResult::Maps(maps));
+            }
+        }
+
+        let mut values = Vec::new();
+        for item in result_array {
+            values.push(conversions::from_arango_value(item)?);
+        }
+        Ok(QueryResult::Values(values))
     }
 }
 
@@ -794,4 +982,45 @@ fn aql_syntax() -> golem_graph::query_utils::QuerySyntax {
         regex_match: "=~",
         param_prefix: "@",
     }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ArangoQueryResponse {
+    pub result: Vec<Value>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ArangoDocument {
+    #[serde(rename = "_id")]
+    pub id: Option<String>,
+    #[serde(rename = "_key")]
+    pub key: Option<String>,
+    #[serde(rename = "_from")]
+    pub from: Option<String>,
+    #[serde(rename = "_to")]
+    pub to: Option<String>,
+    #[serde(flatten)]
+    pub properties: HashMap<String, Value>,
+}
+
+impl ArangoDocument {
+    pub fn is_edge(&self) -> bool {
+        self.from.is_some() && self.to.is_some()
+    }
+
+    pub fn is_vertex(&self) -> bool {
+        self.id.is_some() && !self.is_edge()
+    }
+
+    pub fn extract_collection(&self) -> String {
+        if let Some(id) = &self.id {
+            id.split('/').next().unwrap_or_default().to_string()
+        } else {
+            String::new()
+        }
+    }
+}
+
+fn id_to_aql(id: &ElementId) -> String {
+    element_id_to_string(id)
 }

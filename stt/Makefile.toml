@@ -40,84 +40,84 @@ run_task = { name = [
 ] }
 
 [tasks.build-aws]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-aws"]
 
 [tasks.build-aws-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-aws", "--no-default-features"]
 
 [tasks.build-azure]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-azure"]
 
 [tasks.build-azure-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-azure", "--no-default-features"]
 
 [tasks.build-deepgram]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-deepgram"]
 
 [tasks.build-deepgram-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-deepgram", "--no-default-features"]
 
 [tasks.build-google]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-google"]
 
 
 [tasks.build-google-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-google", "--no-default-features"]
 
 
 [tasks.build-whisper]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-whisper"]
 
 [tasks.build-whisper-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-whisper", "--no-default-features"]
 
 [tasks.release-build-aws]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-aws", "--release"]
 
 [tasks.release-build-aws-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-aws", "--release", "--no-default-features"]
 
 [tasks.release-build-azure]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-azure", "--release"]
 
 [tasks.release-build-azure-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-azure", "--release", "--no-default-features"]
 
 [tasks.release-build-deepgram]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-deepgram", "--release"]
 
 [tasks.release-build-deepgram-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = [
     "build",
@@ -128,22 +128,22 @@ args = [
 ]
 
 [tasks.release-build-google]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-google", "--release"]
 
 [tasks.release-build-google-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-google", "--release", "--no-default-features"]
 
 [tasks.release-build-whisper]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-stt-whisper", "--release"]
 
 [tasks.release-build-whisper-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = [
     "build",
@@ -192,15 +192,33 @@ dependencies = ["build"]
 install_crate = "cargo-binstall"
 description = "Builds stt test components with golem-cli"
 script = '''
-cargo-binstall golem-cli@1.2.5 --locked --no-confirm
+cargo-binstall golem-cli@1.3.0-rc2 --locked --no-confirm
 cargo-binstall wac-cli --locked --no-confirm
 cd ../test/stt
 
 golem-cli --version
-golem-cli app clean
-golem-cli app build -b aws-debug
-golem-cli app build -b azure-debug
-golem-cli app build -b deepgram-debug
-golem-cli app build -b google-debug
-golem-cli app build -b whisper-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b aws-debug
+golem-cli --dev-mode app build -b azure-debug
+golem-cli --dev-mode app build -b deepgram-debug
+golem-cli --dev-mode app build -b google-debug
+golem-cli --dev-mode app build -b whisper-debug
+'''
+
+[tasks.release-build-test-components]
+dependencies = ["release-build"]
+install_crate = "cargo-binstall"
+description = "Builds stt test components with golem-cli"
+script = '''
+cargo-binstall golem-cli@1.3.0-rc2 --locked --no-confirm
+cargo-binstall wac-cli --locked --no-confirm
+cd ../test/stt
+
+golem-cli --version
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b aws-release
+golem-cli --dev-mode app build -b azure-release
+golem-cli --dev-mode app build -b deepgram-release
+golem-cli --dev-mode app build -b google-release
+golem-cli --dev-mode app build -b whisper-release
 '''

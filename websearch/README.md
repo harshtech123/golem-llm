@@ -81,12 +81,12 @@ golem app deploy -b brave-debug
 Depending on the provider selected, an environment variable has to be set for the worker to be started, containing the ENVIRONMENT variable (eg.API key) for the given provider:
 
 ```bash
-golem worker new test:websearch/debug --env BRAVE_API_KEY=xxx --env GOLEM_WEB_SEARCH_LOG=trace
+golem agent  new test:websearch/debug --env BRAVE_API_KEY=xxx --env GOLEM_WEB_SEARCH_LOG=trace
 ```
 
 Then you can invoke the test functions on this worker:
 
 ```bash
-golem worker invoke test:websearch/debug test1 --stream 
+golem agent  invoke test:websearch/debug test1 --stream 
 ```
 
