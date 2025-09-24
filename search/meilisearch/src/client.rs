@@ -308,6 +308,7 @@ impl MeilisearchApi {
         parse_response(response)
     }
 
+    #[allow(unused)]
     pub fn get_documents(
         &self,
         index_uid: &str,
