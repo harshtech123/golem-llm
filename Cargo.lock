@@ -2059,6 +2059,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "urlencoding",
  "wit-bindgen-rt 0.40.0",
 ]
 
