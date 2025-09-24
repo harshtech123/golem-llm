@@ -16,8 +16,8 @@ use golem_video::exports::golem::video_generation::advanced::{
 };
 use golem_video::exports::golem::video_generation::lip_sync::Guest as LipSyncGuest;
 use golem_video::exports::golem::video_generation::types::{
-    AudioSource, BaseVideo, EffectType, GenerationConfig, InputImage, Kv, LipSyncVideo, MediaInput,
-    VideoError, VideoResult, VoiceInfo,
+    AudioSource, BaseVideo, GenerationConfig, LipSyncVideo, MediaInput, VideoError, VideoResult,
+    VoiceInfo,
 };
 use golem_video::exports::golem::video_generation::video_generation::Guest as VideoGenerationGuest;
 

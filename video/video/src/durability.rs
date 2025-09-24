@@ -98,8 +98,8 @@ mod durable_impl {
     };
     use crate::exports::golem::video_generation::lip_sync::Guest as LipSyncGuest;
     use crate::exports::golem::video_generation::types::{
-        AudioSource, BaseVideo, EffectType, GenerationConfig, InputImage, Kv, LipSyncVideo,
-        MediaInput, VideoError, VideoResult, VoiceInfo,
+        AudioSource, BaseVideo, GenerationConfig, LipSyncVideo, MediaInput, VideoError,
+        VideoResult, VoiceInfo,
     };
     use crate::exports::golem::video_generation::video_generation::Guest as VideoGenerationGuest;
     use crate::init_logging;

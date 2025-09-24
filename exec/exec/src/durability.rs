@@ -24,9 +24,7 @@ pub struct EmptySnapshot {}
 #[cfg(not(feature = "durability"))]
 mod passthrough_impl {
     use crate::durability::DurableExec;
-    use crate::golem::exec::executor::{
-        Error, ExecResult, File, Guest, Language, RunOptions,
-    };
+    use crate::golem::exec::executor::{Error, ExecResult, File, Guest, Language, RunOptions};
 
     impl<Impl: Guest> Guest for DurableExec<Impl> {
         type Session = Impl::Session;
