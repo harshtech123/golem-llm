@@ -308,7 +308,7 @@ impl MeilisearchApi {
         parse_response(response)
     }
 
-    pub fn _get_documents(
+    pub fn get_documents(
         &self,
         index_uid: &str,
         request: &MeilisearchDocumentFetchRequest,
