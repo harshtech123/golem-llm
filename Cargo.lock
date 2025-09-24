@@ -255,7 +255,6 @@ dependencies = [
  "aws-credential-types",
  "aws-sigv4",
  "aws-smithy-async",
- "aws-smithy-eventstream",
  "aws-smithy-http",
  "aws-smithy-runtime",
  "aws-smithy-runtime-api",
@@ -269,31 +268,6 @@ dependencies = [
  "pin-project-lite",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "aws-sdk-bedrockruntime"
-version = "1.93.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c46900e6ef102ae75cd2ff16d5a73085228a8b0fcccb987d85f792673da00ef"
-dependencies = [
- "aws-credential-types",
- "aws-runtime",
- "aws-sigv4",
- "aws-smithy-async",
- "aws-smithy-eventstream",
- "aws-smithy-http",
- "aws-smithy-json",
- "aws-smithy-runtime",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "aws-types",
- "bytes",
- "fastrand",
- "http 0.2.12",
- "hyper 0.14.32",
- "regex-lite",
- "tracing",
 ]
 
 [[package]]
@@ -370,7 +344,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddfb9021f581b71870a17eac25b52335b82211cdc092e02b6876b2bcefa61666"
 dependencies = [
  "aws-credential-types",
- "aws-smithy-eventstream",
  "aws-smithy-http",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -398,23 +371,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "aws-smithy-eventstream"
-version = "0.60.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "338a3642c399c0a5d157648426110e199ca7fd1c689cc395676b81aa563700c4"
-dependencies = [
- "aws-smithy-types",
- "bytes",
- "crc32fast",
-]
-
-[[package]]
 name = "aws-smithy-http"
 version = "0.62.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "99335bec6cdc50a346fda1437f9fefe33abf8c99060739a546a16457f2862ca9"
 dependencies = [
- "aws-smithy-eventstream",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "bytes",
@@ -542,21 +503,6 @@ dependencies = [
  "ryu",
  "serde",
  "time 0.3.41",
-]
-
-[[package]]
-name = "aws-smithy-wasm"
-version = "0.1.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe4c57c179a9f0c23cf3a9c38a89605bb6439c05be5df6674a7e1b039b6937bd"
-dependencies = [
- "aws-smithy-http",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "bytes",
- "http 1.3.1",
- "tracing",
- "wasi 0.12.1+wasi-0.2.0",
 ]
 
 [[package]]
@@ -1647,6 +1593,7 @@ name = "golem-llm"
 version = "0.0.0"
 dependencies = [
  "golem-rust",
+ "indoc",
  "log 0.4.27",
  "mime 0.3.17",
  "nom",
@@ -1654,57 +1601,6 @@ dependencies = [
  "thiserror 2.0.12",
  "wasi-logger",
  "wit-bindgen 0.40.0",
-]
-
-[[package]]
-name = "golem-llm-anthropic"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "golem-llm",
- "golem-rust",
- "log 0.4.27",
- "reqwest",
- "serde",
- "serde_json",
- "wit-bindgen-rt 0.40.0",
-]
-
-[[package]]
-name = "golem-llm-bedrock"
-version = "0.0.0"
-dependencies = [
- "aws-config",
- "aws-sdk-bedrockruntime",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "aws-smithy-wasm",
- "aws-types",
- "base64 0.22.1",
- "bytes",
- "golem-llm",
- "golem-rust",
- "infer",
- "log 0.4.27",
- "serde",
- "serde_json",
- "wasi 0.13.1+wasi-0.2.0",
- "wit-bindgen-rt 0.40.0",
- "wstd",
-]
-
-[[package]]
-name = "golem-llm-grok"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "golem-llm",
- "golem-rust",
- "log 0.4.27",
- "reqwest",
- "serde",
- "serde_json",
- "wit-bindgen-rt 0.40.0",
 ]
 
 [[package]]
@@ -1720,34 +1616,6 @@ dependencies = [
  "serde",
  "serde_json",
  "url 2.5.4",
- "wit-bindgen-rt 0.40.0",
-]
-
-[[package]]
-name = "golem-llm-openai"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "golem-llm",
- "golem-rust",
- "log 0.4.27",
- "reqwest",
- "serde",
- "serde_json",
- "wit-bindgen-rt 0.40.0",
-]
-
-[[package]]
-name = "golem-llm-openrouter"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "golem-llm",
- "golem-rust",
- "log 0.4.27",
- "reqwest",
- "serde",
- "serde_json",
  "wit-bindgen-rt 0.40.0",
 ]
 
@@ -2338,12 +2206,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
-name = "httpdate"
-version = "1.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
-
-[[package]]
 name = "hyper"
 version = "0.10.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2360,28 +2222,6 @@ dependencies = [
  "typeable",
  "unicase 1.4.2",
  "url 1.7.2",
-]
-
-[[package]]
-name = "hyper"
-version = "0.14.32"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41dfc780fdec9373c01bae43289ea34c972e40ee3c9f6b3c8801a35f35586ce7"
-dependencies = [
- "bytes",
- "futures-channel",
- "futures-core",
- "futures-util",
- "http 0.2.12",
- "http-body 0.4.6",
- "httparse",
- "httpdate",
- "itoa",
- "pin-project-lite",
- "tokio",
- "tower-service",
- "tracing",
- "want",
 ]
 
 [[package]]
@@ -2626,12 +2466,6 @@ name = "indoc"
 version = "2.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4c7245a08504955605670dbf141fceab975f15ca21570696aebe9d2e71576bd"
-
-[[package]]
-name = "infer"
-version = "0.19.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a588916bfdfd92e71cacef98a63d9b1f0d74d6599980d11894290e7ddefffcf7"
 
 [[package]]
 name = "iron"
@@ -5686,15 +5520,6 @@ checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasi"
-version = "0.12.1+wasi-0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af274f03e73b7d85551b3f9e97b8a04d5c9aec703cfc227a3fe0595a7561c67a"
-dependencies = [
- "wit-bindgen 0.19.2",
-]
-
-[[package]]
-name = "wasi"
 version = "0.13.1+wasi-0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f43d1c36145feb89a3e61aa0ba3e582d976a8ab77f1474aa0adb80800fe0cf8"
@@ -6303,15 +6128,6 @@ name = "winsafe"
 version = "0.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d135d17ab770252ad95e9a872d365cf3090e3be864a34ab46f48555993efc904"
-
-[[package]]
-name = "wit-bindgen"
-version = "0.19.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b37d270da94012e0ac490ac633ad5bdd76a10a3fb15069edb033c1b771ce931f"
-dependencies = [
- "bitflags 2.9.1",
-]
 
 [[package]]
 name = "wit-bindgen"

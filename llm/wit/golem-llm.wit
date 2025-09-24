@@ -144,12 +144,22 @@ interface llm {
     provider-error-json: option<string>,
   }
 
-  // --- Chat Response Variants ---
+  // --- Chat Response ---
+
+  variant chat-response {
+    message(complete-response),
+    tool-calls(list<tool-call>),
+    error(error),
+  }
+
+
+  // --- Chat event  ---
 
   variant chat-event {
-    message(complete-response),
-    tool-request(list<tool-call>),
-    error(error),
+    message(message),
+    response(complete-response),
+    tool-calls(list<tool-call>),
+    tool-results(list<tool-result>),
   }
 
   // --- Streaming ---
@@ -170,23 +180,37 @@ interface llm {
     blocking-get-next: func() -> list<stream-event>;
   }
 
+
   // --- Core Functions ---
 
   send: func(
-    messages: list<message>,
-    config: config
-  ) -> chat-event;
-
-  continue: func(
-    messages: list<message>,
-    tool-results: list<tuple<tool-call, tool-result>>,
-    config: config
-  ) -> chat-event;
+    config: config,
+    events: list<chat-event>,
+  ) -> chat-response;
 
   %stream: func(
-    messages: list<message>,
-    config: config
+    config: config,
+    events: list<chat-event>,
   ) -> chat-stream;
+
+  // --- Chat session ---
+
+  resource chat-session {
+    constructor(config: config);
+
+    add-message: func(message: message);
+    add-tool-result: func(tool-result: tool-result);
+
+    // Observe all events in the session
+    get-chat-events: func() -> list<chat-event>;
+    // Replace events in the session, which allows e.g. compacting them
+    set-chat-events: func(events: list<chat-event>);
+
+    // Successful responses are automatically added to the session chat events
+    send: func() -> chat-response;
+    // Successful responses are automatically added to the session chat events
+    %stream: func() -> chat-stream;
+  }
 }
 
 world llm-library {

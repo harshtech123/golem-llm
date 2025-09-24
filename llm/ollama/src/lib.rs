@@ -1,7 +1,9 @@
 use std::cell::{Ref, RefCell, RefMut};
 
 use client::{CompletionsRequest, OllamaApi};
-use conversions::{messages_to_request, process_response};
+use conversions::{events_to_request, process_response};
+use golem_llm::chat_session::ChatSession;
+use golem_llm::golem::llm::llm::ChatResponse;
 use golem_llm::{
     chat_stream::{LlmChatStream, LlmChatStreamState},
     durability::{DurableLLM, ExtendedGuest},
@@ -179,10 +181,10 @@ impl LlmChatStreamState for OllamaChatStream {
 struct OllamaComponent;
 
 impl OllamaComponent {
-    fn request(client: &OllamaApi, request: CompletionsRequest) -> ChatEvent {
+    fn request(client: &OllamaApi, request: CompletionsRequest) -> ChatResponse {
         match client.send_chat(request) {
             Ok(response) => process_response(response),
-            Err(err) => ChatEvent::Error(err),
+            Err(err) => ChatResponse::Error(err),
         }
     }
 
@@ -200,46 +202,37 @@ impl OllamaComponent {
 
 impl Guest for OllamaComponent {
     type ChatStream = LlmChatStream<OllamaChatStream>;
+    type ChatSession = ChatSession;
 
-    fn send(messages: Vec<Message>, config: Config) -> ChatEvent {
+    fn send(config: Config, events: Vec<ChatEvent>) -> ChatResponse {
         let client = OllamaApi::new(config.model.clone());
-        match messages_to_request(messages, config.clone(), None) {
+        match events_to_request(&config, &events) {
             Ok(request) => Self::request(&client, request),
-            Err(err) => ChatEvent::Error(err),
+            Err(err) => ChatResponse::Error(err),
         }
     }
 
-    fn continue_(
-        messages: Vec<Message>,
-        tool_results: Vec<(ToolCall, ToolResult)>,
-        config: Config,
-    ) -> ChatEvent {
-        let client = OllamaApi::new(config.model.clone());
-
-        match messages_to_request(messages, config.clone(), Some(tool_results)) {
-            Ok(request) => Self::request(&client, request),
-            Err(err) => ChatEvent::Error(err),
-        }
-    }
-
-    fn stream(messages: Vec<Message>, config: Config) -> ChatStream {
-        ChatStream::new(Self::unwrapped_stream(messages, config.clone()))
+    fn stream(config: Config, events: Vec<ChatEvent>) -> ChatStream {
+        ChatStream::new(Self::unwrapped_stream(&config, &events))
     }
 }
 
 impl ExtendedGuest for OllamaComponent {
-    fn unwrapped_stream(messages: Vec<Message>, config: Config) -> LlmChatStream<OllamaChatStream> {
+    fn unwrapped_stream(config: &Config, events: &[ChatEvent]) -> LlmChatStream<OllamaChatStream> {
         let client = OllamaApi::new(config.model.clone());
-        match messages_to_request(messages, config.clone(), None) {
+        match events_to_request(config, events) {
             Ok(request) => Self::streaming_request(&client, request),
             Err(err) => OllamaChatStream::failed(err),
         }
     }
 
-    fn retry_prompt(original_messages: &[Message], partial_result: &[StreamDelta]) -> Vec<Message> {
+    fn retry_prompt(
+        original_events: &[ChatEvent],
+        partial_result: &[StreamDelta],
+    ) -> Vec<ChatEvent> {
         let mut extended_messages = Vec::new();
 
-        extended_messages.push(Message {
+        extended_messages.push(ChatEvent::Message(Message {
             role: Role::System,
             name: None,
             content: vec![ContentPart::Text(
@@ -248,17 +241,17 @@ impl ExtendedGuest for OllamaComponent {
                  Do not include the part of the response that was already seen."
                     .to_string(),
             )],
-        });
+        }));
 
-        extended_messages.push(Message {
+        extended_messages.push(ChatEvent::Message(Message {
             role: Role::User,
             name: None,
             content: vec![ContentPart::Text(
                 "Here is the original question:".to_string(),
             )],
-        });
+        }));
 
-        extended_messages.extend_from_slice(original_messages);
+        extended_messages.extend_from_slice(original_events);
 
         let mut partial_result_as_content = Vec::new();
         for delta in partial_result {
@@ -275,7 +268,7 @@ impl ExtendedGuest for OllamaComponent {
             }
         }
 
-        extended_messages.push(Message {
+        extended_messages.push(ChatEvent::Message(Message {
             role: Role::User,
             name: None,
             content: vec![ContentPart::Text(
@@ -284,7 +277,7 @@ impl ExtendedGuest for OllamaComponent {
             .into_iter()
             .chain(partial_result_as_content)
             .collect(),
-        });
+        }));
 
         extended_messages
     }

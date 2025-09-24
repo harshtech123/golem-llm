@@ -3,12 +3,12 @@ resolver = "2"
 
 members = [
     "llm/llm",
-    "llm/bedrock",
-    "llm/anthropic",
-    "llm/grok",
+    #"llm/bedrock",
+    #"llm/anthropic",
+    #"llm/grok",
     "llm/ollama",
-    "llm/openai",
-    "llm/openrouter",
+    #"llm/openai",
+    #"llm/openrouter",
     "websearch/websearch",
     "websearch/brave",
     "websearch/google",
