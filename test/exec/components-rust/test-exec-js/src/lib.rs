@@ -319,7 +319,7 @@ impl Guest for Component {
                     console.log(...argv);
                 "# },
                 &RunOptions {
-                    args: Some(vec!["arg13".to_string()]),
+                    args: Some(vec!["arg3".to_string()]),
                     ..empty_run_options()
                 },
             )
