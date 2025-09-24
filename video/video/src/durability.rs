@@ -20,7 +20,10 @@ pub trait ExtendedGuest: VideoGenerationGuest + LipSyncGuest + AdvancedGuest + '
 #[cfg(not(feature = "durability"))]
 mod passthrough_impl {
     use crate::durability::{DurableVideo, ExtendedGuest};
-    use crate::exports::golem::video_generation::advanced::Guest as AdvancedGuest;
+    use crate::exports::golem::video_generation::advanced::{
+        ExtendVideoOptions, GenerateVideoEffectsOptions, Guest as AdvancedGuest,
+        MultImageGenerationOptions,
+    };
     use crate::exports::golem::video_generation::lip_sync::Guest as LipSyncGuest;
     use crate::exports::golem::video_generation::types::{
         AudioSource, BaseVideo, EffectType, GenerationConfig, InputImage, Kv, LipSyncVideo,
@@ -56,20 +59,8 @@ mod passthrough_impl {
     }
 
     impl<Impl: ExtendedGuest> AdvancedGuest for DurableVideo<Impl> {
-        fn extend_video(
-            video_id: String,
-            prompt: Option<String>,
-            negative_prompt: Option<String>,
-            cfg_scale: Option<f32>,
-            provider_options: Option<Vec<Kv>>,
-        ) -> Result<String, VideoError> {
-            Impl::extend_video(
-                video_id,
-                prompt,
-                negative_prompt,
-                cfg_scale,
-                provider_options,
-            )
+        fn extend_video(options: ExtendVideoOptions) -> Result<String, VideoError> {
+            Impl::extend_video(options)
         }
 
         fn upscale_video(input: BaseVideo) -> Result<String, VideoError> {
@@ -77,21 +68,15 @@ mod passthrough_impl {
         }
 
         fn generate_video_effects(
-            input: InputImage,
-            effect: EffectType,
-            model: Option<String>,
-            duration: Option<f32>,
-            mode: Option<String>,
+            options: GenerateVideoEffectsOptions,
         ) -> Result<String, VideoError> {
-            Impl::generate_video_effects(input, effect, model, duration, mode)
+            Impl::generate_video_effects(options)
         }
 
         fn multi_image_generation(
-            input_images: Vec<InputImage>,
-            prompt: Option<String>,
-            config: GenerationConfig,
+            options: MultImageGenerationOptions,
         ) -> Result<String, VideoError> {
-            Impl::multi_image_generation(input_images, prompt, config)
+            Impl::multi_image_generation(options)
         }
     }
 }
@@ -107,7 +92,10 @@ mod passthrough_impl {
 #[cfg(feature = "durability")]
 mod durable_impl {
     use crate::durability::{DurableVideo, ExtendedGuest};
-    use crate::exports::golem::video_generation::advanced::Guest as AdvancedGuest;
+    use crate::exports::golem::video_generation::advanced::{
+        ExtendVideoOptions, GenerateVideoEffectsOptions, Guest as AdvancedGuest,
+        MultImageGenerationOptions,
+    };
     use crate::exports::golem::video_generation::lip_sync::Guest as LipSyncGuest;
     use crate::exports::golem::video_generation::types::{
         AudioSource, BaseVideo, EffectType, GenerationConfig, InputImage, Kv, LipSyncVideo,
@@ -213,13 +201,7 @@ mod durable_impl {
     }
 
     impl<Impl: ExtendedGuest> AdvancedGuest for DurableVideo<Impl> {
-        fn extend_video(
-            video_id: String,
-            prompt: Option<String>,
-            negative_prompt: Option<String>,
-            cfg_scale: Option<f32>,
-            provider_options: Option<Vec<Kv>>,
-        ) -> Result<String, VideoError> {
+        fn extend_video(options: ExtendVideoOptions) -> Result<String, VideoError> {
             init_logging();
             let durability = Durability::<String, VideoError>::new(
                 "golem_video",
@@ -228,24 +210,9 @@ mod durable_impl {
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    Impl::extend_video(
-                        video_id.clone(),
-                        prompt.clone(),
-                        negative_prompt.clone(),
-                        cfg_scale,
-                        provider_options.clone(),
-                    )
+                    Impl::extend_video(options.clone())
                 });
-                durability.persist(
-                    ExtendVideoInput {
-                        video_id,
-                        prompt,
-                        negative_prompt,
-                        cfg_scale,
-                        provider_options,
-                    },
-                    result,
-                )
+                durability.persist(options, result)
             } else {
                 durability.replay()
             }
@@ -269,11 +236,7 @@ mod durable_impl {
         }
 
         fn generate_video_effects(
-            input: InputImage,
-            effect: EffectType,
-            model: Option<String>,
-            duration: Option<f32>,
-            mode: Option<String>,
+            options: GenerateVideoEffectsOptions,
         ) -> Result<String, VideoError> {
             init_logging();
             let durability = Durability::<String, VideoError>::new(
@@ -283,33 +246,16 @@ mod durable_impl {
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    Impl::generate_video_effects(
-                        input.clone(),
-                        effect.clone(),
-                        model.clone(),
-                        duration,
-                        mode.clone(),
-                    )
+                    Impl::generate_video_effects(options.clone())
                 });
-                durability.persist(
-                    GenerateVideoEffectsInput {
-                        input,
-                        effect,
-                        model,
-                        duration,
-                        mode,
-                    },
-                    result,
-                )
+                durability.persist(options, result)
             } else {
                 durability.replay()
             }
         }
 
         fn multi_image_generation(
-            input_images: Vec<InputImage>,
-            prompt: Option<String>,
-            config: GenerationConfig,
+            options: MultImageGenerationOptions,
         ) -> Result<String, VideoError> {
             init_logging();
             let durability = Durability::<String, VideoError>::new(
@@ -319,20 +265,9 @@ mod durable_impl {
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    Impl::multi_image_generation(
-                        input_images.clone(),
-                        prompt.clone(),
-                        config.clone(),
-                    )
+                    Impl::multi_image_generation(options.clone())
                 });
-                durability.persist(
-                    MultiImageGenerationInput {
-                        input_images,
-                        prompt,
-                        config,
-                    },
-                    result,
-                )
+                durability.persist(options, result)
             } else {
                 durability.replay()
             }
@@ -367,33 +302,8 @@ mod durable_impl {
     }
 
     #[derive(Debug, Clone, PartialEq, IntoValue, FromValueAndType)]
-    struct ExtendVideoInput {
-        video_id: String,
-        prompt: Option<String>,
-        negative_prompt: Option<String>,
-        cfg_scale: Option<f32>,
-        provider_options: Option<Vec<Kv>>,
-    }
-
-    #[derive(Debug, Clone, PartialEq, IntoValue, FromValueAndType)]
     struct UpscaleVideoInput {
         input: BaseVideo,
-    }
-
-    #[derive(Debug, Clone, PartialEq, IntoValue, FromValueAndType)]
-    struct GenerateVideoEffectsInput {
-        input: InputImage,
-        effect: EffectType,
-        model: Option<String>,
-        duration: Option<f32>,
-        mode: Option<String>,
-    }
-
-    #[derive(Debug, Clone, PartialEq, IntoValue, FromValueAndType)]
-    struct MultiImageGenerationInput {
-        input_images: Vec<InputImage>,
-        prompt: Option<String>,
-        config: GenerationConfig,
     }
 
     #[allow(dead_code)]

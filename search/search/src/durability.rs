@@ -36,16 +36,17 @@ mod passthrough_impl {
     use crate::durability::{DurableSearch, ExtendedGuest};
     use crate::golem::search::core::{Guest, SearchStream};
     use crate::golem::search::types::{
-        Doc, DocumentId, IndexName, Schema, SearchError, SearchQuery, SearchResults,
+        CreateIndexOptions, Doc, DocumentId, IndexName, Schema, SearchError, SearchQuery,
+        SearchResults,
     };
     use crate::init_logging;
 
     impl<Impl: ExtendedGuest> Guest for DurableSearch<Impl> {
         type SearchStream = Impl::SearchStream;
 
-        fn create_index(name: IndexName, schema: Option<Schema>) -> Result<(), SearchError> {
+        fn create_index(options: CreateIndexOptions) -> Result<(), SearchError> {
             init_logging();
-            Impl::create_index(name, schema)
+            Impl::create_index(options)
         }
 
         fn delete_index(name: IndexName) -> Result<(), SearchError> {
@@ -111,7 +112,7 @@ mod passthrough_impl {
 #[cfg(feature = "durability")]
 mod durable_impl {
     use crate::durability::{DurableSearch, ExtendedGuest};
-    use crate::golem::search::core::{Guest, GuestSearchStream, SearchStream};
+    use crate::golem::search::core::{CreateIndexOptions, Guest, GuestSearchStream, SearchStream};
     use crate::golem::search::types::{
         Doc, DocumentId, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
     };
@@ -124,12 +125,6 @@ mod durable_impl {
     use golem_rust::{with_persistence_level, FromValueAndType, IntoValue, PersistenceLevel};
     use std::cell::RefCell;
     use std::fmt::{Display, Formatter};
-
-    #[derive(Debug, Clone, IntoValue)]
-    struct CreateIndexInput {
-        name: IndexName,
-        schema: Option<Schema>,
-    }
 
     #[derive(Debug, Clone, IntoValue)]
     struct DeleteIndexInput {
@@ -227,7 +222,7 @@ mod durable_impl {
     impl<Impl: ExtendedGuest> Guest for DurableSearch<Impl> {
         type SearchStream = DurableSearchStream<Impl>;
 
-        fn create_index(name: IndexName, schema: Option<Schema>) -> Result<(), SearchError> {
+        fn create_index(options: CreateIndexOptions) -> Result<(), SearchError> {
             init_logging();
 
             let durability = Durability::<NoOutput, SearchError>::new(
@@ -237,11 +232,9 @@ mod durable_impl {
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    Impl::create_index(name.clone(), schema.clone()).map(|()| NoOutput)
+                    Impl::create_index(options.clone()).map(|()| NoOutput)
                 });
-                durability
-                    .persist(CreateIndexInput { name, schema }, result)
-                    .map(|_: NoOutput| ())
+                durability.persist(options, result).map(|_: NoOutput| ())
             } else {
                 durability.replay().map(|_: NoOutput| ())
             }

@@ -62,6 +62,7 @@ fn ensure_arangodb_collections(
     graph_connection: &crate::bindings::golem::graph::connection::Graph,
 ) -> Result<(), String> {
     use crate::bindings::golem::graph::schema::{self, ContainerType};
+    use std::collections::HashSet;
 
     println!("Setting up ArangoDB collections for testing...");
 

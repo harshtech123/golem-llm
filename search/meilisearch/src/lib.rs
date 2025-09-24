@@ -7,7 +7,9 @@ use crate::conversions::{
 use golem_rust::wasm_rpc::Pollable;
 use golem_search::config::with_config_keys;
 use golem_search::durability::{DurableSearch, ExtendedGuest};
-use golem_search::golem::search::core::{Guest, GuestSearchStream, SearchStream};
+use golem_search::golem::search::core::{
+    CreateIndexOptions, Guest, GuestSearchStream, SearchStream,
+};
 use golem_search::golem::search::types::{
     Doc, DocumentId, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
 };
@@ -126,11 +128,11 @@ impl MeilisearchComponent {
 impl Guest for MeilisearchComponent {
     type SearchStream = MeilisearchSearchStream;
 
-    fn create_index(name: IndexName, schema: Option<Schema>) -> Result<(), SearchError> {
+    fn create_index(options: CreateIndexOptions) -> Result<(), SearchError> {
         let client = Self::create_client()?;
 
         let create_request = client::MeilisearchCreateIndexRequest {
-            uid: name.clone(),
+            uid: options.index_name.clone(),
             primary_key: Some("id".to_string()), // Default primary key
         };
 
@@ -138,9 +140,9 @@ impl Guest for MeilisearchComponent {
 
         client.wait_for_task(task.task_uid)?;
 
-        if let Some(schema) = schema {
+        if let Some(schema) = options.schema {
             let settings = schema_to_meilisearch_settings(schema);
-            let settings_task = client.update_settings(&name, &settings)?;
+            let settings_task = client.update_settings(&options.index_name, &settings)?;
             client.wait_for_task(settings_task.task_uid)?;
         }
 

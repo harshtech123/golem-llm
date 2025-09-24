@@ -146,6 +146,23 @@ cp wit/golem-web-search.wit ../test/websearch/wit/deps/golem-web-search/golem-we
 echo "Copied WIT for module test"
 """
 
+[tasks.build-test-components]
+dependencies = ["build"]
+description = "Builds websearch test components with golem-cli"
+script = '''
+cd ../test/websearch
+
+golem-cli --version
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b brave-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b google-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b serper-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b tavily-debug
+'''
+
 [tasks.release-build-test-components]
 dependencies = ["release-build"]
 description = "Builds websearch test components with golem-cli"

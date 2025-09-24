@@ -8,7 +8,9 @@ use crate::conversions::{
 use golem_rust::wasm_rpc::Pollable;
 use golem_search::config::with_config_keys;
 use golem_search::durability::{DurableSearch, ExtendedGuest};
-use golem_search::golem::search::core::{Guest, GuestSearchStream, SearchStream};
+use golem_search::golem::search::core::{
+    CreateIndexOptions, Guest, GuestSearchStream, SearchStream,
+};
 use golem_search::golem::search::types::{
     Doc, DocumentId, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
 };
@@ -189,11 +191,11 @@ impl OpenSearchComponent {
 impl Guest for OpenSearchComponent {
     type SearchStream = OpenSearchSearchStream;
 
-    fn create_index(name: IndexName, schema: Option<Schema>) -> Result<(), SearchError> {
+    fn create_index(options: CreateIndexOptions) -> Result<(), SearchError> {
         let client = Self::create_client()?;
 
-        let settings = schema.map(schema_to_opensearch_settings);
-        client.create_index(&name, settings)?;
+        let settings = options.schema.map(schema_to_opensearch_settings);
+        client.create_index(&options.index_name, settings)?;
 
         Ok(())
     }

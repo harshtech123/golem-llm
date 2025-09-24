@@ -39,9 +39,7 @@ generate_unused_types = true
 "golem:graph/types@1.0.0" = "golem_graph::golem::graph::types"
 "golem:graph/connection@1.0.0" = "golem_graph::golem::graph::connection"
 "golem:graph/transactions@1.0.0" = "golem_graph::golem::graph::transactions"
-"golem:graph/traversal@1.0.0" = "golem_graph::golem::graph::traversal"
 "golem:graph/schema@1.0.0" = "golem_graph::golem::graph::schema"
-"golem:graph/query@1.0.0" = "golem_graph::golem::graph::query"
 
 
 [package.metadata.component.target]
