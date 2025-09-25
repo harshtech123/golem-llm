@@ -713,34 +713,34 @@ impl NamespacesGuest for MilvusComponent {
         _namespace: String,
         _metadata: Option<Metadata>,
     ) -> Result<golem_vector::exports::golem::vector::namespaces::NamespaceInfo, VectorError> {
-        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces like Pinecone".to_string()))
+        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces".to_string()))
     }
 
     fn list_namespaces(
         _collection: String,
     ) -> Result<Vec<golem_vector::exports::golem::vector::namespaces::NamespaceInfo>, VectorError> {
-        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces like Pinecone".to_string()))
+        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces".to_string()))
     }
 
     fn get_namespace(
         _collection: String,
         _namespace: String,
     ) -> Result<golem_vector::exports::golem::vector::namespaces::NamespaceInfo, VectorError> {
-        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces like Pinecone".to_string()))
+        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces".to_string()))
     }
 
     fn delete_namespace(
         _collection: String,
         _namespace: String,
     ) -> Result<(), VectorError> {
-        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces like Pinecone".to_string()))
+        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces".to_string()))
     }
 
     fn namespace_exists(
         _collection: String,
         _namespace: String,
     ) -> Result<bool, VectorError> {
-        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces like Pinecone".to_string()))
+        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces".to_string()))
     }
 }
 
