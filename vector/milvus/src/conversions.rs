@@ -1,0 +1,573 @@
+use crate::client::{
+    CollectionInfo, SearchResult as MilvusSearchResult,
+    CollectionStats, InsertRequest, UpsertRequest, 
+    SearchRequest, QueryRequest, GetRequest, DeleteRequest,
+};
+use golem_vector::golem::vector::types::{
+    VectorRecord, VectorData, MetadataValue, DistanceMetric,
+    FilterExpression, FilterCondition, FilterOperator, SearchResult,
+    VectorError,
+};
+use golem_vector::exports::golem::vector::{
+    collections::CollectionInfo as ExportCollectionInfo,
+    analytics::CollectionStats as ExportCollectionStats,
+};
+use serde_json::{Value, Map};
+use std::collections::HashMap;
+
+pub fn distance_metric_to_string(metric: &DistanceMetric) -> String {
+    match metric {
+        DistanceMetric::Cosine => "COSINE".to_string(),
+        DistanceMetric::Euclidean => "L2".to_string(),
+        DistanceMetric::DotProduct => "IP".to_string(),
+        DistanceMetric::Manhattan => "L1".to_string(),
+        DistanceMetric::Hamming => "HAMMING".to_string(),
+        DistanceMetric::Jaccard => "JACCARD".to_string(),
+    }
+}
+
+pub fn string_to_distance_metric(metric: &str) -> DistanceMetric {
+    match metric.to_uppercase().as_str() {
+        "COSINE" => DistanceMetric::Cosine,
+        "L2" => DistanceMetric::Euclidean,
+        "IP" => DistanceMetric::DotProduct,
+        "L1" => DistanceMetric::Manhattan,
+        "HAMMING" => DistanceMetric::Hamming,
+        "JACCARD" => DistanceMetric::Jaccard,
+        _ => DistanceMetric::Cosine,
+    }
+}
+
+pub fn collection_info_to_export_collection_info(
+    info: &CollectionInfo,
+) -> Result<ExportCollectionInfo, VectorError> {
+    let vector_field = info.fields.iter()
+        .find(|f| f.data_type == "FloatVector" || f.data_type == "BinaryVector")
+        .ok_or_else(|| VectorError::ProviderError("No vector field found".to_string()))?;
+
+    let dimension = vector_field.element_type_params
+        .as_ref()
+        .and_then(|params| params.get("dim"))
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32)
+        .unwrap_or(0);
+
+    let metric = info.indexes.first()
+        .map(|idx| string_to_distance_metric(&idx.metric_type))
+        .unwrap_or(DistanceMetric::Cosine);
+
+    Ok(ExportCollectionInfo {
+        name: info.collection_name.clone(),
+        description: info.description.clone(),
+        dimension,
+        metric,
+        vector_count: 0,
+        size_bytes: None,
+        index_ready: info.load == "Loaded",
+        created_at: None,
+        updated_at: None,
+        provider_stats: None,
+    })
+}
+
+pub fn vector_records_to_insert_request(
+    collection_name: &str,
+    db_name: &str,
+    vectors: &[VectorRecord],
+) -> Result<InsertRequest, VectorError> {
+    let mut data = Vec::new();
+
+    for record in vectors {
+        let mut entity = Map::new();
+        
+        entity.insert("id".to_string(), json_value_from_id(&record.id));
+        
+        match &record.vector {
+            VectorData::Dense(values) => {
+                entity.insert("vector".to_string(), Value::Array(
+                    values.iter().map(|&v| Value::Number(
+                        serde_json::Number::from_f64(v as f64).unwrap()
+                    )).collect()
+                ));
+            }
+            VectorData::Sparse(_) => {
+                return Err(VectorError::UnsupportedFeature("Sparse vectors not fully supported".to_string()));
+            }
+            VectorData::Binary(_) => {
+                return Err(VectorError::UnsupportedFeature("Binary vectors not fully supported".to_string()));
+            }
+            VectorData::Half(_) => {
+                return Err(VectorError::UnsupportedFeature("Half vectors not supported".to_string()));
+            }
+            VectorData::Named(_) => {
+                return Err(VectorError::UnsupportedFeature("Named vectors not supported".to_string()));
+            }
+            VectorData::Hybrid(_) => {
+                return Err(VectorError::UnsupportedFeature("Hybrid vectors not supported".to_string()));
+            }
+        }
+        
+        if let Some(metadata) = &record.metadata {
+            for (key, value) in metadata {
+                entity.insert(key.clone(), metadata_value_to_json(value)?);
+            }
+        }
+        
+        data.push(Value::Object(entity));
+    }
+
+    Ok(InsertRequest {
+        db_name: db_name.to_string(),
+        collection_name: collection_name.to_string(),
+        data,
+    })
+}
+
+pub fn vector_records_to_upsert_request(
+    collection_name: &str,
+    db_name: &str,
+    vectors: &[VectorRecord],
+) -> Result<UpsertRequest, VectorError> {
+    let insert_req = vector_records_to_insert_request(collection_name, db_name, vectors)?;
+    
+    Ok(UpsertRequest {
+        db_name: insert_req.db_name,
+        collection_name: insert_req.collection_name,
+        data: insert_req.data,
+    })
+}
+
+pub fn create_search_request(
+    collection_name: &str,
+    db_name: &str,
+    query: &golem_vector::exports::golem::vector::search::SearchQuery,
+    limit: u32,
+    filter: Option<&FilterExpression>,
+    output_fields: Option<&[String]>,
+    anns_field: &str,
+    metric_type: &str,
+) -> Result<SearchRequest, VectorError> {
+    let data = match query {
+        golem_vector::exports::golem::vector::search::SearchQuery::Vector(vector_data) => {
+            match vector_data {
+                VectorData::Dense(values) => vec![values.clone()],
+                _ => return Err(VectorError::UnsupportedFeature("Only dense vectors supported for search".to_string())),
+            }
+        }
+        golem_vector::exports::golem::vector::search::SearchQuery::ById(_) => {
+            return Err(VectorError::UnsupportedFeature("Search by ID not directly supported".to_string()));
+        }
+        golem_vector::exports::golem::vector::search::SearchQuery::MultiVector(_) => {
+            return Err(VectorError::UnsupportedFeature("Multi-vector search not supported".to_string()));
+        }
+    };
+
+    let filter_expr = if let Some(filter) = filter {
+        Some(filter_expression_to_milvus_expr(filter)?)
+    } else {
+        None
+    };
+
+    Ok(SearchRequest {
+        db_name: db_name.to_string(),
+        collection_name: collection_name.to_string(),
+        data,
+        anns_field: anns_field.to_string(),
+        metric_type: metric_type.to_string(),
+        limit,
+        filter: filter_expr,
+        output_fields: output_fields.map(|f| f.to_vec()),
+        search_params: None,
+    })
+}
+
+pub fn create_query_request(
+    collection_name: &str,
+    db_name: &str,
+    ids: Option<&[String]>,
+    filter: Option<&FilterExpression>,
+    output_fields: Option<&[String]>,
+    limit: Option<u32>,
+    offset: Option<u32>,
+) -> Result<QueryRequest, VectorError> {
+    let filter_expr = if let Some(filter) = filter {
+        Some(filter_expression_to_milvus_expr(filter)?)
+    } else {
+        None
+    };
+
+    let ids_json = if let Some(ids) = ids {
+        Some(ids.iter().map(|id| Value::String(id.clone())).collect())
+    } else {
+        None
+    };
+
+    Ok(QueryRequest {
+        db_name: db_name.to_string(),
+        collection_name: collection_name.to_string(),
+        filter: filter_expr,
+        ids: ids_json,
+        output_fields: output_fields.map(|f| f.to_vec()),
+        limit,
+        offset,
+    })
+}
+
+pub fn create_get_request(
+    collection_name: &str,
+    db_name: &str,
+    ids: &[String],
+    output_fields: Option<&[String]>,
+) -> GetRequest {
+    GetRequest {
+        db_name: db_name.to_string(),
+        collection_name: collection_name.to_string(),
+        ids: ids.iter().map(|id| Value::String(id.clone())).collect(),
+        output_fields: output_fields.map(|f| f.to_vec()),
+    }
+}
+
+pub fn create_delete_request(
+    collection_name: &str,
+    db_name: &str,
+    ids: Option<&[String]>,
+    filter: Option<&FilterExpression>,
+) -> Result<DeleteRequest, VectorError> {
+    let filter_expr = if let Some(filter) = filter {
+        Some(filter_expression_to_milvus_expr(filter)?)
+    } else {
+        None
+    };
+
+    let ids_json = if let Some(ids) = ids {
+        Some(ids.iter().map(|id| Value::String(id.clone())).collect())
+    } else {
+        None
+    };
+
+    Ok(DeleteRequest {
+        db_name: db_name.to_string(),
+        collection_name: collection_name.to_string(),
+        ids: ids_json,
+        filter: filter_expr,
+    })
+}
+
+pub fn milvus_search_results_to_search_results(
+    results: &[Vec<MilvusSearchResult>],
+) -> Result<Vec<SearchResult>, VectorError> {
+    if results.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut search_results = Vec::new();
+    
+    for result in &results[0] {
+        let vector_data = if let Some(entity) = &result.entity {
+            if let Some(vector_val) = entity.get("vector") {
+                Some(json_to_vector_data(vector_val)?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let metadata = if let Some(entity) = &result.entity {
+            let mut meta = Vec::new();
+            for (key, value) in entity {
+                if key != "vector" && key != "id" {
+                    meta.push((key.clone(), json_to_metadata_value(value)?));
+                }
+            }
+            if meta.is_empty() { None } else { Some(meta) }
+        } else {
+            None
+        };
+
+        search_results.push(SearchResult {
+            id: json_to_id(&result.id)?,
+            score: 1.0 - result.distance,
+            distance: result.distance,
+            vector: vector_data,
+            metadata,
+        });
+    }
+
+    Ok(search_results)
+}
+
+pub fn milvus_entities_to_vector_records(
+    entities: &[HashMap<String, Value>],
+) -> Result<Vec<VectorRecord>, VectorError> {
+    let mut records = Vec::new();
+
+    for entity in entities {
+        let id = entity.get("id")
+            .ok_or_else(|| VectorError::ProviderError("Missing id field".to_string()))?;
+        
+        let vector_data = if let Some(vector_val) = entity.get("vector") {
+            json_to_vector_data(vector_val)?
+        } else {
+            VectorData::Dense(Vec::new())
+        };
+
+        let mut metadata = Vec::new();
+        for (key, value) in entity {
+            if key != "vector" && key != "id" {
+                metadata.push((key.clone(), json_to_metadata_value(value)?));
+            }
+        }
+
+        records.push(VectorRecord {
+            id: json_to_id(id)?,
+            vector: vector_data,
+            metadata: if metadata.is_empty() { None } else { Some(metadata) },
+        });
+    }
+
+    Ok(records)
+}
+
+pub fn collection_stats_to_export_stats(
+    stats: &CollectionStats,
+) -> ExportCollectionStats {
+    ExportCollectionStats {
+        vector_count: stats.row_count,
+        dimension: 0,
+        size_bytes: 0,
+        index_size_bytes: None,
+        namespace_stats: Vec::new(),
+        distance_distribution: None,
+    }
+}
+
+pub fn milvus_error_to_vector_error(error_msg: &str) -> VectorError {
+    if error_msg.contains("not found") || error_msg.contains("doesn't exist") {
+        VectorError::NotFound(error_msg.to_string())
+    } else if error_msg.contains("already exists") {
+        VectorError::AlreadyExists(error_msg.to_string())
+    } else if error_msg.contains("invalid") || error_msg.contains("bad") {
+        VectorError::InvalidParams(error_msg.to_string())
+    } else if error_msg.contains("unauthorized") || error_msg.contains("permission") {
+        VectorError::Unauthorized(error_msg.to_string())
+    } else if error_msg.contains("rate limit") {
+        VectorError::RateLimited(error_msg.to_string())
+    } else if error_msg.contains("unsupported") || error_msg.contains("not supported") {
+        VectorError::UnsupportedFeature(error_msg.to_string())
+    } else {
+        VectorError::ProviderError(error_msg.to_string())
+    }
+}
+
+// helper functions for conversions
+
+fn json_value_from_id(id: &str) -> Value {
+    if let Ok(num) = id.parse::<i64>() {
+        Value::Number(serde_json::Number::from(num))
+    } else {
+        Value::String(id.to_string())
+    }
+}
+
+fn json_to_id(value: &Value) -> Result<String, VectorError> {
+    match value {
+        Value::String(s) => Ok(s.clone()),
+        Value::Number(n) => Ok(n.to_string()),
+        _ => Err(VectorError::ProviderError(format!("Invalid ID type: {:?}", value))),
+    }
+}
+
+fn metadata_value_to_json(value: &MetadataValue) -> Result<Value, VectorError> {
+    match value {
+        MetadataValue::StringVal(s) => Ok(Value::String(s.clone())),
+        MetadataValue::NumberVal(n) => Ok(Value::Number(
+            serde_json::Number::from_f64(*n)
+                .ok_or_else(|| VectorError::InvalidParams("Invalid number".to_string()))?
+        )),
+        MetadataValue::IntegerVal(i) => Ok(Value::Number(serde_json::Number::from(*i))),
+        MetadataValue::BooleanVal(b) => Ok(Value::Bool(*b)),
+        MetadataValue::ArrayVal(arr) => {
+            let mut json_arr = Vec::new();
+            for item in arr {
+                json_arr.push(metadata_value_to_json(&item.get())?);
+            }
+            Ok(Value::Array(json_arr))
+        }
+        MetadataValue::ObjectVal(obj) => {
+            let mut json_obj = Map::new();
+            for (key, value) in obj {
+                json_obj.insert(key.clone(), metadata_value_to_json(&value.get())?);
+            }
+            Ok(Value::Object(json_obj))
+        }
+        MetadataValue::NullVal => Ok(Value::Null),
+        MetadataValue::GeoVal(geo) => {
+            let mut geo_obj = Map::new();
+            geo_obj.insert("latitude".to_string(), Value::Number(
+                serde_json::Number::from_f64(geo.latitude)
+                    .ok_or_else(|| VectorError::InvalidParams("Invalid latitude".to_string()))?
+            ));
+            geo_obj.insert("longitude".to_string(), Value::Number(
+                serde_json::Number::from_f64(geo.longitude)
+                    .ok_or_else(|| VectorError::InvalidParams("Invalid longitude".to_string()))?
+            ));
+            Ok(Value::Object(geo_obj))
+        }
+        MetadataValue::DatetimeVal(dt) => Ok(Value::String(dt.clone())),
+        MetadataValue::BlobVal(blob) => {
+            use base64::Engine;
+            Ok(Value::String(base64::engine::general_purpose::STANDARD.encode(blob)))
+        }
+    }
+}
+
+fn json_to_metadata_value(value: &Value) -> Result<MetadataValue, VectorError> {
+    match value {
+        Value::String(s) => Ok(MetadataValue::StringVal(s.clone())),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(MetadataValue::IntegerVal(i))
+            } else if let Some(f) = n.as_f64() {
+                Ok(MetadataValue::NumberVal(f))
+            } else {
+                Err(VectorError::ProviderError("Invalid number format".to_string()))
+            }
+        }
+        Value::Bool(b) => Ok(MetadataValue::BooleanVal(*b)),
+        Value::Array(arr) => {
+            let mut metadata_arr = Vec::new();
+            for item in arr {
+                let metadata_val = json_to_metadata_value(item)?;
+                metadata_arr.push(golem_vector::exports::golem::vector::types::MetadataFunc::new(metadata_val));
+            }
+            Ok(MetadataValue::ArrayVal(metadata_arr))
+        }
+        Value::Object(obj) => {
+            if obj.contains_key("latitude") && obj.contains_key("longitude") {
+                let lat = obj.get("latitude")
+                    .and_then(|v| v.as_f64())
+                    .ok_or_else(|| VectorError::ProviderError("Invalid latitude in geo object".to_string()))?;
+                let lon = obj.get("longitude")
+                    .and_then(|v| v.as_f64())
+                    .ok_or_else(|| VectorError::ProviderError("Invalid longitude in geo object".to_string()))?;
+                
+                return Ok(MetadataValue::GeoVal(golem_vector::golem::vector::types::GeoCoordinates {
+                    latitude: lat,
+                    longitude: lon,
+                }));
+            }
+
+            let mut metadata_obj = Vec::new();
+            for (key, value) in obj {
+                let metadata_val = json_to_metadata_value(value)?;
+                metadata_obj.push((key.clone(), golem_vector::exports::golem::vector::types::MetadataFunc::new(metadata_val)));
+            }
+            Ok(MetadataValue::ObjectVal(metadata_obj))
+        }
+        Value::Null => Ok(MetadataValue::NullVal),
+    }
+}
+
+fn json_to_vector_data(value: &Value) -> Result<VectorData, VectorError> {
+    match value {
+        Value::Array(arr) => {
+            let mut vector = Vec::new();
+            for item in arr {
+                if let Some(f) = item.as_f64() {
+                    vector.push(f as f32);
+                } else {
+                    return Err(VectorError::ProviderError("Invalid vector value".to_string()));
+                }
+            }
+            Ok(VectorData::Dense(vector))
+        }
+        _ => Err(VectorError::ProviderError("Invalid vector format".to_string())),
+    }
+}
+
+fn filter_expression_to_milvus_expr(filter: &FilterExpression) -> Result<String, VectorError> {
+    match filter {
+        FilterExpression::Condition(condition) => {
+            filter_condition_to_milvus_expr(condition)
+        }
+        FilterExpression::And(expressions) => {
+            let mut expr_parts = Vec::new();
+            for expr in expressions {
+                expr_parts.push(format!("({})", filter_expression_to_milvus_expr(&expr.get())?));
+            }
+            Ok(format!("({})", expr_parts.join(" && ")))
+        }
+        FilterExpression::Or(expressions) => {
+            let mut expr_parts = Vec::new();
+            for expr in expressions {
+                expr_parts.push(format!("({})", filter_expression_to_milvus_expr(&expr.get())?));
+            }
+            Ok(format!("({})", expr_parts.join(" || ")))
+        }
+        FilterExpression::Not(expression) => {
+            Ok(format!("!({})", filter_expression_to_milvus_expr(&expression.get())?))
+        }
+    }
+}
+
+fn filter_condition_to_milvus_expr(condition: &FilterCondition) -> Result<String, VectorError> {
+    let field = &condition.field;
+    let value_str = metadata_value_to_filter_value(&condition.value)?;
+    
+    let expr = match condition.operator {
+        FilterOperator::Eq => format!("{} == {}", field, value_str),
+        FilterOperator::Ne => format!("{} != {}", field, value_str),
+        FilterOperator::Gt => format!("{} > {}", field, value_str),
+        FilterOperator::Gte => format!("{} >= {}", field, value_str),
+        FilterOperator::Lt => format!("{} < {}", field, value_str),
+        FilterOperator::Lte => format!("{} <= {}", field, value_str),
+        FilterOperator::In => {
+            if let MetadataValue::ArrayVal(arr) = &condition.value {
+                let values: Result<Vec<String>, _> = arr.iter()
+                    .map(|v| metadata_value_to_filter_value(&v.get()))
+                    .collect();
+                format!("{} in [{}]", field, values?.join(", "))
+            } else {
+                return Err(VectorError::InvalidParams("IN operator requires array value".to_string()));
+            }
+        }
+        FilterOperator::Nin => {
+            if let MetadataValue::ArrayVal(arr) = &condition.value {
+                let values: Result<Vec<String>, _> = arr.iter()
+                    .map(|v| metadata_value_to_filter_value(&v.get()))
+                    .collect();
+                format!("{} not in [{}]", field, values?.join(", "))
+            } else {
+                return Err(VectorError::InvalidParams("NIN operator requires array value".to_string()));
+            }
+        }
+        FilterOperator::Contains => {
+            return Err(VectorError::UnsupportedFeature("Contains operator not supported in Milvus".to_string()));
+        }
+        FilterOperator::NotContains => {
+            return Err(VectorError::UnsupportedFeature("NotContains operator not supported in Milvus".to_string()));
+        }
+        FilterOperator::Regex => {
+            return Err(VectorError::UnsupportedFeature("Regex operator not supported in Milvus".to_string()));
+        }
+        FilterOperator::GeoWithin => {
+            return Err(VectorError::UnsupportedFeature("GeoWithin operator not supported in Milvus".to_string()));
+        }
+        FilterOperator::GeoBbox => {
+            return Err(VectorError::UnsupportedFeature("GeoBbox operator not supported in Milvus".to_string()));
+        }
+    };
+    
+    Ok(expr)
+}
+
+fn metadata_value_to_filter_value(value: &MetadataValue) -> Result<String, VectorError> {
+    match value {
+        MetadataValue::StringVal(s) => Ok(format!("\"{}\"", s)),
+        MetadataValue::NumberVal(n) => Ok(n.to_string()),
+        MetadataValue::IntegerVal(i) => Ok(i.to_string()),
+        MetadataValue::BooleanVal(b) => Ok(b.to_string()),
+        _ => Err(VectorError::InvalidParams("Unsupported metadata value type for filtering".to_string())),
+    }
+}
