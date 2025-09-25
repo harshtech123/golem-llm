@@ -1,4 +1,3 @@
-use crate::chat_session::ChatSession;
 use crate::golem::llm::llm::{ChatEvent, Config, ContentPart, Guest, Message, Role, StreamDelta};
 use golem_rust::wasm_rpc::Pollable;
 use indoc::indoc;
@@ -111,11 +110,10 @@ mod passthrough_impl {
 /// which is implemented using the type classes and builder in the `golem-rust` library.
 #[cfg(feature = "durability")]
 mod durable_impl {
-    use crate::chat_session::ChatSession;
     use crate::durability::{DurableLLM, ExtendedGuest};
     use crate::golem::llm::llm::{
-        ChatEvent, ChatResponse, ChatStream, Config, Guest, GuestChatStream, Message, StreamDelta,
-        StreamEvent, ToolCall, ToolResult,
+        ChatEvent, ChatResponse, ChatStream, Config, Guest, GuestChatStream, StreamDelta,
+        StreamEvent,
     };
     use crate::init_logging;
     use golem_rust::bindings::golem::durability::durability::DurableFunctionType;
@@ -129,7 +127,7 @@ mod durable_impl {
 
     impl<Impl: ExtendedGuest> Guest for DurableLLM<Impl> {
         type ChatStream = DurableChatStream<Impl>;
-        type ChatSession = ChatSession;
+        type ChatSession = Impl::ChatSession;
 
         fn send(config: Config, events: Vec<ChatEvent>) -> ChatResponse {
             init_logging();

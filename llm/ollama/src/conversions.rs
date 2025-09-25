@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
+use crate::client::MessageRole::Assistant;
 use crate::client::{
     image_to_base64, CompletionsRequest, CompletionsResponse, FunctionTool, MessageRequest,
-    MessageRole, OllamaModelOptions, Tool, ToolCall,
+    MessageRole, OllamaModelOptions, Tool,
 };
 use base64::{engine::general_purpose, Engine};
 use golem_llm::golem::llm::llm::{
@@ -10,7 +11,6 @@ use golem_llm::golem::llm::llm::{
     ImageReference, Message, ResponseMetadata, Role, ToolCall as GolemToolCall, ToolResult, Usage,
 };
 use log::trace;
-use serde_json::to_string;
 
 pub fn events_to_request(
     config: &Config,
@@ -142,16 +142,66 @@ fn message_to_request(message: &Message) -> MessageRequest {
 }
 
 fn response_to_request(response: &CompleteResponse) -> MessageRequest {
-    todo!()
+    let mut message_content = String::new();
+    let mut attached_image = Vec::new();
+
+    for content_part in &response.content {
+        match content_part {
+            ContentPart::Text(text) => {
+                if !message_content.is_empty() {
+                    message_content.push('\n');
+                }
+                message_content.push_str(&text);
+            }
+            ContentPart::Image(reference) => match reference {
+                ImageReference::Url(image_url) => {
+                    let url = &image_url.url;
+                    match image_to_base64(url) {
+                        Ok(image) => attached_image.push(image),
+                        Err(err) => {
+                            trace!("Failed to encode image: {url}\nError: {err}\n");
+                        }
+                    }
+                }
+                ImageReference::Inline(image_source) => {
+                    let base64_data = general_purpose::STANDARD.encode(&image_source.data);
+                    attached_image.push(base64_data);
+                }
+            },
+        }
+    }
+
+    MessageRequest {
+        content: message_content,
+        role: Assistant,
+        images: if attached_image.is_empty() {
+            None
+        } else {
+            Some(attached_image)
+        },
+        tools_calls: None,
+    }
 }
 
 fn tool_call_to_request(tool_call: &GolemToolCall) -> MessageRequest {
-    todo!()
+    MessageRequest {
+        role: MessageRole::Assistant,
+        content: "".to_string(),
+        images: None,
+        tools_calls: Some(vec![Tool {
+            tool_type: String::from("function"),
+            function: FunctionTool {
+                name: tool_call.name.clone(),
+                description: "".to_string(),
+                parameters: tool_call.arguments_json.clone().parse().unwrap_or_default(),
+            },
+        }]),
+    }
 }
 
 fn tool_result_to_request(tool_result: &ToolResult) -> MessageRequest {
     MessageRequest {
-        role: MessageRole::Assistant,
+        role: MessageRole::User,
         // For better durability, we will add the tool call result in a structured format.
         // This will help in retying and continuing the interrupted conversation.
         // This will help prevent branching conversations and repeating the tool call.
@@ -173,20 +223,7 @@ fn tool_result_to_request(tool_result: &ToolResult) -> MessageRequest {
             ),
         },
         images: None,
-        // This is the tool called by llm
-        tools_calls: Some(vec![Tool {
-            tool_type: String::from("function"),
-            function: FunctionTool {
-                name: match tool_result {
-                    ToolResult::Success(success) => {
-                        success.name.clone()
-                    }
-                    ToolResult::Error(error) => error.name.clone(),
-                },
-                description: String::new(),
-                parameters: serde_json::json!({}),
-            },
-        }]),
+        tools_calls: None,
     }
 }
 

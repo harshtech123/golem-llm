@@ -10,7 +10,7 @@ use golem_llm::{
     event_source::EventSource,
     golem::llm::llm::{
         ChatEvent, ChatStream, Config, ContentPart, Error, FinishReason, Guest, Message,
-        ResponseMetadata, Role, StreamDelta, StreamEvent, ToolCall, ToolResult, Usage,
+        ResponseMetadata, Role, StreamDelta, StreamEvent, ToolCall, Usage,
     },
 };
 use golem_rust::wasm_rpc::Pollable;
@@ -202,7 +202,7 @@ impl OllamaComponent {
 
 impl Guest for OllamaComponent {
     type ChatStream = LlmChatStream<OllamaChatStream>;
-    type ChatSession = ChatSession;
+    type ChatSession = ChatSession<DurableOllamaComponent>;
 
     fn send(config: Config, events: Vec<ChatEvent>) -> ChatResponse {
         let client = OllamaApi::new(config.model.clone());

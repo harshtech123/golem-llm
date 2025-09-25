@@ -199,7 +199,9 @@ interface llm {
     constructor(config: config);
 
     add-message: func(message: message);
+    add-messages: func(messages: list<message>);
     add-tool-result: func(tool-result: tool-result);
+    add-tool-results: func(tool-results: list<tool-result>);
 
     // Observe all events in the session
     get-chat-events: func() -> list<chat-event>;
