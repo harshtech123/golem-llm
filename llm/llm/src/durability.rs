@@ -11,7 +11,7 @@ pub struct DurableLLM<Impl> {
 /// Trait to be implemented in addition to the LLM `Guest` trait when wrapping it with `DurableLLM`.
 pub trait ExtendedGuest: Guest + 'static {
     /// Creates an instance of the LLM specific `ChatStream` without wrapping it in a `Resource`
-    fn unwrapped_stream(config: &Config, events: &[ChatEvent]) -> Self::ChatStream;
+    fn unwrapped_stream(config: &Config, events: Vec<ChatEvent>) -> Self::ChatStream;
 
     /// Creates the retry prompt with a combination of the original events, and the partially received
     /// streaming responses. There is a default implementation here, but it can be overridden with provider-specific
@@ -158,7 +158,8 @@ mod durable_impl {
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
                     ChatStream::new(DurableChatStream::<Impl>::live(Impl::unwrapped_stream(
-                        &config, &events,
+                        &config,
+                        events.clone(),
                     )))
                 });
                 let _ = durability.persist_infallible(SendInput { config, events }, NoOutput);
@@ -313,7 +314,7 @@ mod durable_impl {
                                 with_persistence_level(PersistenceLevel::PersistNothing, || {
                                     let stream = <Impl as ExtendedGuest>::unwrapped_stream(
                                         config,
-                                        &extended_events,
+                                        extended_events,
                                     );
                                     #[cfg(not(feature = "nopoll"))]
                                     for lazy_initialized_pollable in pollables {

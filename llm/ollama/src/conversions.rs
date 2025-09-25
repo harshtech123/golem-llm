@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::client::MessageRole::Assistant;
 use crate::client::{
     image_to_base64, CompletionsRequest, CompletionsResponse, FunctionTool, MessageRequest,
@@ -11,10 +9,11 @@ use golem_llm::golem::llm::llm::{
     ImageReference, Message, ResponseMetadata, Role, ToolCall as GolemToolCall, ToolResult, Usage,
 };
 use log::trace;
+use std::collections::HashMap;
 
 pub fn events_to_request(
     config: &Config,
-    events: &[ChatEvent],
+    events: Vec<ChatEvent>,
 ) -> Result<CompletionsRequest, Error> {
     let options = config
         .provider_options
@@ -29,10 +28,10 @@ pub fn events_to_request(
             ChatEvent::Message(message) => request_messages.push(message_to_request(message)),
             ChatEvent::Response(response) => request_messages.push(response_to_request(response)),
             ChatEvent::ToolCalls(tool_calls) => {
-                request_messages.extend(tool_calls.iter().map(tool_call_to_request))
+                request_messages.extend(tool_calls.into_iter().map(tool_call_to_request))
             }
             ChatEvent::ToolResults(tool_results) => {
-                request_messages.extend(tool_results.iter().map(tool_result_to_request))
+                request_messages.extend(tool_results.into_iter().map(tool_result_to_request))
             }
         }
     }
@@ -92,7 +91,7 @@ pub fn events_to_request(
     })
 }
 
-fn message_to_request(message: &Message) -> MessageRequest {
+fn message_to_request(message: Message) -> MessageRequest {
     let message_role = match message.role {
         Role::Assistant => MessageRole::Assistant,
         Role::System => MessageRole::System,
@@ -103,7 +102,7 @@ fn message_to_request(message: &Message) -> MessageRequest {
     let mut message_content = String::new();
     let mut attached_image = Vec::new();
 
-    for content_part in &message.content {
+    for content_part in message.content {
         match content_part {
             ContentPart::Text(text) => {
                 if !message_content.is_empty() {
@@ -141,11 +140,11 @@ fn message_to_request(message: &Message) -> MessageRequest {
     }
 }
 
-fn response_to_request(response: &CompleteResponse) -> MessageRequest {
+fn response_to_request(response: CompleteResponse) -> MessageRequest {
     let mut message_content = String::new();
     let mut attached_image = Vec::new();
 
-    for content_part in &response.content {
+    for content_part in response.content {
         match content_part {
             ContentPart::Text(text) => {
                 if !message_content.is_empty() {
@@ -183,7 +182,7 @@ fn response_to_request(response: &CompleteResponse) -> MessageRequest {
     }
 }
 
-fn tool_call_to_request(tool_call: &GolemToolCall) -> MessageRequest {
+fn tool_call_to_request(tool_call: GolemToolCall) -> MessageRequest {
     MessageRequest {
         role: MessageRole::Assistant,
         content: "".to_string(),
@@ -199,7 +198,7 @@ fn tool_call_to_request(tool_call: &GolemToolCall) -> MessageRequest {
     }
 }
 
-fn tool_result_to_request(tool_result: &ToolResult) -> MessageRequest {
+fn tool_result_to_request(tool_result: ToolResult) -> MessageRequest {
     MessageRequest {
         role: MessageRole::User,
         // For better durability, we will add the tool call result in a structured format.

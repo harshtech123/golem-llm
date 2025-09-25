@@ -206,19 +206,22 @@ impl Guest for OllamaComponent {
 
     fn send(config: Config, events: Vec<ChatEvent>) -> ChatResponse {
         let client = OllamaApi::new(config.model.clone());
-        match events_to_request(&config, &events) {
+        match events_to_request(&config, events) {
             Ok(request) => Self::request(&client, request),
             Err(err) => ChatResponse::Error(err),
         }
     }
 
     fn stream(config: Config, events: Vec<ChatEvent>) -> ChatStream {
-        ChatStream::new(Self::unwrapped_stream(&config, &events))
+        ChatStream::new(Self::unwrapped_stream(&config, events))
     }
 }
 
 impl ExtendedGuest for OllamaComponent {
-    fn unwrapped_stream(config: &Config, events: &[ChatEvent]) -> LlmChatStream<OllamaChatStream> {
+    fn unwrapped_stream(
+        config: &Config,
+        events: Vec<ChatEvent>,
+    ) -> LlmChatStream<OllamaChatStream> {
         let client = OllamaApi::new(config.model.clone());
         match events_to_request(config, events) {
             Ok(request) => Self::streaming_request(&client, request),
