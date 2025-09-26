@@ -9,17 +9,17 @@ use crate::conversions::{
 use golem_vector::config::{with_config_key, get_optional_config, with_connection_config_key};
 use golem_vector::durability::{ExtendedGuest, DurableVector};
 use golem_vector::golem::vector::{
-    analytics::Guest as AnalyticsGuest,
-    collections::{Guest as CollectionsGuest, CollectionInfo},
-    connection::{Credentials, Guest as ConnectionGuest},
-    namespaces::Guest as NamespacesGuest,
-    search::Guest as SearchGuest,
-    search_extended::Guest as SearchExtendedGuest,
+    analytics::{Guest as AnalyticsGuest, FieldStats, CollectionStats},
+    collections::{Guest as CollectionsGuest, CollectionInfo, IndexConfig},
+    connection::{Credentials, Guest as ConnectionGuest, ConnectionStatus  },
+    namespaces::{Guest as NamespacesGuest, NamespaceInfo},
+    search::{Guest as SearchGuest, SearchQuery},
+    search_extended::{Guest as SearchExtendedGuest, GroupedSearchResult, RecommendationExample, RecommendationStrategy, ContextPair},
     types::{
         DistanceMetric, FilterExpression, Id, Metadata, SearchResult, VectorData,
-        VectorError, VectorRecord,
+        VectorError, VectorRecord, MetadataValue,
     },
-    vectors::Guest as VectorsGuest,
+    vectors::{Guest as VectorsGuest, ListResponse, BatchResult},
 };
 
 mod client;
@@ -87,18 +87,18 @@ impl ConnectionGuest for MilvusComponent {
         Ok(())
     }
 
-    fn get_connection_status() -> Result<golem_vector::exports::golem::vector::connection::ConnectionStatus, VectorError> {
+    fn get_connection_status() -> Result<ConnectionStatus, VectorError> {
         match Self::create_client() {
             Ok(client) => {
                 match client.list_collections() {
-                    Ok(_) => Ok(golem_vector::exports::golem::vector::connection::ConnectionStatus {
+                    Ok(_) => Ok(ConnectionStatus {
                         connected: true,
                         provider: Some("milvus".to_string()),
                         endpoint: Some(client.base_url().to_string()),
                         last_activity: None,
                         connection_id: Some("milvus-api".to_string()),
                     }),
-                    Err(_) => Ok(golem_vector::exports::golem::vector::connection::ConnectionStatus {
+                    Err(_) => Ok(ConnectionStatus {
                         connected: false,
                         provider: Some("milvus".to_string()),
                         endpoint: Some(client.base_url().to_string()),
@@ -107,7 +107,7 @@ impl ConnectionGuest for MilvusComponent {
                     }),
                 }
             }
-            Err(_) => Ok(golem_vector::exports::golem::vector::connection::ConnectionStatus {
+            Err(_) => Ok(ConnectionStatus {
                 connected: false,
                 provider: Some("milvus".to_string()),
                 endpoint: Some("http://localhost:19530".to_string()),
@@ -141,7 +141,7 @@ impl CollectionsGuest for MilvusComponent {
         description: Option<String>,
         dimension: u32,
         metric: DistanceMetric,
-        _index_config: Option<golem_vector::exports::golem::vector::collections::IndexConfig>,
+        _index_config: Option<IndexConfig>,
         _metadata: Option<Metadata>,
     ) -> Result<CollectionInfo, VectorError> {
         let client = Self::create_client()?;
@@ -252,7 +252,7 @@ impl VectorsGuest for MilvusComponent {
         collection: String,
         vectors: Vec<VectorRecord>,
         namespace: Option<String>,
-    ) -> Result<golem_vector::exports::golem::vector::vectors::BatchResult, VectorError> {
+    ) -> Result<BatchResult, VectorError> {
         let client = Self::create_client()?;
         
         let upsert_request = vector_records_to_upsert_request(&collection, client.database(), &vectors, namespace.as_deref())?;
@@ -260,7 +260,7 @@ impl VectorsGuest for MilvusComponent {
         match client.upsert(&upsert_request) {
             Ok(response) => {
                 if response.code == 0 {
-                    Ok(golem_vector::exports::golem::vector::vectors::BatchResult {
+                    Ok(BatchResult {
                         success_count: response.data.upsert_count,
                         failure_count: 0,
                         errors: vec![],
@@ -421,7 +421,7 @@ impl VectorsGuest for MilvusComponent {
         _cursor: Option<String>,
         include_vectors: Option<bool>,
         _include_metadata: Option<bool>,
-    ) -> Result<golem_vector::exports::golem::vector::vectors::ListResponse, VectorError> {
+    ) -> Result<ListResponse, VectorError> {
         let client = Self::create_client()?;
         
         let mut output_fields = vec!["id".to_string()];
@@ -445,7 +445,7 @@ impl VectorsGuest for MilvusComponent {
                 if response.code == 0 {
                     let vector_records = milvus_entities_to_vector_records(&response.data)?;
                     
-                    Ok(golem_vector::exports::golem::vector::vectors::ListResponse {
+                    Ok(ListResponse {
                         vectors: vector_records,
                         next_cursor: None, 
                         total_count: None,
@@ -505,7 +505,7 @@ impl VectorsGuest for MilvusComponent {
 impl SearchGuest for MilvusComponent {
     fn search_vectors(
         collection: String,
-        query: golem_vector::exports::golem::vector::search::SearchQuery,
+        query: SearchQuery,
         limit: u32,
         filter: Option<FilterExpression>,
         namespace: Option<String>,
@@ -562,7 +562,6 @@ impl SearchGuest for MilvusComponent {
         limit: u32,
         namespace: Option<String>,
     ) -> Result<Vec<SearchResult>, VectorError> {
-        use golem_vector::exports::golem::vector::search::SearchQuery;
         
         Self::search_vectors(
             collection,
@@ -580,7 +579,7 @@ impl SearchGuest for MilvusComponent {
 
     fn batch_search(
         collection: String,
-        queries: Vec<golem_vector::exports::golem::vector::search::SearchQuery>,
+        queries: Vec<SearchQuery>,
         limit: u32,
         filter: Option<FilterExpression>,
         namespace: Option<String>,
@@ -613,12 +612,12 @@ impl SearchGuest for MilvusComponent {
 impl SearchExtendedGuest for MilvusComponent {
     fn recommend_vectors(
         _collection: String,
-        _positive: Vec<golem_vector::exports::golem::vector::search_extended::RecommendationExample>,
-        _negative: Option<Vec<golem_vector::exports::golem::vector::search_extended::RecommendationExample>>,
+        _positive: Vec<RecommendationExample>,
+        _negative: Option<Vec<RecommendationExample>>,
         _limit: u32,
         _filter: Option<FilterExpression>,
         _namespace: Option<String>,
-        _strategy: Option<golem_vector::exports::golem::vector::search_extended::RecommendationStrategy>,
+        _strategy: Option<RecommendationStrategy>,
         _include_vectors: Option<bool>,
         _include_metadata: Option<bool>,
     ) -> Result<Vec<SearchResult>, VectorError> {
@@ -627,7 +626,7 @@ impl SearchExtendedGuest for MilvusComponent {
 
     fn discover_vectors(
         _collection: String,
-        _context_pairs: Vec<golem_vector::exports::golem::vector::search_extended::ContextPair>,
+        _context_pairs: Vec<ContextPair>,
         _limit: u32,
         _filter: Option<FilterExpression>,
         _namespace: Option<String>,
@@ -639,7 +638,7 @@ impl SearchExtendedGuest for MilvusComponent {
 
     fn search_groups(
         _collection: String,
-        _query: golem_vector::exports::golem::vector::search::SearchQuery,
+        _query: SearchQuery,
         _group_by: String,
         _group_size: u32,
         _max_groups: u32,
@@ -647,7 +646,7 @@ impl SearchExtendedGuest for MilvusComponent {
         _namespace: Option<String>,
         _include_vectors: Option<bool>,
         _include_metadata: Option<bool>,
-    ) -> Result<Vec<golem_vector::exports::golem::vector::search_extended::GroupedSearchResult>, VectorError> {
+    ) -> Result<Vec<GroupedSearchResult>, VectorError> {
         Err(VectorError::UnsupportedFeature("Grouped search not supported by Milvus".to_string()))
     }
 
@@ -680,7 +679,7 @@ impl AnalyticsGuest for MilvusComponent {
     fn get_collection_stats(
         collection: String,
         _namespace: Option<String>,
-    ) -> Result<golem_vector::exports::golem::vector::analytics::CollectionStats, VectorError> {
+    ) -> Result<CollectionStats, VectorError> {
         let client = Self::create_client()?;
         
         match client.get_collection_stats(&collection) {
@@ -699,7 +698,7 @@ impl AnalyticsGuest for MilvusComponent {
         _collection: String,
         _field: String,
         _namespace: Option<String>,
-    ) -> Result<golem_vector::exports::golem::vector::analytics::FieldStats, VectorError> {
+    ) -> Result<FieldStats, VectorError> {
         Err(VectorError::UnsupportedFeature("Field stats not supported by Milvus".to_string()))
     }
 
@@ -708,7 +707,7 @@ impl AnalyticsGuest for MilvusComponent {
         _field: String,
         _limit: Option<u32>,
         _namespace: Option<String>,
-    ) -> Result<Vec<(golem_vector::exports::golem::vector::types::MetadataValue, u64)>, VectorError> {
+    ) -> Result<Vec<(MetadataValue, u64)>, VectorError> {
         Err(VectorError::UnsupportedFeature("Field distribution not supported by Milvus".to_string()))
     }
 }
@@ -718,13 +717,13 @@ impl NamespacesGuest for MilvusComponent {
         collection: String,
         namespace: String,
         _metadata: Option<Metadata>,
-    ) -> Result<golem_vector::exports::golem::vector::namespaces::NamespaceInfo, VectorError> {
+    ) -> Result<NamespaceInfo, VectorError> {
         let client = Self::create_client()?;
         
         match client.has_partition(&collection, &namespace) {
             Ok(response) => {
                 if response.code == 0 && response.data.has {
-                    Ok(golem_vector::exports::golem::vector::namespaces::NamespaceInfo {
+                    Ok(NamespaceInfo {
                         name: namespace,
                         collection: collection,
                         created_at: None,
@@ -738,7 +737,7 @@ impl NamespacesGuest for MilvusComponent {
                             if create_response.code == 0 {
                                 let _ = client.load_partitions(&collection, vec![namespace.clone()]);
                                 
-                                Ok(golem_vector::exports::golem::vector::namespaces::NamespaceInfo {
+                                Ok(NamespaceInfo {
                                     name: namespace,
                                     collection: collection,
                                     created_at: None,
@@ -760,14 +759,14 @@ impl NamespacesGuest for MilvusComponent {
 
     fn list_namespaces(
         collection: String,
-    ) -> Result<Vec<golem_vector::exports::golem::vector::namespaces::NamespaceInfo>, VectorError> {
+    ) -> Result<Vec<NamespaceInfo>, VectorError> {
         let client = Self::create_client()?;
         
         match client.list_partitions(&collection) {
             Ok(response) => {
                 if response.code == 0 {
                     let namespaces = response.data.into_iter()
-                        .map(|partition_name| golem_vector::exports::golem::vector::namespaces::NamespaceInfo {
+                        .map(|partition_name| NamespaceInfo {
                             name: partition_name,
                             collection: collection.clone(),
                             created_at: None,
@@ -788,13 +787,13 @@ impl NamespacesGuest for MilvusComponent {
     fn get_namespace(
         collection: String,
         namespace: String,
-    ) -> Result<golem_vector::exports::golem::vector::namespaces::NamespaceInfo, VectorError> {
+    ) -> Result<NamespaceInfo, VectorError> {
         let client = Self::create_client()?;
         
         match client.has_partition(&collection, &namespace) {
             Ok(response) => {
                 if response.code == 0 && response.data.has {
-                    Ok(golem_vector::exports::golem::vector::namespaces::NamespaceInfo {
+                    Ok(NamespaceInfo {
                         name: namespace,
                         collection: collection,
                         created_at: None,

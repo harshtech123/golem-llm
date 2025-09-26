@@ -9,8 +9,8 @@ use golem_vector::golem::vector::types::{
     FilterExpression, FilterCondition, FilterOperator, SearchResult,
     VectorError,BinaryVector, MetadataFunc, SparseVector, GeoCoordinates 
 };
-use golem_vector::exports::golem::vector::search::SearchQuery;
-use golem_vector::exports::golem::vector::{
+use golem_vector::golem::vector::search::SearchQuery;
+use golem_vector::golem::vector::{
     collections::CollectionInfo as ExportCollectionInfo,
     analytics::CollectionStats as ExportCollectionStats,
 };
