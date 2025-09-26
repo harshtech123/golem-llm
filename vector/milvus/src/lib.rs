@@ -157,6 +157,7 @@ impl CollectionsGuest for MilvusComponent {
             enable_dynamic_field: Some(true),
             schema: None,
             index_params: None,
+            vector_field_type: Some("FloatVector".to_string()),
         };
 
         match client.create_collection(&create_request) {
@@ -250,11 +251,11 @@ impl VectorsGuest for MilvusComponent {
     fn upsert_vectors(
         collection: String,
         vectors: Vec<VectorRecord>,
-        _namespace: Option<String>,
+        namespace: Option<String>,
     ) -> Result<golem_vector::exports::golem::vector::vectors::BatchResult, VectorError> {
         let client = Self::create_client()?;
         
-        let upsert_request = vector_records_to_upsert_request(&collection, client.database(), &vectors)?;
+        let upsert_request = vector_records_to_upsert_request(&collection, client.database(), &vectors, namespace.as_deref())?;
         
         match client.upsert(&upsert_request) {
             Ok(response) => {
@@ -354,7 +355,7 @@ impl VectorsGuest for MilvusComponent {
     fn delete_vectors(
         collection: String,
         ids: Vec<Id>,
-        _namespace: Option<String>,
+        namespace: Option<String>,
     ) -> Result<u32, VectorError> {
         let client = Self::create_client()?;
         
@@ -363,6 +364,7 @@ impl VectorsGuest for MilvusComponent {
             client.database(),
             Some(&ids),
             None,
+            namespace.as_deref(),
         )?;
         
         match client.delete(&delete_request) {
@@ -380,7 +382,7 @@ impl VectorsGuest for MilvusComponent {
     fn delete_by_filter(
         collection: String,
         filter: FilterExpression,
-        _namespace: Option<String>,
+        namespace: Option<String>,
     ) -> Result<u32, VectorError> {
         let client = Self::create_client()?;
         
@@ -389,6 +391,7 @@ impl VectorsGuest for MilvusComponent {
             client.database(),
             None,
             Some(&filter),
+            namespace.as_deref(),
         )?;
         
         match client.delete(&delete_request) {
@@ -412,7 +415,7 @@ impl VectorsGuest for MilvusComponent {
 
     fn list_vectors(
         collection: String,
-        _namespace: Option<String>,
+        namespace: Option<String>,
         filter: Option<FilterExpression>,
         limit: Option<u32>,
         _cursor: Option<String>,
@@ -434,6 +437,7 @@ impl VectorsGuest for MilvusComponent {
             if output_fields.len() == 1 { None } else { Some(&output_fields) },
             limit,
             None,
+            namespace.map(|ns| vec![ns]),
         )?;
         
         match client.query(&query_request) {
@@ -457,7 +461,7 @@ impl VectorsGuest for MilvusComponent {
     fn count_vectors(
         collection: String,
         filter: Option<FilterExpression>,
-        _namespace: Option<String>,
+        namespace: Option<String>,
     ) -> Result<u64, VectorError> {
         let client = Self::create_client()?;
         
@@ -470,6 +474,7 @@ impl VectorsGuest for MilvusComponent {
                 Some(&vec!["id".to_string()]),
                 None,
                 None,
+                namespace.map(|ns| vec![ns]),
             )?;
             
             match client.query(&query_request) {
@@ -503,7 +508,7 @@ impl SearchGuest for MilvusComponent {
         query: golem_vector::exports::golem::vector::search::SearchQuery,
         limit: u32,
         filter: Option<FilterExpression>,
-        _namespace: Option<String>,
+        namespace: Option<String>,
         include_vectors: Option<bool>,
         _include_metadata: Option<bool>,
         min_score: Option<f32>,
@@ -526,6 +531,7 @@ impl SearchGuest for MilvusComponent {
             if output_fields.len() == 1 { None } else { Some(&output_fields) },
             "vector",
             "COSINE", 
+            namespace.map(|ns| vec![ns]),
         )?;
         
         match client.search(&search_request) {
@@ -709,38 +715,133 @@ impl AnalyticsGuest for MilvusComponent {
 
 impl NamespacesGuest for MilvusComponent {
     fn upsert_namespace(
-        _collection: String,
-        _namespace: String,
+        collection: String,
+        namespace: String,
         _metadata: Option<Metadata>,
     ) -> Result<golem_vector::exports::golem::vector::namespaces::NamespaceInfo, VectorError> {
-        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces".to_string()))
+        let client = Self::create_client()?;
+        
+        match client.has_partition(&collection, &namespace) {
+            Ok(response) => {
+                if response.code == 0 && response.data.has {
+                    Ok(golem_vector::exports::golem::vector::namespaces::NamespaceInfo {
+                        name: namespace,
+                        collection: collection,
+                        created_at: None,
+                        vector_count: 0,
+                        size_bytes: 0,
+                        metadata: None,
+                    })
+                } else {
+                    match client.create_partition(&collection, &namespace) {
+                        Ok(create_response) => {
+                            if create_response.code == 0 {
+                                let _ = client.load_partitions(&collection, vec![namespace.clone()]);
+                                
+                                Ok(golem_vector::exports::golem::vector::namespaces::NamespaceInfo {
+                                    name: namespace,
+                                    collection: collection,
+                                    created_at: None,
+                                    vector_count: 0,
+                                    size_bytes: 0,
+                                    metadata: None,
+                                })
+                            } else {
+                                Err(VectorError::ProviderError(format!("Failed to create partition: code {}", create_response.code)))
+                            }
+                        }
+                        Err(e) => Err(milvus_error_to_vector_error(&e.to_string()))
+                    }
+                }
+            }
+            Err(e) => Err(milvus_error_to_vector_error(&e.to_string()))
+        }
     }
 
     fn list_namespaces(
-        _collection: String,
+        collection: String,
     ) -> Result<Vec<golem_vector::exports::golem::vector::namespaces::NamespaceInfo>, VectorError> {
-        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces".to_string()))
+        let client = Self::create_client()?;
+        
+        match client.list_partitions(&collection) {
+            Ok(response) => {
+                if response.code == 0 {
+                    let namespaces = response.data.into_iter()
+                        .map(|partition_name| golem_vector::exports::golem::vector::namespaces::NamespaceInfo {
+                            name: partition_name,
+                            collection: collection.clone(),
+                            created_at: None,
+                            vector_count: 0,
+                            size_bytes: 0,
+                            metadata: None,
+                        })
+                        .collect();
+                    Ok(namespaces)
+                } else {
+                    Err(VectorError::ProviderError(format!("Failed to list partitions: code {}", response.code)))
+                }
+            }
+            Err(e) => Err(milvus_error_to_vector_error(&e.to_string()))
+        }
     }
 
     fn get_namespace(
-        _collection: String,
-        _namespace: String,
+        collection: String,
+        namespace: String,
     ) -> Result<golem_vector::exports::golem::vector::namespaces::NamespaceInfo, VectorError> {
-        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces".to_string()))
+        let client = Self::create_client()?;
+        
+        match client.has_partition(&collection, &namespace) {
+            Ok(response) => {
+                if response.code == 0 && response.data.has {
+                    Ok(golem_vector::exports::golem::vector::namespaces::NamespaceInfo {
+                        name: namespace,
+                        collection: collection,
+                        created_at: None,
+                        vector_count: 0,
+                        size_bytes: 0,
+                        metadata: None,
+                    })
+                } else {
+                    Err(VectorError::NotFound(format!("Partition {} not found in collection {}", namespace, collection)))
+                }
+            }
+            Err(e) => Err(milvus_error_to_vector_error(&e.to_string()))
+        }
     }
 
     fn delete_namespace(
-        _collection: String,
-        _namespace: String,
+        collection: String,
+        namespace: String,
     ) -> Result<(), VectorError> {
-        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces".to_string()))
+        let client = Self::create_client()?;
+        
+        let _ = client.release_partitions(&collection, vec![namespace.clone()]);
+        
+        match client.drop_partition(&collection, &namespace) {
+            Ok(response) => {
+                if response.code == 0 {
+                    Ok(())
+                } else {
+                    Err(VectorError::ProviderError(format!("Failed to drop partition: code {}", response.code)))
+                }
+            }
+            Err(e) => Err(milvus_error_to_vector_error(&e.to_string()))
+        }
     }
 
     fn namespace_exists(
-        _collection: String,
-        _namespace: String,
+        collection: String,
+        namespace: String,
     ) -> Result<bool, VectorError> {
-        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces".to_string()))
+        let client = Self::create_client()?;
+        
+        match client.has_partition(&collection, &namespace) {
+            Ok(response) => {
+                Ok(response.code == 0 && response.data.has)
+            }
+            Err(_) => Ok(false)
+        }
     }
 }
 

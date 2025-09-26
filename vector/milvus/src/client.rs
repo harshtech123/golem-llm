@@ -302,6 +302,113 @@ impl MilvusClient {
 
         parse_response(response)
     }
+
+    pub fn create_partition(&self, collection_name: &str, partition_name: &str) -> Result<CreatePartitionResponse, VectorError> {
+        trace!("Creating partition: {} in collection: {}", partition_name, collection_name);
+
+        let request = CreatePartitionRequest {
+            db_name: self.database.clone(),
+            collection_name: collection_name.to_string(),
+            partition_name: partition_name.to_string(),
+        };
+
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request(Method::POST, "/v2/vectordb/partitions/create")
+                .json(&request)
+                .send()
+        })?;
+
+        parse_response(response)
+    }
+
+    pub fn drop_partition(&self, collection_name: &str, partition_name: &str) -> Result<DropPartitionResponse, VectorError> {
+        trace!("Dropping partition: {} from collection: {}", partition_name, collection_name);
+
+        let request = DropPartitionRequest {
+            db_name: self.database.clone(),
+            collection_name: collection_name.to_string(),
+            partition_name: partition_name.to_string(),
+        };
+
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request(Method::POST, "/v2/vectordb/partitions/drop")
+                .json(&request)
+                .send()
+        })?;
+
+        parse_response(response)
+    }
+
+    pub fn list_partitions(&self, collection_name: &str) -> Result<ListPartitionsResponse, VectorError> {
+        trace!("Listing partitions in collection: {}", collection_name);
+
+        let request = ListPartitionsRequest {
+            db_name: self.database.clone(),
+            collection_name: collection_name.to_string(),
+        };
+
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request(Method::POST, "/v2/vectordb/partitions/list")
+                .json(&request)
+                .send()
+        })?;
+
+        parse_response(response)
+    }
+
+    pub fn has_partition(&self, collection_name: &str, partition_name: &str) -> Result<HasPartitionResponse, VectorError> {
+        trace!("Checking if partition exists: {} in collection: {}", partition_name, collection_name);
+
+        let request = HasPartitionRequest {
+            db_name: self.database.clone(),
+            collection_name: collection_name.to_string(),
+            partition_name: partition_name.to_string(),
+        };
+
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request(Method::POST, "/v2/vectordb/partitions/has")
+                .json(&request)
+                .send()
+        })?;
+
+        parse_response(response)
+    }
+
+    pub fn load_partitions(&self, collection_name: &str, partition_names: Vec<String>) -> Result<LoadPartitionsResponse, VectorError> {
+        trace!("Loading partitions: {:?} in collection: {}", partition_names, collection_name);
+
+        let request = LoadPartitionsRequest {
+            db_name: self.database.clone(),
+            collection_name: collection_name.to_string(),
+            partition_names,
+        };
+
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request(Method::POST, "/v2/vectordb/partitions/load")
+                .json(&request)
+                .send()
+        })?;
+
+        parse_response(response)
+    }
+
+    pub fn release_partitions(&self, collection_name: &str, partition_names: Vec<String>) -> Result<ReleasePartitionsResponse, VectorError> {
+        trace!("Releasing partitions: {:?} in collection: {}", partition_names, collection_name);
+
+        let request = ReleasePartitionsRequest {
+            db_name: self.database.clone(),
+            collection_name: collection_name.to_string(),
+            partition_names,
+        };
+
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request(Method::POST, "/v2/vectordb/partitions/release")
+                .json(&request)
+                .send()
+        })?;
+
+        parse_response(response)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -337,6 +444,8 @@ pub struct CreateCollectionRequest {
     pub schema: Option<CollectionSchema>,
     #[serde(rename = "indexParams", skip_serializing_if = "Option::is_none")]
     pub index_params: Option<Vec<IndexParam>>,
+    #[serde(rename = "vectorFieldType", skip_serializing_if = "Option::is_none")]
+    pub vector_field_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -508,6 +617,8 @@ pub struct UpsertRequest {
     #[serde(rename = "collectionName")]
     pub collection_name: String,
     pub data: Vec<serde_json::Value>,
+    #[serde(rename = "partitionName", skip_serializing_if = "Option::is_none")]
+    pub partition_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -530,7 +641,12 @@ pub struct SearchRequest {
     pub db_name: String,
     #[serde(rename = "collectionName")]
     pub collection_name: String,
-    pub data: Vec<Vec<f32>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Vec<Vec<f32>>>,
+    #[serde(rename = "sparseFloatVectors", skip_serializing_if = "Option::is_none")]
+    pub sparse_float_vectors: Option<Vec<SparseFloatVector>>,
+    #[serde(rename = "binaryVectors", skip_serializing_if = "Option::is_none")]
+    pub binary_vectors: Option<Vec<Vec<u8>>>,
     #[serde(rename = "annsField")]
     pub anns_field: String,
     #[serde(rename = "metricType")]
@@ -542,12 +658,26 @@ pub struct SearchRequest {
     pub output_fields: Option<Vec<String>>,
     #[serde(rename = "searchParams", skip_serializing_if = "Option::is_none")]
     pub search_params: Option<HashMap<String, serde_json::Value>>,
+    #[serde(rename = "partitionNames", skip_serializing_if = "Option::is_none")]
+    pub partition_names: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResponse {
     pub code: i32,
     pub data: Vec<Vec<SearchResult>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SparseFloatVector {
+    pub indices: Vec<u32>,
+    pub values: Vec<f32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinaryVector {
+    pub data: Vec<u8>,
+    pub dim: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -574,6 +704,8 @@ pub struct QueryRequest {
     pub limit: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub offset: Option<u32>,
+    #[serde(rename = "partitionNames", skip_serializing_if = "Option::is_none")]
+    pub partition_names: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -609,6 +741,8 @@ pub struct DeleteRequest {
     pub ids: Option<Vec<serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<String>,
+    #[serde(rename = "partitionName", skip_serializing_if = "Option::is_none")]
+    pub partition_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -717,6 +851,146 @@ pub struct GetCollectionStatsResponse {
 pub struct CollectionStats {
     #[serde(rename = "rowCount")]
     pub row_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HybridSearchRequest {
+    #[serde(rename = "dbName")]
+    pub db_name: String,
+    #[serde(rename = "collectionName")]
+    pub collection_name: String,
+    pub search: Vec<HybridSearchItem>,
+    #[serde(rename = "rerank")]
+    pub rerank: RerankConfig,
+    pub limit: u32,
+    #[serde(rename = "outputFields", skip_serializing_if = "Option::is_none")]
+    pub output_fields: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HybridSearchItem {
+    pub data: Vec<serde_json::Value>,
+    #[serde(rename = "annsField")]
+    pub anns_field: String,
+    #[serde(rename = "metricType")]
+    pub metric_type: String,
+    pub limit: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    #[serde(rename = "searchParams", skip_serializing_if = "Option::is_none")]
+    pub search_params: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RerankConfig {
+    pub strategy: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<HashMap<String, serde_json::Value>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HybridSearchResponse {
+    pub code: i32,
+    pub data: Vec<Vec<SearchResult>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatePartitionRequest {
+    #[serde(rename = "dbName")]
+    pub db_name: String,
+    #[serde(rename = "collectionName")]
+    pub collection_name: String,
+    #[serde(rename = "partitionName")]
+    pub partition_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatePartitionResponse {
+    pub code: i32,
+    pub data: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DropPartitionRequest {
+    #[serde(rename = "dbName")]
+    pub db_name: String,
+    #[serde(rename = "collectionName")]
+    pub collection_name: String,
+    #[serde(rename = "partitionName")]
+    pub partition_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DropPartitionResponse {
+    pub code: i32,
+    pub data: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListPartitionsRequest {
+    #[serde(rename = "dbName")]
+    pub db_name: String,
+    #[serde(rename = "collectionName")]
+    pub collection_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListPartitionsResponse {
+    pub code: i32,
+    pub data: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HasPartitionRequest {
+    #[serde(rename = "dbName")]
+    pub db_name: String,
+    #[serde(rename = "collectionName")]
+    pub collection_name: String,
+    #[serde(rename = "partitionName")]
+    pub partition_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HasPartitionResponse {
+    pub code: i32,
+    pub data: HasPartitionData,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HasPartitionData {
+    pub has: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadPartitionsRequest {
+    #[serde(rename = "dbName")]
+    pub db_name: String,
+    #[serde(rename = "collectionName")]
+    pub collection_name: String,
+    #[serde(rename = "partitionNames")]
+    pub partition_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadPartitionsResponse {
+    pub code: i32,
+    pub data: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReleasePartitionsRequest {
+    #[serde(rename = "dbName")]
+    pub db_name: String,
+    #[serde(rename = "collectionName")]
+    pub collection_name: String,
+    #[serde(rename = "partitionNames")]
+    pub partition_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReleasePartitionsResponse {
+    pub code: i32,
+    pub data: serde_json::Value,
 }
 
 //parsing function

@@ -2,6 +2,7 @@ use crate::client::{
     CollectionInfo, SearchResult as MilvusSearchResult,
     CollectionStats, InsertRequest, UpsertRequest, 
     SearchRequest, QueryRequest, GetRequest, DeleteRequest,
+    SparseFloatVector,
 };
 use golem_vector::golem::vector::types::{
     VectorRecord, VectorData, MetadataValue, DistanceMetric,
@@ -42,7 +43,7 @@ pub fn collection_info_to_export_collection_info(
     info: &CollectionInfo,
 ) -> Result<ExportCollectionInfo, VectorError> {
     let vector_field = info.fields.iter()
-        .find(|f| f.data_type == "FloatVector" || f.data_type == "BinaryVector")
+        .find(|f| f.data_type == "FloatVector" || f.data_type == "BinaryVector" || f.data_type == "SparseFloatVector")
         .ok_or_else(|| VectorError::ProviderError("No vector field found".to_string()))?;
 
     let dimension = vector_field.element_type_params
@@ -90,20 +91,39 @@ pub fn vector_records_to_insert_request(
                     )).collect()
                 ));
             }
-            VectorData::Sparse(_) => {
-                return Err(VectorError::UnsupportedFeature("Sparse vectors not fully supported".to_string()));
+            VectorData::Sparse(sparse) => {
+                let sparse_obj = serde_json::json!({
+                    "indices": sparse.indices,
+                    "values": sparse.values
+                });
+                entity.insert("sparse_vector".to_string(), sparse_obj);
             }
-            VectorData::Binary(_) => {
-                return Err(VectorError::UnsupportedFeature("Binary vectors not fully supported".to_string()));
+            VectorData::Binary(binary) => {
+                use base64::Engine;
+                let encoded = base64::engine::general_purpose::STANDARD.encode(&binary.data);
+                entity.insert("binary_vector".to_string(), Value::String(encoded));
             }
-            VectorData::Half(_) => {
-                return Err(VectorError::UnsupportedFeature("Half vectors not supported".to_string()));
+            VectorData::Half(half) => {
+                entity.insert("vector".to_string(), Value::Array(
+                    half.data.iter().map(|&v| Value::Number(
+                        serde_json::Number::from_f64(v as f64).unwrap()
+                    )).collect()
+                ));
             }
             VectorData::Named(_) => {
                 return Err(VectorError::UnsupportedFeature("Named vectors not supported".to_string()));
             }
-            VectorData::Hybrid(_) => {
-                return Err(VectorError::UnsupportedFeature("Hybrid vectors not supported".to_string()));
+            VectorData::Hybrid((dense, sparse)) => {
+                entity.insert("vector".to_string(), Value::Array(
+                    dense.iter().map(|&v| Value::Number(
+                        serde_json::Number::from_f64(v as f64).unwrap()
+                    )).collect()
+                ));
+                let sparse_obj = serde_json::json!({
+                    "indices": sparse.indices,
+                    "values": sparse.values
+                });
+                entity.insert("sparse_vector".to_string(), sparse_obj);
             }
         }
         
@@ -127,6 +147,7 @@ pub fn vector_records_to_upsert_request(
     collection_name: &str,
     db_name: &str,
     vectors: &[VectorRecord],
+    partition_name: Option<&str>,
 ) -> Result<UpsertRequest, VectorError> {
     let insert_req = vector_records_to_insert_request(collection_name, db_name, vectors)?;
     
@@ -134,6 +155,7 @@ pub fn vector_records_to_upsert_request(
         db_name: insert_req.db_name,
         collection_name: insert_req.collection_name,
         data: insert_req.data,
+        partition_name: partition_name.map(|s| s.to_string()),
     })
 }
 
@@ -146,12 +168,29 @@ pub fn create_search_request(
     output_fields: Option<&[String]>,
     anns_field: &str,
     metric_type: &str,
+    partition_names: Option<Vec<String>>,
 ) -> Result<SearchRequest, VectorError> {
-    let data = match query {
+    let (dense_data, sparse_data, binary_data) = match query {
         golem_vector::exports::golem::vector::search::SearchQuery::Vector(vector_data) => {
             match vector_data {
-                VectorData::Dense(values) => vec![values.clone()],
-                _ => return Err(VectorError::UnsupportedFeature("Only dense vectors supported for search".to_string())),
+                VectorData::Dense(values) => (Some(vec![values.clone()]), None, None),
+                VectorData::Sparse(sparse) => {
+                    let sparse_vec = SparseFloatVector {
+                        indices: sparse.indices.clone(),
+                        values: sparse.values.clone(),
+                    };
+                    (None, Some(vec![sparse_vec]), None)
+                }
+                VectorData::Binary(binary) => (None, None, Some(vec![binary.data.clone()])),
+                VectorData::Half(half) => (Some(vec![half.data.clone()]), None, None),
+                VectorData::Hybrid((dense, sparse)) => {
+                    let sparse_vec = SparseFloatVector {
+                        indices: sparse.indices.clone(),
+                        values: sparse.values.clone(),
+                    };
+                    (Some(vec![dense.clone()]), Some(vec![sparse_vec]), None)
+                }
+                _ => return Err(VectorError::UnsupportedFeature("Named vectors not supported for search".to_string())),
             }
         }
         golem_vector::exports::golem::vector::search::SearchQuery::ById(_) => {
@@ -171,13 +210,16 @@ pub fn create_search_request(
     Ok(SearchRequest {
         db_name: db_name.to_string(),
         collection_name: collection_name.to_string(),
-        data,
+        data: dense_data,
+        sparse_float_vectors: sparse_data,
+        binary_vectors: binary_data,
         anns_field: anns_field.to_string(),
         metric_type: metric_type.to_string(),
         limit,
         filter: filter_expr,
         output_fields: output_fields.map(|f| f.to_vec()),
         search_params: None,
+        partition_names,
     })
 }
 
@@ -189,6 +231,7 @@ pub fn create_query_request(
     output_fields: Option<&[String]>,
     limit: Option<u32>,
     offset: Option<u32>,
+    partition_names: Option<Vec<String>>,
 ) -> Result<QueryRequest, VectorError> {
     let filter_expr = if let Some(filter) = filter {
         Some(filter_expression_to_milvus_expr(filter)?)
@@ -210,6 +253,7 @@ pub fn create_query_request(
         output_fields: output_fields.map(|f| f.to_vec()),
         limit,
         offset,
+        partition_names,
     })
 }
 
@@ -232,6 +276,7 @@ pub fn create_delete_request(
     db_name: &str,
     ids: Option<&[String]>,
     filter: Option<&FilterExpression>,
+    partition_name: Option<&str>,
 ) -> Result<DeleteRequest, VectorError> {
     let filter_expr = if let Some(filter) = filter {
         Some(filter_expression_to_milvus_expr(filter)?)
@@ -250,6 +295,7 @@ pub fn create_delete_request(
         collection_name: collection_name.to_string(),
         ids: ids_json,
         filter: filter_expr,
+        partition_name: partition_name.map(|s| s.to_string()),
     })
 }
 
@@ -264,11 +310,7 @@ pub fn milvus_search_results_to_search_results(
     
     for result in &results[0] {
         let vector_data = if let Some(entity) = &result.entity {
-            if let Some(vector_val) = entity.get("vector") {
-                Some(json_to_vector_data(vector_val)?)
-            } else {
-                None
-            }
+            Some(entity_to_vector_data(entity)?)
         } else {
             None
         };
@@ -276,7 +318,7 @@ pub fn milvus_search_results_to_search_results(
         let metadata = if let Some(entity) = &result.entity {
             let mut meta = Vec::new();
             for (key, value) in entity {
-                if key != "vector" && key != "id" {
+                if key != "vector" && key != "id" && key != "sparse_vector" && key != "binary_vector" {
                     meta.push((key.clone(), json_to_metadata_value(value)?));
                 }
             }
@@ -306,15 +348,11 @@ pub fn milvus_entities_to_vector_records(
         let id = entity.get("id")
             .ok_or_else(|| VectorError::ProviderError("Missing id field".to_string()))?;
         
-        let vector_data = if let Some(vector_val) = entity.get("vector") {
-            json_to_vector_data(vector_val)?
-        } else {
-            VectorData::Dense(Vec::new())
-        };
+        let vector_data = entity_to_vector_data(entity)?;
 
         let mut metadata = Vec::new();
         for (key, value) in entity {
-            if key != "vector" && key != "id" {
+            if key != "vector" && key != "id" && key != "sparse_vector" && key != "binary_vector" {
                 metadata.push((key.clone(), json_to_metadata_value(value)?));
             }
         }
@@ -483,6 +521,70 @@ fn json_to_vector_data(value: &Value) -> Result<VectorData, VectorError> {
             Ok(VectorData::Dense(vector))
         }
         _ => Err(VectorError::ProviderError("Invalid vector format".to_string())),
+    }
+}
+
+fn entity_to_vector_data(entity: &HashMap<String, Value>) -> Result<VectorData, VectorError> {
+    if let Some(sparse_val) = entity.get("sparse_vector") {
+        return json_to_sparse_vector_data(sparse_val);
+    }
+    
+    if let Some(binary_val) = entity.get("binary_vector") {
+        return json_to_binary_vector_data(binary_val);
+    }
+    
+    if let Some(vector_val) = entity.get("vector") {
+        return json_to_vector_data(vector_val);
+    }
+    
+    Ok(VectorData::Dense(Vec::new()))
+}
+
+fn json_to_sparse_vector_data(value: &Value) -> Result<VectorData, VectorError> {
+    match value {
+        Value::Object(obj) => {
+            let indices = obj.get("indices")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| VectorError::ProviderError("Missing or invalid indices in sparse vector".to_string()))?
+                .iter()
+                .map(|v| v.as_u64().map(|n| n as u32))
+                .collect::<Option<Vec<u32>>>()
+                .ok_or_else(|| VectorError::ProviderError("Invalid indices format in sparse vector".to_string()))?;
+            
+            let values = obj.get("values")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| VectorError::ProviderError("Missing or invalid values in sparse vector".to_string()))?
+                .iter()
+                .map(|v| v.as_f64().map(|f| f as f32))
+                .collect::<Option<Vec<f32>>>()
+                .ok_or_else(|| VectorError::ProviderError("Invalid values format in sparse vector".to_string()))?;
+            
+            let max_dim = indices.iter().max().copied().unwrap_or(0) + 1;
+            Ok(VectorData::Sparse(golem_vector::golem::vector::types::SparseVector {
+                indices,
+                values,
+                total_dimensions: max_dim,
+            }))
+        }
+        _ => Err(VectorError::ProviderError("Invalid sparse vector format".to_string())),
+    }
+}
+
+fn json_to_binary_vector_data(value: &Value) -> Result<VectorData, VectorError> {
+    match value {
+        Value::String(encoded) => {
+            use base64::Engine;
+            let data = base64::engine::general_purpose::STANDARD
+                .decode(encoded)
+                .map_err(|e| VectorError::ProviderError(format!("Failed to decode binary vector: {}", e)))?;
+            
+            let dimensions = (data.len() * 8) as u32; 
+            Ok(VectorData::Binary(golem_vector::golem::vector::types::BinaryVector {
+                data,
+                dimensions,
+            }))
+        }
+        _ => Err(VectorError::ProviderError("Invalid binary vector format".to_string())),
     }
 }
 
