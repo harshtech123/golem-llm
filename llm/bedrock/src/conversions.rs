@@ -26,30 +26,24 @@ pub struct BedrockInput {
 }
 
 impl BedrockInput {
-    pub async fn from(
-        messages: Vec<llm::Message>,
-        config: llm::Config,
-        tool_results: Option<Vec<(llm::ToolCall, llm::ToolResult)>>,
+    pub async fn from_events(
+        config: &llm::Config,
+        events: Vec<llm::ChatEvent>,
     ) -> Result<Self, llm::Error> {
-        let (mut user_messages, system_instructions) =
-            messages_to_bedrock_message_groups(messages).await?;
-
-        if let Some(tool_results) = tool_results {
-            user_messages.extend(tool_call_results_to_bedrock_tools(tool_results)?);
-        }
+        let (user_messages, system_instructions) = events_to_bedrock_message_groups(events).await?;
 
         let options = config
             .provider_options
-            .into_iter()
-            .map(|kv| (kv.key, Document::String(kv.value)))
+            .iter()
+            .map(|kv| (kv.key.clone(), Document::String(kv.value.clone())))
             .collect::<HashMap<_, _>>();
 
         Ok(BedrockInput {
-            model_id: config.model,
+            model_id: config.model.clone(),
             inference_configuration: InferenceConfiguration::builder()
                 .set_max_tokens(config.max_tokens.map(|x| x as i32))
                 .set_temperature(config.temperature)
-                .set_stop_sequences(config.stop_sequences)
+                .set_stop_sequences(config.stop_sequences.clone())
                 .set_top_p(options.get("top_p").and_then(|v| match v {
                     Document::String(v) => v.parse::<f32>().ok(),
                     _ => None,
@@ -57,54 +51,10 @@ impl BedrockInput {
                 .build(),
             messages: user_messages,
             system_instructions,
-            tools: tool_defs_to_bedrock_tool_config(config.tools)?,
+            tools: tool_defs_to_bedrock_tool_config(config.tools.clone())?,
             additional_fields: Document::Object(options),
         })
     }
-}
-
-fn tool_call_results_to_bedrock_tools(
-    results: Vec<(llm::ToolCall, llm::ToolResult)>,
-) -> Result<Vec<bedrock::types::Message>, llm::Error> {
-    let mut tool_calls: Vec<bedrock::types::ContentBlock> = vec![];
-    let mut tool_results: Vec<bedrock::types::ContentBlock> = vec![];
-
-    for (tool_call, tool_result) in results {
-        tool_calls.push(bedrock::types::ContentBlock::ToolUse(
-            bedrock::types::ToolUseBlock::builder()
-                .tool_use_id(tool_call.id.clone())
-                .name(tool_call.name)
-                .input(json_str_to_smithy_document(&tool_call.arguments_json)?)
-                .build()
-                .unwrap(),
-        ));
-
-        tool_results.push(bedrock::types::ContentBlock::ToolResult(
-            bedrock::types::ToolResultBlock::builder()
-                .tool_use_id(tool_call.id)
-                .content(bedrock::types::ToolResultContentBlock::Text(
-                    match tool_result {
-                        llm::ToolResult::Success(success) => success.result_json,
-                        llm::ToolResult::Error(failure) => failure.error_message,
-                    },
-                ))
-                .build()
-                .unwrap(),
-        ));
-    }
-
-    Ok(vec![
-        bedrock::types::Message::builder()
-            .role(ConversationRole::Assistant)
-            .set_content(Some(tool_calls))
-            .build()
-            .unwrap(),
-        bedrock::types::Message::builder()
-            .role(ConversationRole::User)
-            .set_content(Some(tool_results))
-            .build()
-            .unwrap(),
-    ])
 }
 
 fn tool_defs_to_bedrock_tool_config(
@@ -137,38 +87,86 @@ fn tool_defs_to_bedrock_tool_config(
     ))
 }
 
-async fn messages_to_bedrock_message_groups(
-    messages: Vec<llm::Message>,
+async fn events_to_bedrock_message_groups(
+    events: Vec<llm::ChatEvent>,
 ) -> Result<(Vec<bedrock::types::Message>, Vec<SystemContentBlock>), llm::Error> {
     let mut user_messages: Vec<bedrock::types::Message> = vec![];
     let mut system_instructions: Vec<SystemContentBlock> = vec![];
 
-    for message in messages {
-        if message.role == llm::Role::System {
-            for content in message.content {
-                if let llm::ContentPart::Text(text) = content {
-                    system_instructions.push(SystemContentBlock::Text(text));
+    for event in events {
+        match event {
+            llm::ChatEvent::Message(message) => {
+                if message.role == llm::Role::System {
+                    for content in message.content {
+                        if let llm::ContentPart::Text(text) = content {
+                            system_instructions.push(SystemContentBlock::Text(text));
+                        }
+                    }
+                } else {
+                    user_messages.push(
+                        bedrock::types::Message::builder()
+                            .role(if message.role == llm::Role::User {
+                                ConversationRole::User
+                            } else {
+                                ConversationRole::Assistant
+                            })
+                            .set_content(Some(
+                                content_parts_to_bedrock_content_blocks(message.content).await?,
+                            ))
+                            .build()
+                            .unwrap(),
+                    );
                 }
             }
-        } else {
-            let bedrock_content = content_part_to_bedrock_content_blocks(message.content).await?;
-            user_messages.push(
+            llm::ChatEvent::Response(response) => {
+                if !response.content.is_empty() {
+                    user_messages.push(
+                        bedrock::types::Message::builder()
+                            .role(ConversationRole::Assistant)
+                            .set_content(Some(
+                                content_parts_to_bedrock_content_blocks(response.content).await?,
+                            ))
+                            .build()
+                            .unwrap(),
+                    );
+                }
+                if !response.tool_calls.is_empty() {
+                    user_messages.push(
+                        bedrock::types::Message::builder()
+                            .role(ConversationRole::Assistant)
+                            .set_content(Some(
+                                tool_calls_to_bedrock_content_blocks(response.tool_calls).await?,
+                            ))
+                            .build()
+                            .unwrap(),
+                    );
+                }
+            }
+            llm::ChatEvent::ToolCalls(tool_calls) => {
+                user_messages.push(
+                    bedrock::types::Message::builder()
+                        .role(ConversationRole::Assistant)
+                        .set_content(Some(
+                            tool_calls_to_bedrock_content_blocks(tool_calls).await?,
+                        ))
+                        .build()
+                        .unwrap(),
+                );
+            }
+            llm::ChatEvent::ToolResults(tool_results) => user_messages.push(
                 bedrock::types::Message::builder()
-                    .role(if message.role == llm::Role::User {
-                        ConversationRole::User
-                    } else {
-                        ConversationRole::Assistant
-                    })
-                    .set_content(Some(bedrock_content))
+                    .role(ConversationRole::User)
+                    .set_content(Some(tool_result_to_bedrock_content_blocks(tool_results)?))
                     .build()
                     .unwrap(),
-            );
+            ),
         }
     }
+
     Ok((user_messages, system_instructions))
 }
 
-async fn content_part_to_bedrock_content_blocks(
+async fn content_parts_to_bedrock_content_blocks(
     content_parts: Vec<llm::ContentPart>,
 ) -> Result<Vec<bedrock::types::ContentBlock>, llm::Error> {
     let mut bedrock_content_blocks: Vec<bedrock::types::ContentBlock> = vec![];
@@ -183,6 +181,50 @@ async fn content_part_to_bedrock_content_blocks(
         }
     }
 
+    Ok(bedrock_content_blocks)
+}
+
+async fn tool_calls_to_bedrock_content_blocks(
+    tool_calls: Vec<llm::ToolCall>,
+) -> Result<Vec<bedrock::types::ContentBlock>, llm::Error> {
+    let mut bedrock_content_blocks: Vec<bedrock::types::ContentBlock> = vec![];
+    for tool_call in tool_calls {
+        bedrock_content_blocks.push(bedrock::types::ContentBlock::ToolUse(
+            ToolUseBlock::builder()
+                .tool_use_id(tool_call.id)
+                .name(tool_call.name)
+                .input(json_str_to_smithy_document(&tool_call.arguments_json)?)
+                .build()
+                .unwrap(),
+        ));
+    }
+    Ok(bedrock_content_blocks)
+}
+
+fn tool_result_to_bedrock_content_blocks(
+    tool_results: Vec<llm::ToolResult>,
+) -> Result<Vec<bedrock::types::ContentBlock>, llm::Error> {
+    let mut bedrock_content_blocks: Vec<bedrock::types::ContentBlock> = vec![];
+    for tool_result in tool_results {
+        bedrock_content_blocks.push(bedrock::types::ContentBlock::ToolResult(
+            match tool_result {
+                llm::ToolResult::Success(success) => bedrock::types::ToolResultBlock::builder()
+                    .tool_use_id(success.id)
+                    .content(bedrock::types::ToolResultContentBlock::Text(
+                        success.result_json,
+                    ))
+                    .build()
+                    .unwrap(),
+                llm::ToolResult::Error(error) => bedrock::types::ToolResultBlock::builder()
+                    .tool_use_id(error.id)
+                    .content(bedrock::types::ToolResultContentBlock::Text(
+                        error.error_message,
+                    ))
+                    .build()
+                    .unwrap(),
+            },
+        ));
+    }
     Ok(bedrock_content_blocks)
 }
 
@@ -314,7 +356,7 @@ pub fn converse_output_to_complete_response(
         Err(_) => Err(custom_error(
             llm::ErrorCode::InternalError,
             "An error occurred while converting to complete response: expected output to be a Message"
-               .to_owned(),
+                .to_owned(),
         )),
         Ok(message) => {
             let mut content_parts: Vec<llm::ContentPart> = vec![];

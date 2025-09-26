@@ -44,14 +44,13 @@ impl Bedrock {
 
     pub async fn converse(
         &self,
-        messages: Vec<llm::Message>,
-        config: llm::Config,
-        tool_results: Option<Vec<(llm::ToolCall, llm::ToolResult)>>,
-    ) -> llm::ChatEvent {
-        let bedrock_input = BedrockInput::from(messages, config, tool_results).await;
+        config: &llm::Config,
+        events: Vec<llm::ChatEvent>,
+    ) -> llm::ChatResponse {
+        let bedrock_input = BedrockInput::from_events(config, events).await;
 
         match bedrock_input {
-            Err(err) => llm::ChatEvent::Error(err),
+            Err(err) => llm::ChatResponse::Error(err),
             Ok(input) => {
                 trace!("Sending request to AWS Bedrock: {input:?}");
                 let model_id = input.model_id.clone();
@@ -62,18 +61,18 @@ impl Bedrock {
                     .map_err(|e| from_converse_sdk_error(model_id, e));
 
                 match response {
-                    Err(err) => llm::ChatEvent::Error(err),
+                    Err(err) => llm::ChatResponse::Error(err),
                     Ok(response) => {
                         let event = match response.stop_reason() {
                             bedrock::types::StopReason::ToolUse => {
                                 conversions::converse_output_to_tool_calls(response)
-                                    .map(llm::ChatEvent::ToolRequest)
+                                    .map(llm::ChatResponse::ToolCalls)
                             }
                             _ => conversions::converse_output_to_complete_response(response)
-                                .map(llm::ChatEvent::Message),
+                                .map(llm::ChatResponse::Message),
                         };
 
-                        event.unwrap_or_else(llm::ChatEvent::Error)
+                        event.unwrap_or_else(llm::ChatResponse::Error)
                     }
                 }
             }
@@ -82,10 +81,10 @@ impl Bedrock {
 
     pub async fn converse_stream(
         &self,
-        messages: Vec<llm::Message>,
-        config: llm::Config,
+        config: &llm::Config,
+        events: Vec<llm::ChatEvent>,
     ) -> BedrockChatStream {
-        let bedrock_input = BedrockInput::from(messages, config, None).await;
+        let bedrock_input = BedrockInput::from_events(config, events).await;
 
         match bedrock_input {
             Err(err) => BedrockChatStream::failed(err),

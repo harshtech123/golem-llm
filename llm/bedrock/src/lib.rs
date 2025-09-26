@@ -1,10 +1,13 @@
 use async_utils::get_async_runtime;
 use client::Bedrock;
+use golem_llm::chat_session::ChatSession;
+use golem_llm::golem::llm::llm::ChatEvent;
 use golem_llm::{
     durability::{DurableLLM, ExtendedGuest},
-    golem::llm::llm::{self, ChatEvent, ChatStream, Config, Guest, Message, ToolCall, ToolResult},
+    golem::llm::llm::{self, ChatResponse, ChatStream, Config, Guest, Message},
 };
 use golem_rust::bindings::wasi::clocks::monotonic_clock;
+use indoc::indoc;
 use stream::BedrockChatStream;
 
 mod async_utils;
@@ -17,82 +20,63 @@ struct BedrockComponent;
 
 impl Guest for BedrockComponent {
     type ChatStream = BedrockChatStream;
+    type ChatSession = ChatSession<DurableBedrockComponent>;
 
-    fn send(messages: Vec<Message>, config: Config) -> ChatEvent {
+    fn send(config: Config, events: Vec<ChatEvent>) -> ChatResponse {
         let runtime = get_async_runtime();
 
         runtime.block_on(async {
             let bedrock = get_bedrock_client().await;
 
             match bedrock {
-                Ok(client) => client.converse(messages, config, None).await,
-                Err(err) => ChatEvent::Error(err),
+                Ok(client) => client.converse(&config, events).await,
+                Err(err) => ChatResponse::Error(err),
             }
         })
     }
 
-    fn continue_(
-        messages: Vec<Message>,
-        tool_results: Vec<(ToolCall, ToolResult)>,
-        config: Config,
-    ) -> ChatEvent {
-        let runtime = get_async_runtime();
-
-        runtime.block_on(async {
-            let bedrock = get_bedrock_client().await;
-
-            match bedrock {
-                Ok(client) => client.converse(messages, config, Some(tool_results)).await,
-                Err(err) => ChatEvent::Error(err),
-            }
-        })
-    }
-
-    fn stream(messages: Vec<Message>, config: Config) -> ChatStream {
-        ChatStream::new(Self::unwrapped_stream(messages, config))
+    fn stream(config: Config, events: Vec<ChatEvent>) -> ChatStream {
+        ChatStream::new(Self::unwrapped_stream(&config, events))
     }
 }
 
 impl ExtendedGuest for BedrockComponent {
-    fn unwrapped_stream(
-        messages: Vec<golem_llm::golem::llm::llm::Message>,
-        config: golem_llm::golem::llm::llm::Config,
-    ) -> Self::ChatStream {
+    fn unwrapped_stream(config: &llm::Config, messages: Vec<llm::ChatEvent>) -> Self::ChatStream {
         let runtime = get_async_runtime();
 
         runtime.block_on(async {
             let bedrock = get_bedrock_client().await;
 
             match bedrock {
-                Ok(client) => client.converse_stream(messages, config).await,
+                Ok(client) => client.converse_stream(config, messages).await,
                 Err(err) => BedrockChatStream::failed(err),
             }
         })
     }
 
     fn retry_prompt(
-        original_messages: &[Message],
+        original_events: &[ChatEvent],
         partial_result: &[llm::StreamDelta],
-    ) -> Vec<Message> {
-        let mut extended_messages = Vec::new();
-        extended_messages.push(Message {
+    ) -> Vec<ChatEvent> {
+        let mut extended_events = Vec::new();
+        extended_events.push(ChatEvent::Message(Message {
             role: llm::Role::System,
             name: None,
-            content: vec![
-                llm::ContentPart::Text(
-                    "You were asked the same question previously, but the response was interrupted before completion. \
-                     Please continue your response from where you left off. \
-                     Do not include the part of the response that was already seen. If the response starts with a new word and no punctuation then add a space to the beginning".to_string()),
-            ],
-        });
-        extended_messages.push(Message {
+            content: vec![llm::ContentPart::Text(indoc! {"
+                You were asked the same question previously, but the response was interrupted before completion.
+                Please continue your response from where you left off.
+                Do not include the part of the response that was already seen.
+                If the response starts with a new word and no punctuation then add a space to the beginning."
+            }.to_string())],
+        }));
+        extended_events.push(ChatEvent::Message(Message {
             role: llm::Role::User,
             name: None,
             content: vec![llm::ContentPart::Text(
                 "Here is the original question:".to_string(),
             )],
-        });
-        extended_messages.extend_from_slice(original_messages);
+        }));
+        extended_events.extend_from_slice(original_events);
 
         let mut partial_result_as_content = Vec::new();
         for delta in partial_result {
@@ -109,7 +93,7 @@ impl ExtendedGuest for BedrockComponent {
             }
         }
 
-        extended_messages.push(Message {
+        extended_events.push(ChatEvent::Message(Message {
             role: llm::Role::User,
             name: None,
             content: vec![llm::ContentPart::Text(
@@ -118,8 +102,8 @@ impl ExtendedGuest for BedrockComponent {
             .into_iter()
             .chain(partial_result_as_content)
             .collect(),
-        });
-        extended_messages
+        }));
+        extended_events
     }
 
     fn subscribe(_stream: &Self::ChatStream) -> golem_rust::wasm_rpc::Pollable {

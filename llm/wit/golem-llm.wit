@@ -148,7 +148,7 @@ interface llm {
 
   variant chat-response {
     message(complete-response),
-    tool-calls(list<tool-call>),
+    tool-calls(list<tool-call>), // TODO: this seems duplicated with also having them in messages?
     error(error),
   }
 
