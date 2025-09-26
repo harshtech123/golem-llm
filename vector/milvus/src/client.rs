@@ -544,25 +544,6 @@ pub struct ReleaseCollectionResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetLoadStateRequest {
-    #[serde(rename = "dbName")]
-    pub db_name: String,
-    #[serde(rename = "collectionName")]
-    pub collection_name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetLoadStateResponse {
-    pub code: i32,
-    pub data: LoadStateData,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoadStateData {
-    pub state: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CollectionSchema {
     #[serde(rename = "autoId", skip_serializing_if = "Option::is_none")]
     pub auto_id: Option<bool>,
@@ -594,20 +575,6 @@ pub struct InsertRequest {
     #[serde(rename = "collectionName")]
     pub collection_name: String,
     pub data: Vec<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InsertResponse {
-    pub code: i32,
-    pub data: InsertData,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InsertData {
-    #[serde(rename = "insertCount")]
-    pub insert_count: u32,
-    #[serde(rename = "insertIds")]
-    pub insert_ids: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -758,42 +725,6 @@ pub struct DeleteData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateIndexRequest {
-    #[serde(rename = "dbName")]
-    pub db_name: String,
-    #[serde(rename = "collectionName")]
-    pub collection_name: String,
-    #[serde(rename = "fieldName")]
-    pub field_name: String,
-    #[serde(rename = "metricType", skip_serializing_if = "Option::is_none")]
-    pub metric_type: Option<String>,
-    #[serde(rename = "indexParams", skip_serializing_if = "Option::is_none")]
-    pub index_params: Option<HashMap<String, serde_json::Value>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateIndexResponse {
-    pub code: i32,
-    pub data: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DescribeIndexRequest {
-    #[serde(rename = "dbName")]
-    pub db_name: String,
-    #[serde(rename = "collectionName")]
-    pub collection_name: String,
-    #[serde(rename = "fieldName")]
-    pub field_name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DescribeIndexResponse {
-    pub code: i32,
-    pub data: Vec<IndexInfo>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexInfo {
     #[serde(rename = "fieldName")]
     pub field_name: String,
@@ -803,22 +734,6 @@ pub struct IndexInfo {
     pub metric_type: String,
     #[serde(rename = "indexType")]
     pub index_type: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DropIndexRequest {
-    #[serde(rename = "dbName")]
-    pub db_name: String,
-    #[serde(rename = "collectionName")]
-    pub collection_name: String,
-    #[serde(rename = "fieldName")]
-    pub field_name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DropIndexResponse {
-    pub code: i32,
-    pub data: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -851,47 +766,6 @@ pub struct GetCollectionStatsResponse {
 pub struct CollectionStats {
     #[serde(rename = "rowCount")]
     pub row_count: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HybridSearchRequest {
-    #[serde(rename = "dbName")]
-    pub db_name: String,
-    #[serde(rename = "collectionName")]
-    pub collection_name: String,
-    pub search: Vec<HybridSearchItem>,
-    #[serde(rename = "rerank")]
-    pub rerank: RerankConfig,
-    pub limit: u32,
-    #[serde(rename = "outputFields", skip_serializing_if = "Option::is_none")]
-    pub output_fields: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HybridSearchItem {
-    pub data: Vec<serde_json::Value>,
-    #[serde(rename = "annsField")]
-    pub anns_field: String,
-    #[serde(rename = "metricType")]
-    pub metric_type: String,
-    pub limit: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filter: Option<String>,
-    #[serde(rename = "searchParams", skip_serializing_if = "Option::is_none")]
-    pub search_params: Option<HashMap<String, serde_json::Value>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RerankConfig {
-    pub strategy: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub params: Option<HashMap<String, serde_json::Value>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HybridSearchResponse {
-    pub code: i32,
-    pub data: Vec<Vec<SearchResult>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
