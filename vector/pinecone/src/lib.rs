@@ -7,17 +7,17 @@ use crate::conversions::{
 use golem_vector::config::with_config_key;
 use golem_vector::durability::{ExtendedGuest, DurableVector};
 use golem_vector::golem::vector::{
-    analytics::Guest as AnalyticsGuest,
-    collections::{Guest as CollectionsGuest, CollectionInfo},
-    connection::{Credentials, Guest as ConnectionGuest},
-    namespaces::Guest as NamespacesGuest,
-    search::Guest as SearchGuest,
-    search_extended::Guest as SearchExtendedGuest,
+    analytics::{Guest as AnalyticsGuest, FieldStats, CollectionStats, NamespaceStats},
+    collections::{Guest as CollectionsGuest, CollectionInfo, IndexConfig},
+    connection::{Credentials, Guest as ConnectionGuest, ConnectionStatus  },
+    namespaces::{Guest as NamespacesGuest, NamespaceInfo},
+    search::{Guest as SearchGuest, SearchQuery},
+    search_extended::{Guest as SearchExtendedGuest, GroupedSearchResult, RecommendationExample, RecommendationStrategy, ContextPair},
     types::{
         DistanceMetric, FilterExpression, Id, Metadata, SearchResult, VectorData,
-        VectorError, VectorRecord,
+        VectorError, VectorRecord, MetadataValue,
     },
-    vectors::Guest as VectorsGuest,
+    vectors::{Guest as VectorsGuest, ListResponse, BatchResult},
 };
 
 mod client;
@@ -69,16 +69,16 @@ impl ConnectionGuest for PineconeComponent {
         Ok(())
     }
 
-    fn get_connection_status() -> Result<golem_vector::exports::golem::vector::connection::ConnectionStatus, VectorError> {
+    fn get_connection_status() -> Result<ConnectionStatus, VectorError> {
         match Self::create_client() {
-            Ok(_) => Ok(golem_vector::exports::golem::vector::connection::ConnectionStatus {
+            Ok(_) => Ok(ConnectionStatus {
                 connected: true,
                 provider: Some("pinecone".to_string()),
                 endpoint: Some("https://api.pinecone.io".to_string()),
                 last_activity: None,
                 connection_id: Some("pinecone-api".to_string()),
             }),
-            Err(_) => Ok(golem_vector::exports::golem::vector::connection::ConnectionStatus {
+            Err(_) => Ok(ConnectionStatus {
                 connected: false,
                 provider: Some("pinecone".to_string()),
                 endpoint: Some("https://api.pinecone.io".to_string()),
@@ -112,7 +112,7 @@ impl CollectionsGuest for PineconeComponent {
        _description: Option<String>,
         dimension: u32,
         metric: DistanceMetric,
-        _index_config: Option<golem_vector::exports::golem::vector::collections::IndexConfig>,
+        _index_config: Option<IndexConfig>,
         metadata: Option<Metadata>,
     ) -> Result<CollectionInfo, VectorError> {
         let client = Self::create_client()?;
@@ -121,7 +121,7 @@ impl CollectionsGuest for PineconeComponent {
             let cloud = meta.iter()
                 .find(|(k, _)| k == "cloud")
                 .and_then(|(_, v)| match v {
-                    golem_vector::exports::golem::vector::types::MetadataValue::StringVal(s) => Some(s.clone()),
+                    MetadataValue::StringVal(s) => Some(s.clone()),
                     _ => None,
                 })
                 .unwrap_or_else(|| "aws".to_string());
@@ -129,7 +129,7 @@ impl CollectionsGuest for PineconeComponent {
             let region = meta.iter()
                 .find(|(k, _)| k == "region")
                 .and_then(|(_, v)| match v {
-                    golem_vector::exports::golem::vector::types::MetadataValue::StringVal(s) => Some(s.clone()),
+                    MetadataValue::StringVal(s) => Some(s.clone()),
                     _ => None,
                 })
                 .unwrap_or_else(|| "us-east-1".to_string());
@@ -207,13 +207,13 @@ impl VectorsGuest for PineconeComponent {
         collection: String,
         vectors: Vec<VectorRecord>,
         namespace: Option<String>,
-    ) -> Result<golem_vector::exports::golem::vector::vectors::BatchResult, VectorError> {
+    ) -> Result<BatchResult, VectorError> {
         let client = Self::create_client()?;
         
         let upsert_request = vector_records_to_upsert_request(&vectors, namespace)?;
         
         match client.upsert_vectors(&collection, &upsert_request) {
-            Ok(response) => Ok(golem_vector::exports::golem::vector::vectors::BatchResult {
+            Ok(response) => Ok(BatchResult {
                 success_count: response.upserted_count,
                 failure_count: 0,
                 errors: vec![],
@@ -368,7 +368,7 @@ impl VectorsGuest for PineconeComponent {
         cursor: Option<String>,
         include_vectors: Option<bool>,
         include_metadata: Option<bool>,
-    ) -> Result<golem_vector::exports::golem::vector::vectors::ListResponse, VectorError> {
+    ) -> Result<ListResponse, VectorError> {
         let client = Self::create_client()?;
         
         let prefix = if let Some(filter_expr) = &filter {
@@ -439,7 +439,7 @@ impl VectorsGuest for PineconeComponent {
                 let next_cursor = list_response.pagination
                     .and_then(|p| p.next);
                 
-                Ok(golem_vector::exports::golem::vector::vectors::ListResponse {
+                Ok(ListResponse {
                     vectors: vector_records,
                     next_cursor,
                     total_count: None, 
@@ -489,7 +489,7 @@ impl VectorsGuest for PineconeComponent {
 impl SearchGuest for PineconeComponent {
     fn search_vectors(
         collection: String,
-        query: golem_vector::exports::golem::vector::search::SearchQuery,
+        query:SearchQuery,
         limit: u32,
         filter: Option<FilterExpression>,
         namespace: Option<String>,
@@ -502,14 +502,14 @@ impl SearchGuest for PineconeComponent {
         let client = Self::create_client()?;
         
         let (query_vector, sparse_vector, query_id) = match &query {
-            golem_vector::exports::golem::vector::search::SearchQuery::Vector(_) => {
+            SearchQuery::Vector(_) => {
                 let (dense, sparse) = extract_dense_and_sparse_from_query(&query);
                 (dense, sparse, None)
             }
-            golem_vector::exports::golem::vector::search::SearchQuery::ById(id) => {
+            SearchQuery::ById(id) => {
                 (None, None, Some(id.clone()))
             }
-            golem_vector::exports::golem::vector::search::SearchQuery::MultiVector(_) => {
+            SearchQuery::MultiVector(_) => {
                 let (dense, sparse) = extract_dense_and_sparse_from_query(&query);
                 if dense.is_none() && sparse.is_none() {
                     return Err(VectorError::InvalidParams("Multi-vector query is empty".to_string()));
@@ -559,7 +559,6 @@ impl SearchGuest for PineconeComponent {
         limit: u32,
         namespace: Option<String>,
     ) -> Result<Vec<SearchResult>, VectorError> {
-        use golem_vector::exports::golem::vector::search::SearchQuery;
         
         Self::search_vectors(
             collection,
@@ -577,7 +576,7 @@ impl SearchGuest for PineconeComponent {
 
     fn batch_search(
         collection: String,
-        queries: Vec<golem_vector::exports::golem::vector::search::SearchQuery>,
+        queries: Vec<SearchQuery>,
         limit: u32,
         filter: Option<FilterExpression>,
         namespace: Option<String>,
@@ -610,12 +609,12 @@ impl SearchGuest for PineconeComponent {
 impl SearchExtendedGuest for PineconeComponent {
     fn recommend_vectors(
        _collection: String,
-       _positive: Vec<golem_vector::exports::golem::vector::search_extended::RecommendationExample>,
-       _negative: Option<Vec<golem_vector::exports::golem::vector::search_extended::RecommendationExample>>,
+       _positive: Vec<RecommendationExample>,
+       _negative: Option<Vec<RecommendationExample>>,
        _limit: u32,
        _filter: Option<FilterExpression>,
        _namespace: Option<String>,
-       _strategy: Option<golem_vector::exports::golem::vector::search_extended::RecommendationStrategy>,
+       _strategy: Option<RecommendationStrategy>,
        _include_vectors: Option<bool>,
        _include_metadata: Option<bool>,
     ) -> Result<Vec<SearchResult>, VectorError> {
@@ -624,7 +623,7 @@ impl SearchExtendedGuest for PineconeComponent {
 
     fn discover_vectors(
        _collection: String,
-       _context_pairs: Vec<golem_vector::exports::golem::vector::search_extended::ContextPair>,
+       _context_pairs: Vec<ContextPair>,
        _limit: u32,
        _filter: Option<FilterExpression>,
        _namespace: Option<String>,
@@ -636,7 +635,7 @@ impl SearchExtendedGuest for PineconeComponent {
 
     fn search_groups(
         _collection: String,
-        _query: golem_vector::exports::golem::vector::search::SearchQuery,
+        _query: SearchQuery,
         _group_by: String,
         _group_size: u32,
         _max_groups: u32,
@@ -644,7 +643,7 @@ impl SearchExtendedGuest for PineconeComponent {
         _namespace: Option<String>,
         _include_vectors: Option<bool>,
         _include_metadata: Option<bool>,
-    ) -> Result<Vec<golem_vector::exports::golem::vector::search_extended::GroupedSearchResult>, VectorError> {
+    ) -> Result<Vec<GroupedSearchResult>, VectorError> {
         Err(VectorError::UnsupportedFeature("Grouped search not supported by Pinecone".to_string()))
     }
 
@@ -677,7 +676,7 @@ impl AnalyticsGuest for PineconeComponent {
     fn get_collection_stats(
         collection: String,
         namespace: Option<String>,
-    ) -> Result<golem_vector::exports::golem::vector::analytics::CollectionStats, VectorError> {
+    ) -> Result<CollectionStats, VectorError> {
         let client = Self::create_client()?;
         
         let stats_request = client::DescribeIndexStatsRequest {
@@ -694,15 +693,15 @@ impl AnalyticsGuest for PineconeComponent {
                     }
                 };
 
-                let ns_stats: Vec<(String, golem_vector::exports::golem::vector::analytics::NamespaceStats)> = 
+                let ns_stats: Vec<(String, NamespaceStats)> = 
                     stats.namespaces.iter().map(|(name, summary)| {
-                        (name.clone(), golem_vector::exports::golem::vector::analytics::NamespaceStats {
+                        (name.clone(), NamespaceStats {
                             vector_count: summary.vector_count,
                             size_bytes: 0, 
                         })
                     }).collect();
                 
-                Ok(golem_vector::exports::golem::vector::analytics::CollectionStats {
+                Ok(CollectionStats {
                     vector_count: namespace_stats.vector_count,
                     dimension: stats.dimension,
                     size_bytes: 0,
@@ -719,7 +718,7 @@ impl AnalyticsGuest for PineconeComponent {
         _collection: String,
         _field: String,
         _namespace: Option<String>,
-    ) -> Result<golem_vector::exports::golem::vector::analytics::FieldStats, VectorError> {
+    ) -> Result<FieldStats, VectorError> {
         Err(VectorError::UnsupportedFeature("Field stats not supported by Pinecone".to_string()))
     }
 
@@ -728,7 +727,7 @@ impl AnalyticsGuest for PineconeComponent {
         _field: String,
         _limit: Option<u32>,
         _namespace: Option<String>,
-    ) -> Result<Vec<(golem_vector::exports::golem::vector::types::MetadataValue, u64)>, VectorError> {
+    ) -> Result<Vec<(MetadataValue, u64)>, VectorError> {
         Err(VectorError::UnsupportedFeature("Field distribution not supported by Pinecone".to_string()))
     }
 }
@@ -738,8 +737,8 @@ impl NamespacesGuest for PineconeComponent {
         collection: String,
         namespace: String,
        _metadata: Option<Metadata>,
-    ) -> Result<golem_vector::exports::golem::vector::namespaces::NamespaceInfo, VectorError> {
-        Ok(golem_vector::exports::golem::vector::namespaces::NamespaceInfo {
+    ) -> Result<NamespaceInfo, VectorError> {
+        Ok(NamespaceInfo {
             name: namespace,
             collection,
             vector_count: 0,
@@ -751,14 +750,14 @@ impl NamespacesGuest for PineconeComponent {
 
     fn list_namespaces(
         collection: String,
-    ) -> Result<Vec<golem_vector::exports::golem::vector::namespaces::NamespaceInfo>, VectorError> {
+    ) -> Result<Vec<NamespaceInfo>, VectorError> {
         let client = Self::create_client()?;
         
         match client.list_namespaces(&collection) {
             Ok(namespaces) => {
                 let mut namespace_infos = Vec::new();
                 for ns in namespaces.namespaces {
-                    namespace_infos.push(golem_vector::exports::golem::vector::namespaces::NamespaceInfo {
+                    namespace_infos.push(NamespaceInfo {
                         name: ns,
                         collection: collection.clone(),
                         vector_count: 0,
@@ -776,7 +775,7 @@ impl NamespacesGuest for PineconeComponent {
     fn get_namespace(
         collection: String,
         namespace: String,
-    ) -> Result<golem_vector::exports::golem::vector::namespaces::NamespaceInfo, VectorError> {
+    ) -> Result<NamespaceInfo, VectorError> {
         let client = Self::create_client()?;
         
         let stats_request = client::DescribeIndexStatsRequest {
@@ -786,7 +785,7 @@ impl NamespacesGuest for PineconeComponent {
         match client.describe_index_stats(&collection, &stats_request) {
             Ok(stats) => {
                 if let Some(ns_stats) = stats.namespaces.get(&namespace) {
-                    Ok(golem_vector::exports::golem::vector::namespaces::NamespaceInfo {
+                    Ok(NamespaceInfo {
                         name: namespace,
                         collection,
                         vector_count: ns_stats.vector_count,
