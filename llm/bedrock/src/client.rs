@@ -1,23 +1,18 @@
-use crate::{
-    async_utils::UnsafeFuture,
-    conversions::{self, from_converse_sdk_error, from_converse_stream_sdk_error, BedrockInput},
-    stream::BedrockChatStream,
-    wasi_client::WasiClient,
+use crate::async_utils::UnsafeFuture;
+use crate::conversions::converse_output_to_complete_response;
+use crate::conversions::{
+    self, from_converse_sdk_error, from_converse_stream_sdk_error, BedrockInput,
 };
+use crate::stream::BedrockChatStream;
+use crate::wasi_client::WasiClient;
 use aws_config::BehaviorVersion;
-use aws_sdk_bedrockruntime::{
-    self as bedrock,
-    config::{AsyncSleep, Sleep},
-    operation::{
-        converse::builders::ConverseFluentBuilder,
-        converse_stream::builders::ConverseStreamFluentBuilder,
-    },
-};
+use aws_sdk_bedrockruntime as bedrock;
+use aws_sdk_bedrockruntime::config::{AsyncSleep, Sleep};
+use aws_sdk_bedrockruntime::operation::converse::builders::ConverseFluentBuilder;
+use aws_sdk_bedrockruntime::operation::converse_stream::builders::ConverseStreamFluentBuilder;
 use aws_types::region;
-use golem_llm::{
-    config::{get_config_key, get_config_key_or_none},
-    golem::llm::llm,
-};
+use golem_llm::config::{get_config_key, get_config_key_or_none};
+use golem_llm::golem::llm::llm::{ChatError, ChatEvent, ChatResponse, Config};
 use log::trace;
 use wasi::clocks::monotonic_clock;
 use wstd::runtime::Reactor;
@@ -28,7 +23,7 @@ pub struct Bedrock {
 }
 
 impl Bedrock {
-    pub async fn new() -> Result<Self, llm::Error> {
+    pub async fn new() -> Result<Self, ChatError> {
         let environment = BedrockEnvironment::load_from_env()?;
 
         let sdk_config = aws_config::defaults(BehaviorVersion::latest())
@@ -44,45 +39,27 @@ impl Bedrock {
 
     pub async fn converse(
         &self,
-        config: &llm::Config,
-        events: Vec<llm::ChatEvent>,
-    ) -> llm::ChatResponse {
-        let bedrock_input = BedrockInput::from_events(config, events).await;
+        config: Config,
+        events: Vec<ChatEvent>,
+    ) -> Result<ChatResponse, ChatError> {
+        let input = BedrockInput::from_events(config, events).await?;
 
-        match bedrock_input {
-            Err(err) => llm::ChatResponse::Error(err),
-            Ok(input) => {
-                trace!("Sending request to AWS Bedrock: {input:?}");
-                let model_id = input.model_id.clone();
-                let response = self
-                    .init_converse(input)
-                    .send()
-                    .await
-                    .map_err(|e| from_converse_sdk_error(model_id, e));
+        trace!("Sending request to AWS Bedrock: {input:?}");
 
-                match response {
-                    Err(err) => llm::ChatResponse::Error(err),
-                    Ok(response) => {
-                        let event = match response.stop_reason() {
-                            bedrock::types::StopReason::ToolUse => {
-                                conversions::converse_output_to_tool_calls(response)
-                                    .map(llm::ChatResponse::ToolCalls)
-                            }
-                            _ => conversions::converse_output_to_complete_response(response)
-                                .map(llm::ChatResponse::Message),
-                        };
+        let model_id = input.model_id.clone();
+        let response = self
+            .init_converse(input)
+            .send()
+            .await
+            .map_err(|e| from_converse_sdk_error(model_id, e))?;
 
-                        event.unwrap_or_else(llm::ChatResponse::Error)
-                    }
-                }
-            }
-        }
+        converse_output_to_complete_response(response)
     }
 
     pub async fn converse_stream(
         &self,
-        config: &llm::Config,
-        events: Vec<llm::ChatEvent>,
+        config: Config,
+        events: Vec<ChatEvent>,
     ) -> BedrockChatStream {
         let bedrock_input = BedrockInput::from_events(config, events).await;
 
@@ -141,7 +118,7 @@ pub struct BedrockEnvironment {
 }
 
 impl BedrockEnvironment {
-    pub fn load_from_env() -> Result<Self, llm::Error> {
+    pub fn load_from_env() -> Result<Self, ChatError> {
         Ok(Self {
             access_key_id: get_config_key("AWS_ACCESS_KEY_ID")?,
             region: get_config_key("AWS_REGION")?,

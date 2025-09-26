@@ -1,11 +1,11 @@
 use crate::event_source::{Event, EventSource, MessageEvent};
-use crate::golem::llm::llm::{Error, ErrorCode, GuestChatStream, StreamEvent};
+use crate::golem::llm::llm::{ChatError, ErrorCode, GuestChatStream, StreamEvent};
 use golem_rust::wasm_rpc::Pollable;
 use std::cell::{Ref, RefMut};
 use std::task::Poll;
 
 pub trait LlmChatStreamState: 'static {
-    fn failure(&self) -> &Option<Error>;
+    fn failure(&self) -> &Option<ChatError>;
     fn is_finished(&self) -> bool;
     fn set_finished(&self);
     fn stream(&self) -> Ref<'_, Option<EventSource>>;
@@ -32,9 +32,9 @@ impl<T: LlmChatStreamState> LlmChatStream<T> {
 }
 
 impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
-    fn get_next(&self) -> Option<Vec<StreamEvent>> {
+    fn poll_next(&self) -> Result<Option<Vec<StreamEvent>>, ChatError> {
         if self.implementation.is_finished() {
-            return Some(vec![]);
+            return Ok(Some(vec![]));
         }
 
         let mut stream = self.implementation.stream_mut();
@@ -42,17 +42,17 @@ impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
             match stream.poll_next() {
                 Poll::Ready(None) => {
                     self.implementation.set_finished();
-                    Some(vec![])
+                    Ok(Some(vec![]))
                 }
                 Poll::Ready(Some(Err(crate::event_source::error::Error::StreamEnded))) => {
                     self.implementation.set_finished();
-                    Some(vec![])
+                    Ok(Some(vec![]))
                 }
-                Poll::Ready(Some(Err(error))) => Some(vec![StreamEvent::Error(Error {
+                Poll::Ready(Some(Err(error))) => Err(ChatError {
                     code: ErrorCode::InternalError,
                     message: error.to_string(),
                     provider_error_json: None,
-                })]),
+                }),
                 Poll::Ready(Some(Ok(event))) => {
                     let mut events = vec![];
 
@@ -71,11 +71,11 @@ impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
                                         // Ignored event
                                     }
                                     Err(error) => {
-                                        events.push(StreamEvent::Error(Error {
+                                        return Err(ChatError {
                                             code: ErrorCode::InternalError,
                                             message: error,
                                             provider_error_json: None,
-                                        }));
+                                        })
                                     }
                                 }
                             }
@@ -83,32 +83,27 @@ impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
                     }
 
                     if events.is_empty() {
-                        None
+                        Ok(None)
                     } else {
-                        Some(events)
+                        Ok(Some(events))
                     }
                 }
-                Poll::Pending => None,
+                Poll::Pending => Ok(None),
             }
         } else if let Some(error) = self.implementation.failure().clone() {
             self.implementation.set_finished();
-            Some(vec![StreamEvent::Error(error)])
+            Err(error)
         } else {
-            None
+            Ok(None)
         }
     }
 
-    fn blocking_get_next(&self) -> Vec<StreamEvent> {
+    fn get_next(&self) -> Result<Vec<StreamEvent>, ChatError> {
         let pollable = self.subscribe();
-        let mut result = Vec::new();
         loop {
             pollable.block();
-            match self.get_next() {
-                Some(events) => {
-                    result.extend(events);
-                    break result;
-                }
-                None => continue,
+            if let Some(events) = self.poll_next()? {
+                return Ok(events);
             }
         }
     }

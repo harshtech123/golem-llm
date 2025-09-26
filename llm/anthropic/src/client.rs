@@ -1,6 +1,6 @@
 use golem_llm::error::{error_code_from_status, from_event_source_error, from_reqwest_error};
 use golem_llm::event_source::EventSource;
-use golem_llm::golem::llm::llm::Error;
+use golem_llm::golem::llm::llm::ChatError;
 use log::trace;
 use reqwest::header::HeaderValue;
 use reqwest::{Client, Method, Response};
@@ -25,7 +25,7 @@ impl MessagesApi {
         Self { api_key, client }
     }
 
-    pub fn send_messages(&self, request: MessagesRequest) -> Result<MessagesResponse, Error> {
+    pub fn send_messages(&self, request: MessagesRequest) -> Result<MessagesResponse, ChatError> {
         trace!("Sending request to Anthropic API: {request:?}");
 
         let response: Response = self
@@ -40,7 +40,7 @@ impl MessagesApi {
         parse_response(response)
     }
 
-    pub fn stream_send_messages(&self, request: MessagesRequest) -> Result<EventSource, Error> {
+    pub fn stream_send_messages(&self, request: MessagesRequest) -> Result<EventSource, ChatError> {
         trace!("Sending request to Anthropic API: {request:?}");
 
         let response: Response = self
@@ -258,7 +258,7 @@ pub enum ContentBlockDelta {
     InputJsonDelta { partial_json: String },
 }
 
-fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, Error> {
+fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, ChatError> {
     let status = response.status();
     if status.is_success() {
         let body = response
@@ -275,7 +275,7 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, 
 
         trace!("Received {status} response from Anthropic API: {error_body:?}");
 
-        Err(Error {
+        Err(ChatError {
             code: error_code_from_status(status),
             message: format!("Request failed with {status}: {}", error_body.error.message),
             provider_error_json: Some(serde_json::to_string(&error_body).unwrap()),

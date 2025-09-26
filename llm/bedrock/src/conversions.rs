@@ -1,18 +1,14 @@
-use aws_smithy_types::{Document, Number};
-use std::collections::HashMap;
-
-use aws_sdk_bedrockruntime::{
-    self as bedrock,
-    error::SdkError,
-    operation::{converse, converse_stream},
-    types::{
-        ContentBlockDeltaEvent, ContentBlockStartEvent, ConversationRole,
-        ConverseStreamMetadataEvent, ConverseStreamOutput, ImageBlock, ImageFormat,
-        InferenceConfiguration, MessageStopEvent, SystemContentBlock, Tool, ToolConfiguration,
-        ToolInputSchema, ToolSpecification, ToolUseBlock,
-    },
+use aws_sdk_bedrockruntime as bedrock;
+use aws_sdk_bedrockruntime::error::SdkError;
+use aws_sdk_bedrockruntime::operation::{converse, converse_stream};
+use aws_sdk_bedrockruntime::types::{
+    ContentBlockDeltaEvent, ContentBlockStartEvent, ConversationRole, ConverseStreamMetadataEvent,
+    ConverseStreamOutput, ImageBlock, ImageFormat, InferenceConfiguration, MessageStopEvent,
+    SystemContentBlock, Tool, ToolConfiguration, ToolInputSchema, ToolSpecification, ToolUseBlock,
 };
+use aws_smithy_types::{Document, Number};
 use golem_llm::golem::llm::llm;
+use std::collections::HashMap;
 use wstd::http;
 
 #[derive(Debug)]
@@ -27,9 +23,9 @@ pub struct BedrockInput {
 
 impl BedrockInput {
     pub async fn from_events(
-        config: &llm::Config,
+        config: llm::Config,
         events: Vec<llm::ChatEvent>,
-    ) -> Result<Self, llm::Error> {
+    ) -> Result<Self, llm::ChatError> {
         let (user_messages, system_instructions) = events_to_bedrock_message_groups(events).await?;
 
         let options = config
@@ -59,7 +55,7 @@ impl BedrockInput {
 
 fn tool_defs_to_bedrock_tool_config(
     tools: Vec<llm::ToolDefinition>,
-) -> Result<Option<ToolConfiguration>, llm::Error> {
+) -> Result<Option<ToolConfiguration>, llm::ChatError> {
     if tools.is_empty() {
         return Ok(None);
     }
@@ -89,7 +85,7 @@ fn tool_defs_to_bedrock_tool_config(
 
 async fn events_to_bedrock_message_groups(
     events: Vec<llm::ChatEvent>,
-) -> Result<(Vec<bedrock::types::Message>, Vec<SystemContentBlock>), llm::Error> {
+) -> Result<(Vec<bedrock::types::Message>, Vec<SystemContentBlock>), llm::ChatError> {
     let mut user_messages: Vec<bedrock::types::Message> = vec![];
     let mut system_instructions: Vec<SystemContentBlock> = vec![];
 
@@ -142,17 +138,6 @@ async fn events_to_bedrock_message_groups(
                     );
                 }
             }
-            llm::ChatEvent::ToolCalls(tool_calls) => {
-                user_messages.push(
-                    bedrock::types::Message::builder()
-                        .role(ConversationRole::Assistant)
-                        .set_content(Some(
-                            tool_calls_to_bedrock_content_blocks(tool_calls).await?,
-                        ))
-                        .build()
-                        .unwrap(),
-                );
-            }
             llm::ChatEvent::ToolResults(tool_results) => user_messages.push(
                 bedrock::types::Message::builder()
                     .role(ConversationRole::User)
@@ -168,7 +153,7 @@ async fn events_to_bedrock_message_groups(
 
 async fn content_parts_to_bedrock_content_blocks(
     content_parts: Vec<llm::ContentPart>,
-) -> Result<Vec<bedrock::types::ContentBlock>, llm::Error> {
+) -> Result<Vec<bedrock::types::ContentBlock>, llm::ChatError> {
     let mut bedrock_content_blocks: Vec<bedrock::types::ContentBlock> = vec![];
     for part in content_parts {
         match part {
@@ -186,7 +171,7 @@ async fn content_parts_to_bedrock_content_blocks(
 
 async fn tool_calls_to_bedrock_content_blocks(
     tool_calls: Vec<llm::ToolCall>,
-) -> Result<Vec<bedrock::types::ContentBlock>, llm::Error> {
+) -> Result<Vec<bedrock::types::ContentBlock>, llm::ChatError> {
     let mut bedrock_content_blocks: Vec<bedrock::types::ContentBlock> = vec![];
     for tool_call in tool_calls {
         bedrock_content_blocks.push(bedrock::types::ContentBlock::ToolUse(
@@ -203,7 +188,7 @@ async fn tool_calls_to_bedrock_content_blocks(
 
 fn tool_result_to_bedrock_content_blocks(
     tool_results: Vec<llm::ToolResult>,
-) -> Result<Vec<bedrock::types::ContentBlock>, llm::Error> {
+) -> Result<Vec<bedrock::types::ContentBlock>, llm::ChatError> {
     let mut bedrock_content_blocks: Vec<bedrock::types::ContentBlock> = vec![];
     for tool_result in tool_results {
         bedrock_content_blocks.push(bedrock::types::ContentBlock::ToolResult(
@@ -230,7 +215,7 @@ fn tool_result_to_bedrock_content_blocks(
 
 async fn image_ref_to_bedrock_image_content_block(
     image_reference: llm::ImageReference,
-) -> Result<bedrock::types::ContentBlock, llm::Error> {
+) -> Result<bedrock::types::ContentBlock, llm::ChatError> {
     Ok(match image_reference {
         llm::ImageReference::Inline(image) => bedrock::types::ContentBlock::Image(
             ImageBlock::builder()
@@ -245,7 +230,7 @@ async fn image_ref_to_bedrock_image_content_block(
 
 async fn get_image_content_block_from_url(
     url: &str,
-) -> Result<bedrock::types::ContentBlock, llm::Error> {
+) -> Result<bedrock::types::ContentBlock, llm::ChatError> {
     let bytes = get_bytes_from_url(url).await?;
 
     let kind = infer::get(&bytes);
@@ -269,7 +254,7 @@ async fn get_image_content_block_from_url(
     ))
 }
 
-async fn get_bytes_from_url(url: &str) -> Result<Vec<u8>, llm::Error> {
+async fn get_bytes_from_url(url: &str) -> Result<Vec<u8>, llm::ChatError> {
     let client = http::Client::new();
 
     let request = http::Request::get(url)
@@ -302,13 +287,13 @@ async fn get_bytes_from_url(url: &str) -> Result<Vec<u8>, llm::Error> {
     Ok(bytes.to_vec())
 }
 
-fn str_to_bedrock_mime_type(mime_type: &str) -> Result<ImageFormat, llm::Error> {
+fn str_to_bedrock_mime_type(mime_type: &str) -> Result<ImageFormat, llm::ChatError> {
     match mime_type {
         "image/png" => Ok(ImageFormat::Png),
         "image/jpeg" => Ok(ImageFormat::Jpeg),
         "image/webp" => Ok(ImageFormat::Webp),
         "image/gif" => Ok(ImageFormat::Gif),
-        other => Err(llm::Error {
+        other => Err(llm::ChatError {
             code: llm::ErrorCode::Unsupported,
             message: format!("Unsupported image type: {other}"),
             provider_error_json: None,
@@ -316,36 +301,9 @@ fn str_to_bedrock_mime_type(mime_type: &str) -> Result<ImageFormat, llm::Error> 
     }
 }
 
-pub fn converse_output_to_tool_calls(
-    response: converse::ConverseOutput,
-) -> Result<Vec<llm::ToolCall>, llm::Error> {
-    let output = response.output().ok_or(custom_error(
-        llm::ErrorCode::InternalError,
-        "An error occurred while converting to tool calls: expected output to not be None"
-            .to_owned(),
-    ))?;
-
-    match output.as_message() {
-        Err(_) => Err(custom_error(
-            llm::ErrorCode::InternalError,
-            "An error occurred while converting to tool calls: expected output to be a Message"
-                .to_owned(),
-        )),
-        Ok(message) => {
-            let mut tool_calls: Vec<llm::ToolCall> = vec![];
-            for block in message.content.clone() {
-                if let bedrock::types::ContentBlock::ToolUse(tool) = block {
-                    tool_calls.push(bedrock_tool_use_to_llm_tool_call(tool)?);
-                }
-            }
-            Ok(tool_calls)
-        }
-    }
-}
-
 pub fn converse_output_to_complete_response(
     response: converse::ConverseOutput,
-) -> Result<llm::CompleteResponse, llm::Error> {
+) -> Result<llm::ChatResponse, llm::ChatError> {
     let output = response.output().ok_or(custom_error(
         llm::ErrorCode::InternalError,
         "An error occurred while converting to complete response: expected output to be not be None"
@@ -376,7 +334,7 @@ pub fn converse_output_to_complete_response(
                 }
             }
             let metadata = converse_output_to_response_metadata(&response);
-            Ok(llm::CompleteResponse {
+            Ok(llm::ChatResponse {
                 // bedrock does not return an id as part of the response struct.
                 // there may be one present in `additional_model_response_fields`
                 // but the schema varies depending on the model being invoked. Leaving it empty for now
@@ -390,7 +348,7 @@ pub fn converse_output_to_complete_response(
     }
 }
 
-fn bedrock_tool_use_to_llm_tool_call(tool: ToolUseBlock) -> Result<llm::ToolCall, llm::Error> {
+fn bedrock_tool_use_to_llm_tool_call(tool: ToolUseBlock) -> Result<llm::ToolCall, llm::ChatError> {
     Ok(llm::ToolCall {
         id: tool.tool_use_id,
         name: tool.name,
@@ -544,12 +502,13 @@ fn process_message_stop_event(event: MessageStopEvent) -> Option<llm::StreamEven
     }))
 }
 
-fn json_str_to_smithy_document(value: &str) -> Result<Document, llm::Error> {
-    let json_value: serde_json::Value = serde_json::from_str(value).map_err(|err| llm::Error {
-        code: llm::ErrorCode::InvalidRequest,
-        message: format!("Invalid tool schema: {err}"),
-        provider_error_json: None,
-    })?;
+fn json_str_to_smithy_document(value: &str) -> Result<Document, llm::ChatError> {
+    let json_value: serde_json::Value =
+        serde_json::from_str(value).map_err(|err| llm::ChatError {
+            code: llm::ErrorCode::InvalidRequest,
+            message: format!("Invalid tool schema: {err}"),
+            provider_error_json: None,
+        })?;
     Ok(serde_json_to_smithy_document(json_value))
 }
 
@@ -617,8 +576,8 @@ fn serde_json_to_smithy_document(value: serde_json::Value) -> Document {
 pub fn from_converse_sdk_error(
     model_id: String,
     sdk_error: SdkError<converse::ConverseError>,
-) -> llm::Error {
-    llm::Error {
+) -> llm::ChatError {
+    llm::ChatError {
         code: llm::ErrorCode::InternalError,
         message: format!("Error calling Bedrock model {model_id}: {sdk_error:?}",),
         provider_error_json: None,
@@ -628,16 +587,16 @@ pub fn from_converse_sdk_error(
 pub fn from_converse_stream_sdk_error(
     model_id: String,
     sdk_error: SdkError<converse_stream::ConverseStreamError>,
-) -> llm::Error {
-    llm::Error {
+) -> llm::ChatError {
+    llm::ChatError {
         code: llm::ErrorCode::InternalError,
         message: format!("Error calling Bedrock model {model_id}: {sdk_error:?}",),
         provider_error_json: None,
     }
 }
 
-pub fn custom_error(code: llm::ErrorCode, message: String) -> llm::Error {
-    llm::Error {
+pub fn custom_error(code: llm::ErrorCode, message: String) -> llm::ChatError {
+    llm::ChatError {
         code,
         message,
         provider_error_json: None,

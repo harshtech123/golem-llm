@@ -3,14 +3,13 @@ use std::cell::{Ref, RefCell, RefMut};
 use client::{CompletionsRequest, OllamaApi};
 use conversions::{events_to_request, process_response};
 use golem_llm::chat_session::ChatSession;
-use golem_llm::golem::llm::llm::ChatResponse;
 use golem_llm::{
     chat_stream::{LlmChatStream, LlmChatStreamState},
     durability::{DurableLLM, ExtendedGuest},
     event_source::EventSource,
     golem::llm::llm::{
-        ChatEvent, ChatStream, Config, ContentPart, Error, FinishReason, Guest, Message,
-        ResponseMetadata, Role, StreamDelta, StreamEvent, ToolCall, Usage,
+        ChatError, ChatEvent, ChatResponse, ChatStream, Config, ContentPart, FinishReason, Guest,
+        Message, ResponseMetadata, Role, StreamDelta, StreamEvent, ToolCall, Usage,
     },
 };
 use golem_rust::wasm_rpc::Pollable;
@@ -21,7 +20,7 @@ mod conversions;
 
 struct OllamaChatStream {
     stream: RefCell<Option<EventSource>>,
-    failure: Option<Error>,
+    failure: Option<ChatError>,
     finished: RefCell<bool>,
 }
 
@@ -34,7 +33,7 @@ impl OllamaChatStream {
         })
     }
 
-    pub fn failed(error: Error) -> LlmChatStream<Self> {
+    pub fn failed(error: ChatError) -> LlmChatStream<Self> {
         LlmChatStream::new(OllamaChatStream {
             stream: RefCell::new(None),
             failure: Some(error),
@@ -44,7 +43,7 @@ impl OllamaChatStream {
 }
 
 impl LlmChatStreamState for OllamaChatStream {
-    fn failure(&self) -> &Option<Error> {
+    fn failure(&self) -> &Option<ChatError> {
         &self.failure
     }
     fn is_finished(&self) -> bool {
@@ -181,11 +180,9 @@ impl LlmChatStreamState for OllamaChatStream {
 struct OllamaComponent;
 
 impl OllamaComponent {
-    fn request(client: &OllamaApi, request: CompletionsRequest) -> ChatResponse {
-        match client.send_chat(request) {
-            Ok(response) => process_response(response),
-            Err(err) => ChatResponse::Error(err),
-        }
+    fn request(client: &OllamaApi, request: CompletionsRequest) -> Result<ChatResponse, ChatError> {
+        let response = client.send_chat(request)?;
+        process_response(response)
     }
 
     fn streaming_request(
@@ -204,24 +201,19 @@ impl Guest for OllamaComponent {
     type ChatStream = LlmChatStream<OllamaChatStream>;
     type ChatSession = ChatSession<DurableOllamaComponent>;
 
-    fn send(config: Config, events: Vec<ChatEvent>) -> ChatResponse {
+    fn send(config: Config, events: Vec<ChatEvent>) -> Result<ChatResponse, ChatError> {
         let client = OllamaApi::new(config.model.clone());
-        match events_to_request(&config, events) {
-            Ok(request) => Self::request(&client, request),
-            Err(err) => ChatResponse::Error(err),
-        }
+        let events = events_to_request(config, events)?;
+        Self::request(&client, events)
     }
 
     fn stream(config: Config, events: Vec<ChatEvent>) -> ChatStream {
-        ChatStream::new(Self::unwrapped_stream(&config, events))
+        ChatStream::new(Self::unwrapped_stream(config, events))
     }
 }
 
 impl ExtendedGuest for OllamaComponent {
-    fn unwrapped_stream(
-        config: &Config,
-        events: Vec<ChatEvent>,
-    ) -> LlmChatStream<OllamaChatStream> {
+    fn unwrapped_stream(config: Config, events: Vec<ChatEvent>) -> LlmChatStream<OllamaChatStream> {
         let client = OllamaApi::new(config.model.clone());
         match events_to_request(config, events) {
             Ok(request) => Self::streaming_request(&client, request),

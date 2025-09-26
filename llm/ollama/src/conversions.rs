@@ -5,16 +5,16 @@ use crate::client::{
 };
 use base64::{engine::general_purpose, Engine};
 use golem_llm::golem::llm::llm::{
-    ChatEvent, ChatResponse, CompleteResponse, Config, ContentPart, Error, ErrorCode, FinishReason,
+    ChatError, ChatEvent, ChatResponse, Config, ContentPart, ErrorCode, FinishReason,
     ImageReference, Message, ResponseMetadata, Role, ToolCall as GolemToolCall, ToolResult, Usage,
 };
 use log::trace;
 use std::collections::HashMap;
 
 pub fn events_to_request(
-    config: &Config,
+    config: Config,
     events: Vec<ChatEvent>,
-) -> Result<CompletionsRequest, Error> {
+) -> Result<CompletionsRequest, ChatError> {
     let options = config
         .provider_options
         .iter()
@@ -27,9 +27,6 @@ pub fn events_to_request(
         match event {
             ChatEvent::Message(message) => request_messages.push(message_to_request(message)),
             ChatEvent::Response(response) => request_messages.push(response_to_request(response)),
-            ChatEvent::ToolCalls(tool_calls) => {
-                request_messages.extend(tool_calls.into_iter().map(tool_call_to_request))
-            }
             ChatEvent::ToolResults(tool_results) => {
                 request_messages.extend(tool_results.into_iter().map(tool_result_to_request))
             }
@@ -38,7 +35,7 @@ pub fn events_to_request(
 
     let mut tools = Vec::new();
     for tool in &config.tools {
-        let param = serde_json::from_str(&tool.parameters_schema).map_err(|err| Error {
+        let param = serde_json::from_str(&tool.parameters_schema).map_err(|err| ChatError {
             code: ErrorCode::InternalError,
             message: format!("Failed to parse tool parameters for {}: {err}", tool.name),
             provider_error_json: None,
@@ -140,7 +137,7 @@ fn message_to_request(message: Message) -> MessageRequest {
     }
 }
 
-fn response_to_request(response: CompleteResponse) -> MessageRequest {
+fn response_to_request(response: ChatResponse) -> MessageRequest {
     let mut message_content = String::new();
     let mut attached_image = Vec::new();
 
@@ -170,6 +167,19 @@ fn response_to_request(response: CompleteResponse) -> MessageRequest {
         }
     }
 
+    let tool_calls = response
+        .tool_calls
+        .into_iter()
+        .map(|tool_call| Tool {
+            tool_type: String::from("function"),
+            function: FunctionTool {
+                name: tool_call.name.clone(),
+                description: "".to_string(),
+                parameters: tool_call.arguments_json.clone().parse().unwrap_or_default(),
+            },
+        })
+        .collect::<Vec<_>>();
+
     MessageRequest {
         content: message_content,
         role: Assistant,
@@ -178,23 +188,7 @@ fn response_to_request(response: CompleteResponse) -> MessageRequest {
         } else {
             Some(attached_image)
         },
-        tools_calls: None,
-    }
-}
-
-fn tool_call_to_request(tool_call: GolemToolCall) -> MessageRequest {
-    MessageRequest {
-        role: MessageRole::Assistant,
-        content: "".to_string(),
-        images: None,
-        tools_calls: Some(vec![Tool {
-            tool_type: String::from("function"),
-            function: FunctionTool {
-                name: tool_call.name.clone(),
-                description: "".to_string(),
-                parameters: tool_call.arguments_json.clone().parse().unwrap_or_default(),
-            },
-        }]),
+        tools_calls: (!tool_calls.is_empty()).then_some(tool_calls),
     }
 }
 
@@ -230,7 +224,7 @@ fn parse_option<T: std::str::FromStr>(options: &HashMap<&str, &str>, key: &str) 
     options.get(key).and_then(|v| v.parse::<T>().ok())
 }
 
-pub fn process_response(response: CompletionsResponse) -> ChatResponse {
+pub fn process_response(response: CompletionsResponse) -> Result<ChatResponse, ChatError> {
     if let Some(ref message) = response.message {
         let mut content = Vec::<ContentPart>::new();
         let mut tool_calls = Vec::<GolemToolCall>::new();
@@ -273,14 +267,14 @@ pub fn process_response(response: CompletionsResponse) -> ChatResponse {
             provider_metadata_json: Some(get_provider_metadata(&response)),
         };
 
-        ChatResponse::Message(CompleteResponse {
+        Ok(ChatResponse {
             id: format!("ollama-{timestamp}"),
             content,
             tool_calls,
             metadata,
         })
     } else {
-        ChatResponse::Error(Error {
+        Err(ChatError {
             code: ErrorCode::InternalError,
             message: String::from("No messages in response"),
             provider_error_json: None,
@@ -291,12 +285,12 @@ pub fn process_response(response: CompletionsResponse) -> ChatResponse {
 pub fn get_provider_metadata(response: &CompletionsResponse) -> String {
     format!(
         r#"{{
-    "total_duration":"{}",
-    "load_duration":"{}",
-    "prompt_eval_duration":{},
-    "eval_duration":{},
-    "context":{},
-    }}"#,
+            "total_duration":"{}",
+            "load_duration":"{}",
+            "prompt_eval_duration":{},
+            "eval_duration":{},
+            "context":{},
+        }}"#,
         response.total_duration.unwrap_or(0),
         response.load_duration.unwrap_or(0),
         response.prompt_eval_duration.unwrap_or(0),

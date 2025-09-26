@@ -1647,6 +1647,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "golem-llm-anthropic"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "golem-llm",
+ "golem-rust",
+ "indoc",
+ "log 0.4.28",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.41.0",
+]
+
+[[package]]
 name = "golem-llm-bedrock"
 version = "0.0.0"
 dependencies = [

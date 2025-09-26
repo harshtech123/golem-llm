@@ -1,10 +1,9 @@
 use async_utils::get_async_runtime;
 use client::Bedrock;
 use golem_llm::chat_session::ChatSession;
-use golem_llm::golem::llm::llm::ChatEvent;
-use golem_llm::{
-    durability::{DurableLLM, ExtendedGuest},
-    golem::llm::llm::{self, ChatResponse, ChatStream, Config, Guest, Message},
+use golem_llm::durability::{DurableLLM, ExtendedGuest};
+use golem_llm::golem::llm::llm::{
+    self, ChatError, ChatEvent, ChatResponse, ChatStream, Config, Guest, Message,
 };
 use golem_rust::bindings::wasi::clocks::monotonic_clock;
 use indoc::indoc;
@@ -22,26 +21,22 @@ impl Guest for BedrockComponent {
     type ChatStream = BedrockChatStream;
     type ChatSession = ChatSession<DurableBedrockComponent>;
 
-    fn send(config: Config, events: Vec<ChatEvent>) -> ChatResponse {
+    fn send(config: Config, events: Vec<ChatEvent>) -> Result<ChatResponse, ChatError> {
         let runtime = get_async_runtime();
 
         runtime.block_on(async {
-            let bedrock = get_bedrock_client().await;
-
-            match bedrock {
-                Ok(client) => client.converse(&config, events).await,
-                Err(err) => ChatResponse::Error(err),
-            }
+            let client = get_bedrock_client().await?;
+            client.converse(config, events).await
         })
     }
 
     fn stream(config: Config, events: Vec<ChatEvent>) -> ChatStream {
-        ChatStream::new(Self::unwrapped_stream(&config, events))
+        ChatStream::new(Self::unwrapped_stream(config, events))
     }
 }
 
 impl ExtendedGuest for BedrockComponent {
-    fn unwrapped_stream(config: &llm::Config, messages: Vec<llm::ChatEvent>) -> Self::ChatStream {
+    fn unwrapped_stream(config: llm::Config, messages: Vec<llm::ChatEvent>) -> Self::ChatStream {
         let runtime = get_async_runtime();
 
         runtime.block_on(async {
@@ -112,7 +107,7 @@ impl ExtendedGuest for BedrockComponent {
     }
 }
 
-async fn get_bedrock_client() -> Result<Bedrock, llm::Error> {
+async fn get_bedrock_client() -> Result<Bedrock, llm::ChatError> {
     Bedrock::new().await
 }
 

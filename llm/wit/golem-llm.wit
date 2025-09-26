@@ -129,16 +129,9 @@ interface llm {
     provider-metadata-json: option<string>,
   }
 
-  record complete-response {
-    id: string,
-    content: list<content-part>,
-    tool-calls: list<tool-call>,
-    metadata: response-metadata,
-  }
-
   // --- Error Handling ---
 
-  record error {
+  record chat-error {
     code: error-code,
     message: string,
     provider-error-json: option<string>,
@@ -146,19 +139,18 @@ interface llm {
 
   // --- Chat Response ---
 
-  variant chat-response {
-    message(complete-response),
-    tool-calls(list<tool-call>), // TODO: this seems duplicated with also having them in messages?
-    error(error),
+  record chat-response {
+    id: string,
+    content: list<content-part>,
+    tool-calls: list<tool-call>,
+    metadata: response-metadata,
   }
-
 
   // --- Chat event  ---
 
   variant chat-event {
     message(message),
-    response(complete-response),
-    tool-calls(list<tool-call>),
+    response(chat-response),
     tool-results(list<tool-result>),
   }
 
@@ -172,21 +164,19 @@ interface llm {
   variant stream-event {
     delta(stream-delta),
     finish(response-metadata),
-    error(error),
   }
 
   resource chat-stream {
-    get-next: func() -> option<list<stream-event>>;
-    blocking-get-next: func() -> list<stream-event>;
+    poll-next: func() -> result<option<list<stream-event>>, chat-error>;
+    get-next: func() -> result<list<stream-event>, chat-error>;
   }
-
 
   // --- Core Functions ---
 
   send: func(
     config: config,
     events: list<chat-event>,
-  ) -> chat-response;
+  ) -> result<chat-response, chat-error>;
 
   %stream: func(
     config: config,
@@ -209,7 +199,7 @@ interface llm {
     set-chat-events: func(events: list<chat-event>);
 
     // Successful responses are automatically added to the session chat events
-    send: func() -> chat-response;
+    send: func() -> result<chat-response, chat-error>;
     // Successful responses are automatically added to the session chat events
     %stream: func() -> chat-stream;
   }

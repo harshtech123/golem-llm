@@ -4,7 +4,7 @@ use base64::{engine::general_purpose, Engine};
 use golem_llm::{
     error::{error_code_from_status, from_event_source_error},
     event_source::EventSource,
-    golem::llm::llm::{Error, ErrorCode},
+    golem::llm::llm::ErrorCode,
 };
 use log::trace;
 use reqwest::{
@@ -12,6 +12,7 @@ use reqwest::{
     Client, Method, Response, StatusCode,
 };
 
+use golem_llm::golem::llm::llm::ChatError;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
 
@@ -35,7 +36,7 @@ impl OllamaApi {
         }
     }
 
-    pub fn send_chat(&self, params: CompletionsRequest) -> Result<CompletionsResponse, Error> {
+    pub fn send_chat(&self, params: CompletionsRequest) -> Result<CompletionsResponse, ChatError> {
         trace!("Sending request to Ollama API: {params:?}");
 
         let mut modified_params = params;
@@ -59,7 +60,7 @@ impl OllamaApi {
         handle_response::<CompletionsResponse>(response)
     }
 
-    pub fn send_chat_stream(&self, params: CompletionsRequest) -> Result<EventSource, Error> {
+    pub fn send_chat_stream(&self, params: CompletionsRequest) -> Result<EventSource, ChatError> {
         trace!("Sending request to Ollama API: {params:?}");
 
         let mut modified_params = params;
@@ -68,7 +69,7 @@ impl OllamaApi {
             modified_params.model = Some(self.default_model.clone())
         };
 
-        let json_body = serde_json::to_string(&modified_params).map_err(|e| Error {
+        let json_body = serde_json::to_string(&modified_params).map_err(|e| ChatError {
             code: ErrorCode::InternalError,
             message: format!("Failed to serialize request body: {e}"),
             provider_error_json: None,
@@ -269,7 +270,7 @@ pub struct OllamaRequestError {
     error_message: Option<String>,
 }
 
-pub fn handle_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, Error> {
+pub fn handle_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, ChatError> {
     let status = response.status();
 
     match status {
@@ -280,7 +281,7 @@ pub fn handle_response<T: DeserializeOwned + Debug>(response: Response) -> Resul
 
             match serde_json::from_str::<T>(&raw_body) {
                 Ok(body) => Ok(body),
-                Err(err) => Err(Error {
+                Err(err) => Err(ChatError {
                     code: ErrorCode::InternalError,
                     message: format!("Failed to parse response body: {err}"),
                     provider_error_json: Some(raw_body),
@@ -294,13 +295,13 @@ pub fn handle_response<T: DeserializeOwned + Debug>(response: Response) -> Resul
             trace!("Received {status} response from OpenRouter API: {raw_error_body:?}");
 
             let error_body: OllamaRequestError =
-                serde_json::from_str(&raw_error_body).map_err(|err| Error {
+                serde_json::from_str(&raw_error_body).map_err(|err| ChatError {
                     code: ErrorCode::InternalError,
                     message: format!("Failed to parse error response body: {err}"),
                     provider_error_json: Some(raw_error_body),
                 })?;
 
-            Err(Error {
+            Err(ChatError {
                 code: error_code_from_status(status),
                 message: error_body.status.unwrap_or_default(),
                 provider_error_json: error_body.error_message,
@@ -325,8 +326,8 @@ pub fn image_to_base64(source: &str) -> Result<String, Box<dyn std::error::Error
     Ok(base64_data)
 }
 
-pub fn from_reqwest_error(context: &str, err: reqwest::Error) -> Error {
-    Error {
+pub fn from_reqwest_error(context: &str, err: reqwest::Error) -> ChatError {
+    ChatError {
         code: ErrorCode::InternalError,
         message: format!("{context}: {err}"),
         provider_error_json: None,
