@@ -5,8 +5,8 @@ use crate::conversions::{
     pinecone_query_response_to_search_results, vector_records_to_upsert_request, extract_prefix_from_filter
 };
 use golem_vector::config::with_config_key;
-use golem_vector::durability::ExtendedGuest;
-use golem_vector::exports::golem::vector::{
+use golem_vector::durability::{ExtendedGuest, DurableVector};
+use golem_vector::golem::vector::{
     analytics::Guest as AnalyticsGuest,
     collections::{Guest as CollectionsGuest, CollectionInfo},
     connection::{Credentials, Guest as ConnectionGuest},
@@ -822,9 +822,6 @@ impl NamespacesGuest for PineconeComponent {
     }
 }
 
-impl golem_vector::exports::golem::vector::types::Guest for PineconeComponent {
-    type MetadataFunc = golem_vector::exports::golem::vector::types::MetadataValue;
-    type FilterFunc = golem_vector::exports::golem::vector::types::FilterExpression;
-}
+type DurablePineconeComponent = DurableVector<PineconeComponent>;
 
-golem_vector::export_vector!(PineconeComponent with_types_in golem_vector);
+golem_vector::export_vector!(DurablePineconeComponent with_types_in golem_vector);

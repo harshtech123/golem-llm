@@ -7,8 +7,9 @@ use crate::client::{
 use golem_vector::golem::vector::types::{
     VectorRecord, VectorData, MetadataValue, DistanceMetric,
     FilterExpression, FilterCondition, FilterOperator, SearchResult,
-    VectorError,
+    VectorError,BinaryVector, MetadataFunc, SparseVector, GeoCoordinates 
 };
+use golem_vector::exports::golem::vector::search::SearchQuery;
 use golem_vector::exports::golem::vector::{
     collections::CollectionInfo as ExportCollectionInfo,
     analytics::CollectionStats as ExportCollectionStats,
@@ -162,7 +163,7 @@ pub fn vector_records_to_upsert_request(
 pub fn create_search_request(
     collection_name: &str,
     db_name: &str,
-    query: &golem_vector::exports::golem::vector::search::SearchQuery,
+    query: &SearchQuery,
     limit: u32,
     filter: Option<&FilterExpression>,
     output_fields: Option<&[String]>,
@@ -171,7 +172,7 @@ pub fn create_search_request(
     partition_names: Option<Vec<String>>,
 ) -> Result<SearchRequest, VectorError> {
     let (dense_data, sparse_data, binary_data) = match query {
-        golem_vector::exports::golem::vector::search::SearchQuery::Vector(vector_data) => {
+        SearchQuery::Vector(vector_data) => {
             match vector_data {
                 VectorData::Dense(values) => (Some(vec![values.clone()]), None, None),
                 VectorData::Sparse(sparse) => {
@@ -193,10 +194,10 @@ pub fn create_search_request(
                 _ => return Err(VectorError::UnsupportedFeature("Named vectors not supported for search".to_string())),
             }
         }
-        golem_vector::exports::golem::vector::search::SearchQuery::ById(_) => {
+        SearchQuery::ById(_) => {
             return Err(VectorError::UnsupportedFeature("Search by ID not directly supported".to_string()));
         }
-        golem_vector::exports::golem::vector::search::SearchQuery::MultiVector(_) => {
+        SearchQuery::MultiVector(_) => {
             return Err(VectorError::UnsupportedFeature("Multi-vector search not supported".to_string()));
         }
     };
@@ -477,7 +478,7 @@ fn json_to_metadata_value(value: &Value) -> Result<MetadataValue, VectorError> {
             let mut metadata_arr = Vec::new();
             for item in arr {
                 let metadata_val = json_to_metadata_value(item)?;
-                metadata_arr.push(golem_vector::exports::golem::vector::types::MetadataFunc::new(metadata_val));
+                metadata_arr.push(MetadataFunc::new(metadata_val));
             }
             Ok(MetadataValue::ArrayVal(metadata_arr))
         }
@@ -490,7 +491,7 @@ fn json_to_metadata_value(value: &Value) -> Result<MetadataValue, VectorError> {
                     .and_then(|v| v.as_f64())
                     .ok_or_else(|| VectorError::ProviderError("Invalid longitude in geo object".to_string()))?;
                 
-                return Ok(MetadataValue::GeoVal(golem_vector::golem::vector::types::GeoCoordinates {
+                return Ok(MetadataValue::GeoVal(GeoCoordinates {
                     latitude: lat,
                     longitude: lon,
                 }));
@@ -499,7 +500,7 @@ fn json_to_metadata_value(value: &Value) -> Result<MetadataValue, VectorError> {
             let mut metadata_obj = Vec::new();
             for (key, value) in obj {
                 let metadata_val = json_to_metadata_value(value)?;
-                metadata_obj.push((key.clone(), golem_vector::exports::golem::vector::types::MetadataFunc::new(metadata_val)));
+                metadata_obj.push((key.clone(), MetadataFunc::new(metadata_val)));
             }
             Ok(MetadataValue::ObjectVal(metadata_obj))
         }
@@ -560,7 +561,7 @@ fn json_to_sparse_vector_data(value: &Value) -> Result<VectorData, VectorError> 
                 .ok_or_else(|| VectorError::ProviderError("Invalid values format in sparse vector".to_string()))?;
             
             let max_dim = indices.iter().max().copied().unwrap_or(0) + 1;
-            Ok(VectorData::Sparse(golem_vector::golem::vector::types::SparseVector {
+            Ok(VectorData::Sparse(SparseVector {
                 indices,
                 values,
                 total_dimensions: max_dim,
@@ -579,7 +580,7 @@ fn json_to_binary_vector_data(value: &Value) -> Result<VectorData, VectorError> 
                 .map_err(|e| VectorError::ProviderError(format!("Failed to decode binary vector: {}", e)))?;
             
             let dimensions = (data.len() * 8) as u32; 
-            Ok(VectorData::Binary(golem_vector::golem::vector::types::BinaryVector {
+            Ok(VectorData::Binary(BinaryVector {
                 data,
                 dimensions,
             }))

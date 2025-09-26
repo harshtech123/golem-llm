@@ -23,6 +23,11 @@ pub trait ExtendedGuest: 'static {
     ) -> Result<(), VectorError>;
 }
 
+impl<T: ExtendedGuest> crate::golem::vector::types::Guest for T {
+    type MetadataFunc = crate::golem::vector::types::MetadataValue;
+    type FilterFunc = crate::golem::vector::types::FilterExpression;
+}
+
 /// When the durability feature flag is off, wrapping with `DurableVector` is just a passthrough
 #[cfg(not(feature = "durability"))]
 mod passthrough_impl {
@@ -388,6 +393,11 @@ mod passthrough_impl {
             init_logging();
             Impl::namespace_exists(collection, namespace)
         }
+    }
+
+    impl<Impl: ExtendedGuest> crate::golem::vector::types::Guest for DurableVector<Impl> {
+        type MetadataFunc = crate::golem::vector::types::MetadataValue;
+        type FilterFunc = crate::golem::vector::types::FilterExpression;
     }
 }
 
@@ -1056,6 +1066,11 @@ mod durable_impl {
         include_vectors: Option<bool>,
         include_metadata: Option<bool>,
         search_params: Option<Vec<(String, String)>>,
+    }
+
+    impl<Impl: ExtendedGuest> crate::golem::vector::types::Guest for DurableVector<Impl> {
+        type MetadataFunc = crate::golem::vector::types::MetadataValue;
+        type FilterFunc = crate::golem::vector::types::FilterExpression;
     }
 }
 
