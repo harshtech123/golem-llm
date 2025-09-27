@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 /// The Pinecone Vector API client
-/// Based on https://docs.pinecone.io/reference/api/2025-04/
+/// based on https://docs.pinecone.io/reference/api/2025-04/
 #[derive(Clone)]
 pub struct PineconeClient {
     client: Client,

@@ -3,7 +3,7 @@ use crate::client::{
 };
 use golem_vector::golem::vector::types::{
     DistanceMetric, Metadata, MetadataValue, SearchResult, VectorData, VectorError,
-    VectorRecord, FilterExpression
+    VectorRecord, FilterExpression, FilterOperator, FilterCondition
 };
 use golem_vector::golem::vector::search::SearchQuery;
 use golem_vector::golem::vector::collections::CollectionInfo;
@@ -326,13 +326,13 @@ pub fn pinecone_error_to_vector_error(error: &str) -> VectorError {
 }
 
 pub fn filter_expression_to_pinecone_filter(
-    filter: &golem_vector::golem::vector::types::FilterExpression,
+    filter: &FilterExpression,
 ) -> Result<HashMap<String, serde_json::Value>, VectorError> {
     match filter {
-        golem_vector::golem::vector::types::FilterExpression::Condition(condition) => {
+        FilterExpression::Condition(condition) => {
             condition_to_pinecone_filter(condition)
         }
-        golem_vector::golem::vector::types::FilterExpression::And(filters) => {
+        FilterExpression::And(filters) => {
             let mut combined_filter = HashMap::new();
             for filter_func in filters {
                 let sub_filter = filter_expression_to_pinecone_filter(&filter_func.get())?;
@@ -342,7 +342,7 @@ pub fn filter_expression_to_pinecone_filter(
             }
             Ok(combined_filter)
         }
-        golem_vector::golem::vector::types::FilterExpression::Or(filters) => {
+        FilterExpression::Or(filters) => {
             let mut or_conditions = Vec::new();
             for filter_func in filters {
                 let sub_filter = filter_expression_to_pinecone_filter(&filter_func.get())?;
@@ -354,7 +354,7 @@ pub fn filter_expression_to_pinecone_filter(
             result.insert("$or".to_string(), serde_json::Value::Array(or_conditions));
             Ok(result)
         }
-        golem_vector::golem::vector::types::FilterExpression::Not(filter_func) => {
+        FilterExpression::Not(filter_func) => {
             let sub_filter = filter_expression_to_pinecone_filter(&filter_func.get())?;
             let mut result = HashMap::new();
             result.insert(
@@ -369,9 +369,8 @@ pub fn filter_expression_to_pinecone_filter(
 }
 
 pub fn condition_to_pinecone_filter(
-    condition: &golem_vector::golem::vector::types::FilterCondition,
+    condition: &FilterCondition,
 ) -> Result<HashMap<String, serde_json::Value>, VectorError> {
-    use golem_vector::golem::vector::types::{FilterOperator, MetadataValue};
     
     let mut filter = HashMap::new();
     let field = &condition.field;
@@ -438,7 +437,6 @@ pub fn condition_to_pinecone_filter(
 }
 
 pub fn extract_prefix_from_filter(filter: &FilterExpression) -> Option<String> {
-        use golem_vector::exports::golem::vector::types::{FilterOperator, MetadataValue};
         
         match filter {
             FilterExpression::Condition(condition) => {
