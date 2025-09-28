@@ -3,8 +3,7 @@ use crate::conversions::{
     collection_info_to_export_collection_info,
     vector_records_to_upsert_request, create_search_request, create_query_request,
     create_get_request, create_delete_request, milvus_search_results_to_search_results,
-    milvus_entities_to_vector_records, collection_stats_to_export_stats,
-    milvus_error_to_vector_error, distance_metric_to_string,
+    milvus_entities_to_vector_records, collection_stats_to_export_stats, distance_metric_to_string,
 };
 use golem_vector::config::{with_config_key, get_optional_config, with_connection_config_key};
 use golem_vector::durability::{ExtendedGuest, DurableVector};
@@ -166,13 +165,13 @@ impl CollectionsGuest for MilvusComponent {
                     Ok(_) => {
                         match client.describe_collection(&name) {
                             Ok(response) => collection_info_to_export_collection_info(&response.data),
-                            Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+                            Err(e) => Err(e),
                         }
                     }
-                    Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+                    Err(e) => Err(e),
                 }
             }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -180,14 +179,8 @@ impl CollectionsGuest for MilvusComponent {
         let client = Self::create_client()?;
         
         match client.list_collections() {
-            Ok(response) => {
-                if response.code == 0 {
-                    Ok(response.data)
-                } else {
-                    Err(VectorError::ProviderError(format!("Milvus error code: {}", response.code)))
-                }
-            }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+            Ok(response) => Ok(response.data),
+            Err(e) => Err(e),
         }
     }
 
@@ -195,14 +188,8 @@ impl CollectionsGuest for MilvusComponent {
         let client = Self::create_client()?;
         
         match client.describe_collection(&name) {
-            Ok(response) => {
-                if response.code == 0 {
-                    collection_info_to_export_collection_info(&response.data)
-                } else {
-                    Err(VectorError::ProviderError(format!("Milvus error code: {}", response.code)))
-                }
-            }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+            Ok(response) => collection_info_to_export_collection_info(&response.data),
+            Err(e) => Err(e),
         }
     }
 
@@ -220,14 +207,8 @@ impl CollectionsGuest for MilvusComponent {
         let _ = client.release_collection(&name);
         
         match client.drop_collection(&name) {
-            Ok(response) => {
-                if response.code == 0 {
-                    Ok(())
-                } else {
-                    Err(VectorError::ProviderError(format!("Milvus error code: {}", response.code)))
-                }
-            }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+            Ok(_) => Ok(()),
+            Err(e) => Err(e),
         }
     }
 
@@ -235,13 +216,7 @@ impl CollectionsGuest for MilvusComponent {
         let client = Self::create_client()?;
         
         match client.has_collection(&name) {
-            Ok(response) => {
-                if response.code == 0 {
-                    Ok(response.data.has)
-                } else {
-                    Ok(false)
-                }
-            }
+            Ok(response) => Ok(response.data.has),
             Err(_) => Ok(false),
         }
     }
@@ -258,18 +233,12 @@ impl VectorsGuest for MilvusComponent {
         let upsert_request = vector_records_to_upsert_request(&collection, client.database(), &vectors, namespace.as_deref())?;
         
         match client.upsert(&upsert_request) {
-            Ok(response) => {
-                if response.code == 0 {
-                    Ok(BatchResult {
-                        success_count: response.data.upsert_count,
-                        failure_count: 0,
-                        errors: vec![],
-                    })
-                } else {
-                    Err(VectorError::ProviderError(format!("Milvus error code: {}", response.code)))
-                }
-            }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+            Ok(response) => Ok(BatchResult {
+                success_count: response.data.upsert_count,
+                failure_count: 0,
+                errors: vec![],
+            }),
+            Err(e) => Err(e),
         }
     }
 
@@ -317,14 +286,8 @@ impl VectorsGuest for MilvusComponent {
         );
         
         match client.get(&get_request) {
-            Ok(response) => {
-                if response.code == 0 {
-                    milvus_entities_to_vector_records(&response.data)
-                } else {
-                    Err(VectorError::ProviderError(format!("Milvus error code: {}", response.code)))
-                }
-            }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+            Ok(response) => milvus_entities_to_vector_records(&response.data),
+            Err(e) => Err(e),
         }
     }
 
@@ -368,14 +331,8 @@ impl VectorsGuest for MilvusComponent {
         )?;
         
         match client.delete(&delete_request) {
-            Ok(response) => {
-                if response.code == 0 {
-                    Ok(response.data.delete_count)
-                } else {
-                    Err(VectorError::ProviderError(format!("Milvus error code: {}", response.code)))
-                }
-            }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+            Ok(response) => Ok(response.data.delete_count),
+            Err(e) => Err(e),
         }
     }
 
@@ -395,14 +352,8 @@ impl VectorsGuest for MilvusComponent {
         )?;
         
         match client.delete(&delete_request) {
-            Ok(response) => {
-                if response.code == 0 {
-                    Ok(response.data.delete_count)
-                } else {
-                    Err(VectorError::ProviderError(format!("Milvus error code: {}", response.code)))
-                }
-            }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+            Ok(response) => Ok(response.data.delete_count),
+            Err(e) => Err(e),
         }
     }
 
@@ -442,19 +393,15 @@ impl VectorsGuest for MilvusComponent {
         
         match client.query(&query_request) {
             Ok(response) => {
-                if response.code == 0 {
-                    let vector_records = milvus_entities_to_vector_records(&response.data)?;
-                    
-                    Ok(ListResponse {
-                        vectors: vector_records,
-                        next_cursor: None, 
-                        total_count: None,
-                    })
-                } else {
-                    Err(VectorError::ProviderError(format!("Milvus error code: {}", response.code)))
-                }
+                let vector_records = milvus_entities_to_vector_records(&response.data)?;
+                
+                Ok(ListResponse {
+                    vectors: vector_records,
+                    next_cursor: None, 
+                    total_count: None,
+                })
             }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -478,25 +425,13 @@ impl VectorsGuest for MilvusComponent {
             )?;
             
             match client.query(&query_request) {
-                Ok(response) => {
-                    if response.code == 0 {
-                        Ok(response.data.len() as u64)
-                    } else {
-                        Err(VectorError::ProviderError(format!("Milvus error code: {}", response.code)))
-                    }
-                }
-                Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+                Ok(response) => Ok(response.data.len() as u64),
+                Err(e) => Err(e),
             }
         } else {
             match client.get_collection_stats(&collection) {
-                Ok(response) => {
-                    if response.code == 0 {
-                        Ok(response.data.row_count)
-                    } else {
-                        Err(VectorError::ProviderError(format!("Milvus error code: {}", response.code)))
-                    }
-                }
-                Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+                Ok(response) => Ok(response.data.row_count),
+                Err(e) => Err(e),
             }
         }
     }
@@ -536,23 +471,19 @@ impl SearchGuest for MilvusComponent {
         
         match client.search(&search_request) {
             Ok(response) => {
-                if response.code == 0 {
-                    let mut results = milvus_search_results_to_search_results(&response.data)?;
-                    
-                    if let Some(min_score_val) = min_score {
-                        results.retain(|result| result.score >= min_score_val);
-                    }
-                    
-                    if let Some(max_distance_val) = max_distance {
-                        results.retain(|result| result.distance <= max_distance_val);
-                    }
-                    
-                    Ok(results)
-                } else {
-                    Err(VectorError::ProviderError(format!("Milvus error code: {}", response.code)))
+                let mut results = milvus_search_results_to_search_results(&response.data)?;
+                
+                if let Some(min_score_val) = min_score {
+                    results.retain(|result| result.score >= min_score_val);
                 }
+                
+                if let Some(max_distance_val) = max_distance {
+                    results.retain(|result| result.distance <= max_distance_val);
+                }
+                
+                Ok(results)
             }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -683,14 +614,8 @@ impl AnalyticsGuest for MilvusComponent {
         let client = Self::create_client()?;
         
         match client.get_collection_stats(&collection) {
-            Ok(response) => {
-                if response.code == 0 {
-                    Ok(collection_stats_to_export_stats(&response.data))
-                } else {
-                    Err(VectorError::ProviderError(format!("Milvus error code: {}", response.code)))
-                }
-            }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string())),
+            Ok(response) => Ok(collection_stats_to_export_stats(&response.data)),
+            Err(e) => Err(e),
         }
     }
 
@@ -722,7 +647,7 @@ impl NamespacesGuest for MilvusComponent {
         
         match client.has_partition(&collection, &namespace) {
             Ok(response) => {
-                if response.code == 0 && response.data.has {
+                if response.data.has {
                     Ok(NamespaceInfo {
                         name: namespace,
                         collection: collection,
@@ -733,27 +658,23 @@ impl NamespacesGuest for MilvusComponent {
                     })
                 } else {
                     match client.create_partition(&collection, &namespace) {
-                        Ok(create_response) => {
-                            if create_response.code == 0 {
-                                let _ = client.load_partitions(&collection, vec![namespace.clone()]);
-                                
-                                Ok(NamespaceInfo {
-                                    name: namespace,
-                                    collection: collection,
-                                    created_at: None,
-                                    vector_count: 0,
-                                    size_bytes: 0,
-                                    metadata: None,
-                                })
-                            } else {
-                                Err(VectorError::ProviderError(format!("Failed to create partition: code {}", create_response.code)))
-                            }
+                        Ok(_) => {
+                            let _ = client.load_partitions(&collection, vec![namespace.clone()]);
+                            
+                            Ok(NamespaceInfo {
+                                name: namespace,
+                                collection: collection,
+                                created_at: None,
+                                vector_count: 0,
+                                size_bytes: 0,
+                                metadata: None,
+                            })
                         }
-                        Err(e) => Err(milvus_error_to_vector_error(&e.to_string()))
+                        Err(e) => Err(e)
                     }
                 }
             }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string()))
+            Err(e) => Err(e)
         }
     }
 
@@ -764,23 +685,19 @@ impl NamespacesGuest for MilvusComponent {
         
         match client.list_partitions(&collection) {
             Ok(response) => {
-                if response.code == 0 {
-                    let namespaces = response.data.into_iter()
-                        .map(|partition_name| NamespaceInfo {
-                            name: partition_name,
-                            collection: collection.clone(),
-                            created_at: None,
-                            vector_count: 0,
-                            size_bytes: 0,
-                            metadata: None,
-                        })
-                        .collect();
-                    Ok(namespaces)
-                } else {
-                    Err(VectorError::ProviderError(format!("Failed to list partitions: code {}", response.code)))
-                }
+                let namespaces = response.data.into_iter()
+                    .map(|partition_name| NamespaceInfo {
+                        name: partition_name,
+                        collection: collection.clone(),
+                        created_at: None,
+                        vector_count: 0,
+                        size_bytes: 0,
+                        metadata: None,
+                    })
+                    .collect();
+                Ok(namespaces)
             }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string()))
+            Err(e) => Err(e)
         }
     }
 
@@ -805,7 +722,7 @@ impl NamespacesGuest for MilvusComponent {
                     Err(VectorError::NotFound(format!("Partition {} not found in collection {}", namespace, collection)))
                 }
             }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string()))
+            Err(e) => Err(e)
         }
     }
 
@@ -818,14 +735,8 @@ impl NamespacesGuest for MilvusComponent {
         let _ = client.release_partitions(&collection, vec![namespace.clone()]);
         
         match client.drop_partition(&collection, &namespace) {
-            Ok(response) => {
-                if response.code == 0 {
-                    Ok(())
-                } else {
-                    Err(VectorError::ProviderError(format!("Failed to drop partition: code {}", response.code)))
-                }
-            }
-            Err(e) => Err(milvus_error_to_vector_error(&e.to_string()))
+            Ok(_) => Ok(()),
+            Err(e) => Err(e)
         }
     }
 
@@ -836,9 +747,7 @@ impl NamespacesGuest for MilvusComponent {
         let client = Self::create_client()?;
         
         match client.has_partition(&collection, &namespace) {
-            Ok(response) => {
-                Ok(response.code == 0 && response.data.has)
-            }
+            Ok(response) => Ok(response.data.has),
             Err(_) => Ok(false)
         }
     }

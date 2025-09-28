@@ -381,24 +381,6 @@ pub fn collection_stats_to_export_stats(
     }
 }
 
-pub fn milvus_error_to_vector_error(error_msg: &str) -> VectorError {
-    if error_msg.contains("not found") || error_msg.contains("doesn't exist") {
-        VectorError::NotFound(error_msg.to_string())
-    } else if error_msg.contains("already exists") {
-        VectorError::AlreadyExists(error_msg.to_string())
-    } else if error_msg.contains("invalid") || error_msg.contains("bad") {
-        VectorError::InvalidParams(error_msg.to_string())
-    } else if error_msg.contains("unauthorized") || error_msg.contains("permission") {
-        VectorError::Unauthorized(error_msg.to_string())
-    } else if error_msg.contains("rate limit") {
-        VectorError::RateLimited(error_msg.to_string())
-    } else if error_msg.contains("unsupported") || error_msg.contains("not supported") {
-        VectorError::UnsupportedFeature(error_msg.to_string())
-    } else {
-        VectorError::ProviderError(error_msg.to_string())
-    }
-}
-
 // helper functions for conversions
 
 fn json_value_from_id(id: &str) -> Value {

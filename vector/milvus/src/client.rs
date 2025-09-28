@@ -126,7 +126,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "list_collections")
     }
 
     pub fn create_collection(&self, request: &CreateCollectionRequest) -> Result<CreateCollectionResponse, VectorError> {
@@ -138,7 +138,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "create_collection")
     }
 
     pub fn describe_collection(&self, collection_name: &str) -> Result<DescribeCollectionResponse, VectorError> {
@@ -155,7 +155,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "describe_collection")
     }
 
     pub fn drop_collection(&self, collection_name: &str) -> Result<DropCollectionResponse, VectorError> {
@@ -172,7 +172,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "drop_collection")
     }
 
     pub fn has_collection(&self, collection_name: &str) -> Result<HasCollectionResponse, VectorError> {
@@ -189,7 +189,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "has_collection")
     }
 
     pub fn load_collection(&self, collection_name: &str) -> Result<LoadCollectionResponse, VectorError> {
@@ -206,7 +206,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "load_collection")
     }
 
     pub fn release_collection(&self, collection_name: &str) -> Result<ReleaseCollectionResponse, VectorError> {
@@ -223,7 +223,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "release_collection")
     }
 
     pub fn upsert(&self, request: &UpsertRequest) -> Result<UpsertResponse, VectorError> {
@@ -235,7 +235,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "upsert")
     }
 
     pub fn search(&self, request: &SearchRequest) -> Result<SearchResponse, VectorError> {
@@ -247,7 +247,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "search")
     }
 
     pub fn query(&self, request: &QueryRequest) -> Result<QueryResponse, VectorError> {
@@ -259,7 +259,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "query")
     }
 
     pub fn get(&self, request: &GetRequest) -> Result<GetResponse, VectorError> {
@@ -271,7 +271,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "get")
     }
 
     pub fn delete(&self, request: &DeleteRequest) -> Result<DeleteResponse, VectorError> {
@@ -283,7 +283,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "delete")
     }
 
     pub fn get_collection_stats(&self, collection_name: &str) -> Result<GetCollectionStatsResponse, VectorError> {
@@ -300,7 +300,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "get_collection_stats")
     }
 
     pub fn create_partition(&self, collection_name: &str, partition_name: &str) -> Result<CreatePartitionResponse, VectorError> {
@@ -318,7 +318,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "create_partition")
     }
 
     pub fn drop_partition(&self, collection_name: &str, partition_name: &str) -> Result<DropPartitionResponse, VectorError> {
@@ -336,7 +336,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "drop_partition")
     }
 
     pub fn list_partitions(&self, collection_name: &str) -> Result<ListPartitionsResponse, VectorError> {
@@ -353,7 +353,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "list_partitions")
     }
 
     pub fn has_partition(&self, collection_name: &str, partition_name: &str) -> Result<HasPartitionResponse, VectorError> {
@@ -371,7 +371,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "has_partition")
     }
 
     pub fn load_partitions(&self, collection_name: &str, partition_names: Vec<String>) -> Result<LoadPartitionsResponse, VectorError> {
@@ -389,7 +389,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "load_partitions")
     }
 
     pub fn release_partitions(&self, collection_name: &str, partition_names: Vec<String>) -> Result<ReleasePartitionsResponse, VectorError> {
@@ -407,7 +407,7 @@ impl MilvusClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "release_partitions")
     }
 }
 
@@ -867,55 +867,143 @@ pub struct ReleasePartitionsResponse {
     pub data: serde_json::Value,
 }
 
+fn from_milvus_error_code(error_code: i32, message: &str) -> VectorError {
+    match error_code {
+        0 => VectorError::ProviderError(format!("Unexpected success code with error message: {}", message)),
+        
+        // client errors (1-999)
+        1 => VectorError::ProviderError(format!("Unexpected error: {}", message)),
+        100 => VectorError::ProviderError(format!("Unexpected error: {}", message)),
+        
+        // collection related errors (700-799)
+        700 => VectorError::NotFound(format!("Collection not found: {}", message)),
+        701 => VectorError::NotFound(format!("Collection not loaded: {}", message)),
+        800 => VectorError::AlreadyExists(format!("Collection already exists: {}", message)),
+        
+        // partition related errors (900-999)
+        900 => VectorError::NotFound(format!("Partition not found: {}", message)),
+        901 => VectorError::AlreadyExists(format!("Partition already exists: {}", message)),
+        
+        // parameter/validation errors (1100-1199)
+        1100 => VectorError::InvalidParams(format!("Illegal argument: {}", message)),
+        1101 => VectorError::InvalidParams(format!("Invalid collection name: {}", message)),
+        1102 => VectorError::InvalidParams(format!("Invalid field name: {}", message)),
+        1103 => VectorError::InvalidParams(format!("Invalid dimension: {}", message)),
+        1104 => VectorError::InvalidParams(format!("Invalid index type: {}", message)),
+        1105 => VectorError::InvalidParams(format!("Invalid parameter: {}", message)),
+        1106 => VectorError::InvalidParams(format!("Invalid index parameter: {}", message)),
+        
+        // index related errors (1200-1299)
+        1200 => VectorError::NotFound(format!("Index not found: {}", message)),
+        1201 => VectorError::AlreadyExists(format!("Index already exists: {}", message)),
+        
+        // data type errors (1300-1399)
+        1300 => VectorError::InvalidParams(format!("Data type mismatch: {}", message)),
+        1301 => VectorError::InvalidParams(format!("Invalid data type: {}", message)),
+        
+        // search/query errors (1400-1499)
+        1400 => VectorError::InvalidParams(format!("Search parameter error: {}", message)),
+        1401 => VectorError::InvalidParams(format!("Invalid search expression: {}", message)),
+        
+        // insert/upsert errors (1500-1599)
+        1500 => VectorError::InvalidParams(format!("Insert parameter error: {}", message)),
+        1501 => VectorError::InvalidParams(format!("Invalid insert data: {}", message)),
+        
+        // server/internal errors (65536 +)
+        65536..=i32::MAX => VectorError::ProviderError(format!("Milvus internal error {}: {}", error_code, message)),
+        
+        _ => VectorError::ProviderError(format!("Unknown Milvus error code {}: {}", error_code, message)),
+    }
+}
+
+fn handle_milvus_error(response: Response, operation: &str) -> VectorError {
+    let status = response.status();
+    
+    if !status.is_success() {
+        let error_body = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+        trace!("HTTP error {status} for {operation}: {error_body:?}");
+        
+        return match status.as_u16() {
+            400 => VectorError::InvalidParams(format!("Bad request for {}: {}", operation, error_body)),
+            401 => VectorError::Unauthorized(format!("Authentication failed for {}", operation)),
+            404 => VectorError::NotFound(format!("Resource not found for {}: {}", operation, error_body)),
+            409 => VectorError::AlreadyExists(format!("Resource already exists for {}: {}", operation, error_body)),
+            429 => VectorError::RateLimited(format!("Rate limit exceeded for {}", operation)),
+            500..=599 => VectorError::ProviderError(format!("Server error for {}: {}", operation, error_body)),
+            _ => VectorError::ProviderError(format!("HTTP {} for {}: {}", status.as_u16(), operation, error_body)),
+        };
+    }
+    
+    match response.text() {
+        Ok(body) => {
+            trace!("Response body for {operation}: {body}");
+            
+            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&body) {
+                if let Some(code) = json_value.get("code").and_then(|c| c.as_i64()) {
+                    if code != 0 {
+                        let message = json_value.get("message")
+                            .and_then(|m| m.as_str())
+                            .unwrap_or("No error message provided");
+                        return from_milvus_error_code(code as i32, message);
+                    }
+                }
+            }
+            
+            VectorError::ProviderError(format!("Failed to parse response for {}: {}", operation, body))
+        }
+        Err(e) => {
+            trace!("Failed to read response body for {operation}: {e}");
+            VectorError::ProviderError(format!("Failed to read response body for {}: {}", operation, e))
+        }
+    }
+}
+
 //parsing function
 
-fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, VectorError> {
+fn parse_response<T: DeserializeOwned + Debug>(response: Response, operation: &str) -> Result<T, VectorError> {
     let status = response.status();
 
-    trace!("Received response from Milvus API: {response:?}");
+    trace!("Received response from Milvus API for {operation}: {response:?}");
 
     if status.is_success() {
         match response.text() {
             Ok(body) => {
-                trace!("Received response body from Milvus API: {body:?}");
+                trace!("Received response body from Milvus API for {operation}: {body:?}");
+                
+                if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&body) {
+                    if let Some(code) = json_value.get("code").and_then(|c| c.as_i64()) {
+                        if code != 0 {
+                            let message = json_value.get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("No error message provided");
+                            return Err(from_milvus_error_code(code as i32, message));
+                        }
+                    }
+                }
                 
                 match serde_json::from_str::<T>(&body) {
                     Ok(parsed) => {
-                        trace!("Successfully parsed response: {parsed:?}");
+                        trace!("Successfully parsed response for {operation}: {parsed:?}");
                         Ok(parsed)
                     }
                     Err(parse_error) => {
-                        trace!("Failed to parse response: {parse_error}");
+                        trace!("Failed to parse response for {operation}: {parse_error}");
                         Err(VectorError::ProviderError(format!(
-                            "Failed to parse Milvus response: {}",
-                            parse_error
+                            "Failed to parse Milvus response for {}: {}",
+                            operation, parse_error
                         )))
                     }
                 }
             }
             Err(body_error) => {
-                trace!("Failed to read response body: {body_error}");
+                trace!("Failed to read response body for {operation}: {body_error}");
                 Err(VectorError::ProviderError(format!(
-                    "Failed to read Milvus response body: {}",
-                    body_error
+                    "Failed to read Milvus response body for {}: {}",
+                    operation, body_error
                 )))
             }
         }
     } else {
-        let error_body = response.text().unwrap_or_else(|_| "Unknown error".to_string());
-
-        trace!("Received {status} response from Milvus API: {error_body:?}");
-
-        let error_message = match status.as_u16() {
-            400 => VectorError::InvalidParams(format!("Bad request: {}", error_body)),
-            401 => VectorError::Unauthorized("Authentication failed".to_string()),
-            404 => VectorError::NotFound(format!("Resource not found: {}", error_body)),
-            409 => VectorError::AlreadyExists(format!("Resource already exists: {}", error_body)),
-            429 => VectorError::RateLimited("Rate limit exceeded".to_string()),
-            500..=599 => VectorError::ProviderError(format!("Server error: {}", error_body)),
-            _ => VectorError::ProviderError(format!("HTTP {}: {}", status.as_u16(), error_body)),
-        };
-
-        Err(error_message)
+        Err(handle_milvus_error(response, operation))
     }
 }
