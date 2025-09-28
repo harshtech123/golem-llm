@@ -305,26 +305,6 @@ pub fn index_model_to_collection_info(
     })
 }
 
-pub fn pinecone_error_to_vector_error(error: &str) -> VectorError {
-    if error.contains("not found") || error.contains("404") {
-        VectorError::NotFound(error.to_string())
-    } else if error.contains("already exists") || error.contains("409") {
-        VectorError::AlreadyExists(error.to_string())
-    } else if error.contains("invalid") || error.contains("400") {
-        VectorError::InvalidParams(error.to_string())
-    } else if error.contains("unauthorized") || error.contains("401") {
-        VectorError::Unauthorized(error.to_string())
-    } else if error.contains("rate limit") || error.contains("429") {
-        VectorError::RateLimited(error.to_string())
-    } else if error.contains("dimension") {
-        VectorError::DimensionMismatch(error.to_string())
-    } else if error.contains("connection") || error.contains("timeout") {
-        VectorError::ConnectionError(error.to_string())
-    } else {
-        VectorError::ProviderError(error.to_string())
-    }
-}
-
 pub fn filter_expression_to_pinecone_filter(
     filter: &FilterExpression,
 ) -> Result<HashMap<String, serde_json::Value>, VectorError> {
@@ -554,48 +534,5 @@ mod tests {
         assert_eq!(result.id, "test-id");
         assert_eq!(result.values, vec![1.0, 2.0, 3.0].into());
         assert!(result.metadata.is_some());
-    }
-
-    #[test]
-    fn test_pinecone_error_to_vector_error() {
-        assert!(matches!(
-            pinecone_error_to_vector_error("Index not found"),
-            VectorError::NotFound(_)
-        ));
-        
-        assert!(matches!(
-            pinecone_error_to_vector_error("Index already exists"),
-            VectorError::AlreadyExists(_)
-        ));
-        
-        assert!(matches!(
-            pinecone_error_to_vector_error("Invalid parameters"),
-            VectorError::InvalidParams(_)
-        ));
-        
-        assert!(matches!(
-            pinecone_error_to_vector_error("Unauthorized access"),
-            VectorError::Unauthorized(_)
-        ));
-        
-        assert!(matches!(
-            pinecone_error_to_vector_error("Rate limit exceeded"),
-            VectorError::RateLimited(_)
-        ));
-        
-        assert!(matches!(
-            pinecone_error_to_vector_error("Dimension mismatch"),
-            VectorError::DimensionMismatch(_)
-        ));
-        
-        assert!(matches!(
-            pinecone_error_to_vector_error("Connection timeout"),
-            VectorError::ConnectionError(_)
-        ));
-        
-        assert!(matches!(
-            pinecone_error_to_vector_error("Unknown error"),
-            VectorError::ProviderError(_)
-        ));
     }
 }

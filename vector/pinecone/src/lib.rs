@@ -1,7 +1,7 @@
 use crate::client::PineconeClient;
 use crate::conversions::{
     extract_dense_and_sparse_from_query, filter_expression_to_pinecone_filter, 
-    index_model_to_collection_info, pinecone_error_to_vector_error, 
+    index_model_to_collection_info,
     pinecone_query_response_to_search_results, vector_records_to_upsert_request, extract_prefix_from_filter
 };
 use golem_vector::config::with_config_key;
@@ -154,7 +154,7 @@ impl CollectionsGuest for PineconeComponent {
 
         match client.create_index(&create_request) {
             Ok(index_model) => index_model_to_collection_info(&index_model),
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -163,7 +163,7 @@ impl CollectionsGuest for PineconeComponent {
         
         match client.list_indexes() {
             Ok(response) => Ok(response.indexes.iter().map(|idx| idx.name.clone()).collect()),
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -172,7 +172,7 @@ impl CollectionsGuest for PineconeComponent {
         
         match client.describe_index(&name) {
             Ok(index_model) => index_model_to_collection_info(&index_model),
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -189,7 +189,7 @@ impl CollectionsGuest for PineconeComponent {
         
         match client.delete_index(&name) {
             Ok(_) => Ok(()),
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -218,7 +218,7 @@ impl VectorsGuest for PineconeComponent {
                 failure_count: 0,
                 errors: vec![],
             }),
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -271,7 +271,7 @@ impl VectorsGuest for PineconeComponent {
                 }
                 Ok(records)
             }
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -315,7 +315,7 @@ impl VectorsGuest for PineconeComponent {
         
         match client.delete_vectors(&collection, &delete_request) {
             Ok(_) => Ok(ids.len() as u32),
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -337,7 +337,7 @@ impl VectorsGuest for PineconeComponent {
         
         match client.delete_vectors(&collection, &delete_request) {
             Ok(_) => Ok(0), 
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -356,7 +356,7 @@ impl VectorsGuest for PineconeComponent {
         
         match client.delete_vectors(&collection, &delete_request) {
             Ok(_) => Ok(0), 
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -421,7 +421,7 @@ impl VectorsGuest for PineconeComponent {
                                     }
                                 }
                                 Err(e) => {
-                                    return Err(pinecone_error_to_vector_error(&e.to_string()));
+                                    return Err(e);
                                 }
                             }
                         }
@@ -452,7 +452,7 @@ impl VectorsGuest for PineconeComponent {
                         "List vectors is only supported on Pinecone serverless indexes".to_string()
                     ))
                 } else {
-                    Err(pinecone_error_to_vector_error(&error_msg))
+                    Err(e)
                 }
             }
         }
@@ -481,7 +481,7 @@ impl VectorsGuest for PineconeComponent {
                     Ok(stats.total_vector_count as u64)
                 }
             }
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 }
@@ -549,7 +549,7 @@ impl SearchGuest for PineconeComponent {
                 
                 Ok(results)
             }
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -710,7 +710,7 @@ impl AnalyticsGuest for PineconeComponent {
                     distance_distribution: None,
                 })
             }
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -768,7 +768,7 @@ impl NamespacesGuest for PineconeComponent {
                 }
                 Ok(namespace_infos)
             }
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 
@@ -797,7 +797,7 @@ impl NamespacesGuest for PineconeComponent {
                     Err(VectorError::NotFound(format!("Namespace {} not found", namespace)))
                 }
             }
-            Err(e) => Err(pinecone_error_to_vector_error(&e.to_string())),
+            Err(e) => Err(e),
         }
     }
 

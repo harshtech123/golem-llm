@@ -167,7 +167,7 @@ impl PineconeClient {
             self.create_request(Method::GET, &url).send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "list_indexes")
     }
 
     pub fn create_index(&self, request: &CreateIndexRequest) -> Result<IndexModel, VectorError> {
@@ -181,7 +181,7 @@ impl PineconeClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "create_index")
     }
 
     pub fn describe_index(&self, index_name: &str) -> Result<IndexModel, VectorError> {
@@ -193,7 +193,7 @@ impl PineconeClient {
             self.create_request(Method::GET, &url).send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "describe_index")
     }
 
     pub fn delete_index(&self, index_name: &str) -> Result<(), VectorError> {
@@ -226,7 +226,7 @@ impl PineconeClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "configure_index")
     }
 
     pub fn upsert_vectors(&self, index_name: &str, request: &UpsertRequest) -> Result<UpsertResponse, VectorError> {
@@ -241,7 +241,7 @@ impl PineconeClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "upsert_vectors")
     }
 
     pub fn query_vectors(&self, index_name: &str, request: &QueryRequest) -> Result<QueryResponse, VectorError> {
@@ -256,7 +256,7 @@ impl PineconeClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "query_vectors")
     }
 
     pub fn fetch_vectors(&self, index_name: &str, request: &FetchRequest) -> Result<FetchResponse, VectorError> {
@@ -281,7 +281,7 @@ impl PineconeClient {
             self.create_request(Method::GET, &url).send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "fetch_vectors")
     }
 
     pub fn delete_vectors(&self, index_name: &str, request: &DeleteRequest) -> Result<(), VectorError> {
@@ -340,7 +340,7 @@ impl PineconeClient {
                 .send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "describe_index_stats")
     }
 
     pub fn list_namespaces(&self, index_name: &str) -> Result<ListNamespacesResponse, VectorError> {
@@ -353,7 +353,7 @@ impl PineconeClient {
             self.create_request(Method::GET, &url).send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "list_namespaces")
     }
 
     pub fn list_vector_ids(&self, index_name: &str, request: &ListVectorIdsRequest) -> Result<ListVectorIdsResponse, VectorError> {
@@ -385,7 +385,7 @@ impl PineconeClient {
             self.create_request(Method::GET, &url).send()
         })?;
 
-        parse_response(response)
+        parse_response(response, "list_vector_ids")
     }
 }
 
@@ -695,40 +695,145 @@ pub struct PaginationInfo {
     pub next: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PineconeErrorResponse {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<PineconeError>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PineconeError {
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub error_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<serde_json::Value>,
+}
+
 // helper functions
 
-fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, VectorError> {
+fn from_pinecone_error_code(error_code: i32, message: &str, operation: &str) -> VectorError {
+    match error_code {
+        // auth and authorization errors (3-7)
+        3 => VectorError::Unauthorized(format!("Forbidden for {}: {}", operation, message)),
+        7 => VectorError::Unauthorized(format!("Unauthorized for {}: {}", operation, message)),
+        
+        // client errors (4xx range)
+        400 => VectorError::InvalidParams(format!("Bad request for {}: {}", operation, message)),
+        401 => VectorError::Unauthorized(format!("Authentication failed for {}: {}", operation, message)),
+        403 => VectorError::Unauthorized(format!("Permission denied for {}: {}", operation, message)),
+        404 => VectorError::NotFound(format!("Resource not found for {}: {}", operation, message)),
+        409 => VectorError::AlreadyExists(format!("Resource conflict for {}: {}", operation, message)),
+        422 => VectorError::InvalidParams(format!("Validation failed for {}: {}", operation, message)),
+        429 => VectorError::RateLimited(format!("Rate limit exceeded for {}: {}", operation, message)),
+        
+        // server errors (5xx range)
+        500 => VectorError::ProviderError(format!("Internal server error for {}: {}", operation, message)),
+        502 => VectorError::ConnectionError(format!("Bad gateway for {}: {}", operation, message)),
+        503 => VectorError::ConnectionError(format!("Service unavailable for {}: {}", operation, message)),
+        504 => VectorError::ConnectionError(format!("Gateway timeout for {}: {}", operation, message)),
+        
+        // Pinecone-specific 
+        10000..=10999 => VectorError::InvalidParams(format!("Pinecone validation error {} for {}: {}", error_code, operation, message)),
+        11000..=11999 => VectorError::NotFound(format!("Pinecone resource error {} for {}: {}", error_code, operation, message)),
+        12000..=12999 => VectorError::AlreadyExists(format!("Pinecone conflict error {} for {}: {}", error_code, operation, message)),
+        13000..=13999 => VectorError::DimensionMismatch(format!("Pinecone dimension error {} for {}: {}", error_code, operation, message)),
+        14000..=14999 => VectorError::RateLimited(format!("Pinecone rate limit error {} for {}: {}", error_code, operation, message)),
+        15000..=15999 => VectorError::ProviderError(format!("Pinecone index error {} for {}: {}", error_code, operation, message)),
+        16000..=16999 => VectorError::InvalidParams(format!("Pinecone vector operation error {} for {}: {}", error_code, operation, message)),
+        17000..=17999 => VectorError::ConnectionError(format!("Pinecone connection error {} for {}: {}", error_code, operation, message)),
+        18000..=18999 => VectorError::ProviderError(format!("Pinecone service error {} for {}: {}", error_code, operation, message)),
+        
+        _ => VectorError::ProviderError(format!("Unknown Pinecone error code {} for {}: {}", error_code, operation, message)),
+    }
+}
+
+fn from_http_status_code(status_code: u16, message: &str, operation: &str) -> VectorError {
+    match status_code {
+        400 => VectorError::InvalidParams(format!("Bad request for {}: {}", operation, message)),
+        401 => VectorError::Unauthorized(format!("Authentication failed for {}: {}", operation, message)),
+        403 => VectorError::Unauthorized(format!("Permission denied for {}: {}", operation, message)),
+        404 => VectorError::NotFound(format!("Resource not found for {}: {}", operation, message)),
+        409 => VectorError::AlreadyExists(format!("Resource conflict for {}: {}", operation, message)),
+        422 => VectorError::InvalidParams(format!("Validation failed for {}: {}", operation, message)),
+        429 => VectorError::RateLimited(format!("Rate limit exceeded for {}: {}", operation, message)),
+        500 => VectorError::ProviderError(format!("Pinecone internal server error for {}: {}", operation, message)),
+        502 => VectorError::ConnectionError(format!("Bad gateway for {}: {}", operation, message)),
+        503 => VectorError::ConnectionError(format!("Service unavailable for {}: {}", operation, message)),
+        504 => VectorError::ConnectionError(format!("Gateway timeout for {}: {}", operation, message)),
+        500..=599 => VectorError::ProviderError(format!("Server error {} for {}: {}", status_code, operation, message)),
+        _ => VectorError::ProviderError(format!("HTTP {} error for {}: {}", status_code, operation, message)),
+    }
+}
+
+fn handle_pinecone_error(response: Response, operation: &str) -> VectorError {
+    let status = response.status();
+    
+    if !status.is_success() {
+        let error_body = response.text().unwrap_or_else(|_| "Unknown error".to_string());
+        trace!("HTTP error {status} for {operation}: {error_body:?}");
+        
+        if let Ok(error_response) = serde_json::from_str::<PineconeErrorResponse>(&error_body) {
+            if let Some(code) = error_response.code {
+                let message = error_response.message.as_deref()
+                    .or_else(|| error_response.error.as_ref()?.message.as_deref())
+                    .unwrap_or("No error message provided");
+                return from_pinecone_error_code(code, message, operation);
+            }
+            
+            if let Some(error) = &error_response.error {
+                if let Some(code_str) = &error.code {
+                    if let Ok(code) = code_str.parse::<i32>() {
+                        let message = error.message.as_deref()
+                            .or(error_response.message.as_deref())
+                            .unwrap_or("No error message provided");
+                        return from_pinecone_error_code(code, message, operation);
+                    }
+                }
+                
+                if let Some(message) = &error.message {
+                    return from_http_status_code(status.as_u16(), message, operation);
+                }
+            }
+            
+            if let Some(message) = error_response.message {
+                return from_http_status_code(status.as_u16(), &message, operation);
+            }
+        }
+        
+        return from_http_status_code(status.as_u16(), &error_body, operation);
+    }
+    
+    VectorError::ProviderError(format!("Unexpected error state for {}", operation))
+}
+
+fn parse_response<T: DeserializeOwned + Debug>(response: Response, operation: &str) -> Result<T, VectorError> {
     let status = response.status();
 
-    trace!("Received response from Pinecone API: {response:?}");
+    trace!("Received response from Pinecone API for {operation}: {response:?}");
 
     if status.is_success() {
-        let body = response
-            .json::<T>()
-            .map_err(|err| VectorError::ProviderError(format!("Failed to decode response body: {err}")))?;
-
-        trace!("Received response from Pinecone API: {body:?}");
-
-        Ok(body)
+        match response.json::<T>() {
+            Ok(body) => {
+                trace!("Successfully parsed Pinecone response for {operation}: {body:?}");
+                Ok(body)
+            }
+            Err(parse_error) => {
+                trace!("Failed to parse Pinecone response for {operation}: {parse_error}");
+                Err(VectorError::ProviderError(format!(
+                    "Failed to parse Pinecone response for {}: {}",
+                    operation, parse_error
+                )))
+            }
+        }
     } else {
-        let error_body = response
-            .text()
-            .map_err(|err| VectorError::ConnectionError(format!("Failed to receive error response body: {err}")))?;
-
-        trace!("Received {status} response from Pinecone API: {error_body:?}");
-
-        let error_message = match status.as_u16() {
-            400 => VectorError::InvalidParams(format!("Bad Request: {error_body}")),
-            401 => VectorError::Unauthorized("Invalid API key".to_string()),
-            403 => VectorError::Unauthorized("Forbidden access".to_string()),
-            404 => VectorError::NotFound("Resource not found".to_string()),
-            409 => VectorError::AlreadyExists("Resource already exists".to_string()),
-            422 => VectorError::InvalidParams(format!("Unprocessable Entity: {error_body}")),
-            429 => VectorError::RateLimited("Rate limit exceeded".to_string()),
-            500..=599 => VectorError::ProviderError(format!("Server error: {error_body}")),
-            _ => VectorError::ProviderError(format!("HTTP {status}: {error_body}")),
-        };
-
-        Err(error_message)
+        Err(handle_pinecone_error(response, operation))
     }
 }
