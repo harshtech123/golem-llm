@@ -2,7 +2,8 @@ use crate::client::PineconeClient;
 use crate::conversions::{
     extract_dense_and_sparse_from_query, filter_expression_to_pinecone_filter, 
     index_model_to_collection_info,
-    pinecone_query_response_to_search_results, vector_records_to_upsert_request, extract_prefix_from_filter
+    pinecone_query_response_to_search_results, vector_records_to_upsert_request, extract_prefix_from_filter,
+    pinecone_vector_to_vector_record, 
 };
 use golem_vector::config::with_config_key;
 use golem_vector::durability::{ExtendedGuest, DurableVector};
@@ -262,7 +263,7 @@ impl VectorsGuest for PineconeComponent {
             Ok(response) => {
                 let mut records = Vec::new();
                 for (id, vector) in response.vectors {
-                    records.push(conversions::pinecone_vector_to_vector_record(&client::Vector {
+                    records.push(pinecone_vector_to_vector_record(&client::Vector {
                         id,
                         values: vector.values,
                         metadata: vector.metadata,
@@ -411,7 +412,7 @@ impl VectorsGuest for PineconeComponent {
                             match client.fetch_vectors(&collection, &fetch_request) {
                                 Ok(fetch_response) => {
                                     for (id, vector) in fetch_response.vectors {
-                                        let record = conversions::pinecone_vector_to_vector_record(&client::Vector {
+                                        let record = pinecone_vector_to_vector_record(&client::Vector {
                                             id: id.clone(),
                                             values: if include_vectors.unwrap_or(false) { vector.values } else { None },
                                             metadata: if include_metadata.unwrap_or(false) { vector.metadata } else { None },
