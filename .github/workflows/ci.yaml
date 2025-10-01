@@ -32,6 +32,7 @@ jobs:
         with:
           toolchain: stable
           override: true
+          components: rustfmt, clippy
       - uses: davidB/rust-cargo-make@v1
       - name: Check formatting and clippy rules
         run: cargo make check
@@ -131,7 +132,7 @@ jobs:
           set -eo pipefail
           cargo make --cwd exec release-build
           cd test/exec
-          golem profile config local set-format json        
+          golem profile config local set-format json
           golem app -b release deploy
           golem agent invoke test:exec-js/test-1 test01 | jq -e '(.result_wave[0]=="true")'
           golem agent invoke test:exec-js/test-2 test02 | jq -e '(.result_wave[0]=="true")'
@@ -148,7 +149,7 @@ jobs:
           golem agent invoke test:exec-py/test-2 test2 | jq -e '(.result_wave[0]=="true")'
           golem agent invoke test:exec-py/test-3 test3 | jq -e '(.result_wave[0]=="true")'
           golem agent invoke test:exec-py/test-4 test4 | jq -e '(.result_wave[0]=="true")'
-          golem agent invoke test:exec-py/test-5 test5 | jq -e '(.result_wave[0]=="true")' 
+          golem agent invoke test:exec-py/test-5 test5 | jq -e '(.result_wave[0]=="true")'
           golem agent invoke test:exec-py/test-6 test6 | jq -e '(.result_wave[0]=="true")'
           golem agent invoke test:exec-py/test-7 test7 | jq -e '(.result_wave[0]=="true")'
 
@@ -245,7 +246,7 @@ jobs:
         run: |
           set -e
           echo "Setting up graph database providers..."
-          
+
           # ArangoDB
           echo "Starting ArangoDB..."
           docker run -d --name arangodb -e ARANGO_NO_AUTH=1 -p 8529:8529 -v arangodb_data:/var/lib/arangodb3 -v arangodb_apps:/var/lib/arangodb3-apps arangodb/arangodb:latest
@@ -255,14 +256,14 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"name": "test"}' || echo "Database might already exist"
           echo "ArangoDB is ready"
-          
+
           # JanusGraph with Cassandra
           echo "Starting Cassandra for JanusGraph..."
           docker network create janus-net || true
           docker run -d --name cassandra --network janus-net -p 9042:9042 cassandra:3.11
           echo "Waiting for Cassandra to be ready..."
           timeout 60 bash -c 'until docker exec cassandra cqlsh -e "DESCRIBE KEYSPACES" > /dev/null 2>&1; do sleep 5; done'
-          
+
           echo "Starting JanusGraph..."
           docker run -d --name janusgraph --network janus-net \
             -e storage.backend=cassandra \
@@ -271,7 +272,7 @@ jobs:
             -e GREMLIN_OPTS="-Dtx.max-commit-time=60000 -Dstorage.cassandra.read-consistency-level=ONE -Dstorage.cassandra.write-consistency-level=ONE" \
             -p 8182:8182 janusgraph/janusgraph:latest
           echo "JanusGraph is ready"
-          
+
           # Setup Neo4j
           echo "Starting Neo4j..."
           docker run -d --name neo4j \
@@ -282,7 +283,7 @@ jobs:
           echo "Waiting for Neo4j to be ready..."
           timeout 120 bash -c 'until curl -f http://localhost:7474/ > /dev/null 2>&1; do sleep 5; done'
           echo "Neo4j is ready"
-          
+
           echo "All graph database providers are ready!"
       - name: Install and Run latest Golem Server
         run: |
@@ -302,7 +303,7 @@ jobs:
           cargo make --cwd graph release-build-janusgraph
           cargo make --cwd graph release-build-neo4j
           cd test/graph
-          
+
           echo "Testing ArangoDB integration..."
           golem app deploy -b arangodb-release test:graph test:helper
           golem agent new -e ARANGODB_HOST=localhost -e ARANGODB_USER="" -e ARANGODB_PASSWORD="" -e ARANGODB_PORT="8529" -e ARANGODB_DATABASE="test" test:graph/arangodb-1
@@ -314,8 +315,8 @@ jobs:
           golem agent invoke test:graph/arangodb-1 test6 | grep -v "ERROR: "
           golem agent invoke test:graph/arangodb-1 test7 | grep -v "ERROR: "
           echo "ArangoDB tests completed successfully"
-          golem app clean -b arangodb-release 
-          
+          golem app clean -b arangodb-release
+
           echo "Testing JanusGraph integration..."
           golem app deploy -b janusgraph-release test:graph test:helper
           sleep 10
@@ -328,8 +329,8 @@ jobs:
           golem agent invoke test:graph/janusgraph-1 test6 | grep -v "ERROR: "
           golem agent invoke test:graph/janusgraph-1 test7 | grep -v "ERROR: "
           echo "JanusGraph tests completed successfully"
-          golem app clean -b janusgraph-release 
-          
+          golem app clean -b janusgraph-release
+
           echo "Testing Neo4j integration..."
           golem app deploy -b neo4j-release test:graph test:helper
           sleep 10
@@ -342,7 +343,7 @@ jobs:
           golem agent invoke test:graph/neo4j-1 test6 | grep -v "ERROR: "
           golem agent invoke test:graph/neo4j-1 test7 | grep -v "ERROR: "
           echo "Neo4j tests completed successfully"
-          golem app clean -b neo4j-release 
+          golem app clean -b neo4j-release
 
           echo "All graph integration tests completed successfully!"
 
