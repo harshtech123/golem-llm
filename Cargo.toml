@@ -5,7 +5,7 @@ members = [
     "llm/llm",
     "llm/bedrock",
     "llm/anthropic",
-    #"llm/grok",
+    "llm/grok",
     "llm/ollama",
     #"llm/openai",
     #"llm/openrouter",

@@ -1685,6 +1685,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "golem-llm-grok"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "golem-llm",
+ "golem-rust",
+ "log 0.4.28",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.41.0",
+]
+
+[[package]]
 name = "golem-llm-ollama"
 version = "0.0.0"
 dependencies = [

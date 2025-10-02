@@ -3,16 +3,17 @@ mod conversions;
 
 use crate::client::{ChatCompletionChunk, CompletionsApi, CompletionsRequest, StreamOptions};
 use crate::conversions::{
-    convert_finish_reason, convert_tool_call, convert_usage, messages_to_request, process_response,
-    tool_results_to_messages,
+    convert_client_tool_call_to_tool_call, convert_finish_reason, convert_usage, events_to_request,
+    process_response,
 };
+use golem_llm::chat_session::ChatSession;
 use golem_llm::chat_stream::{LlmChatStream, LlmChatStreamState};
-use golem_llm::config::with_config_key;
+use golem_llm::config::{get_config_key, with_config_key};
 use golem_llm::durability::{DurableLLM, ExtendedGuest};
 use golem_llm::event_source::EventSource;
 use golem_llm::golem::llm::llm::{
-    ChatEvent, ChatStream, Config, ContentPart, Error, FinishReason, Guest, Message,
-    ResponseMetadata, StreamDelta, StreamEvent, ToolCall, ToolResult,
+    ChatError, ChatEvent, ChatResponse, ChatStream, Config, ContentPart, FinishReason, Guest,
+    ResponseMetadata, StreamDelta, StreamEvent,
 };
 use golem_rust::wasm_rpc::Pollable;
 use log::trace;
@@ -20,7 +21,7 @@ use std::cell::{Ref, RefCell, RefMut};
 
 struct GrokChatStream {
     stream: RefCell<Option<EventSource>>,
-    failure: Option<Error>,
+    failure: Option<ChatError>,
     finished: RefCell<bool>,
     finish_reason: RefCell<Option<FinishReason>>,
 }
@@ -35,7 +36,7 @@ impl GrokChatStream {
         })
     }
 
-    pub fn failed(error: Error) -> LlmChatStream<Self> {
+    pub fn failed(error: ChatError) -> LlmChatStream<Self> {
         LlmChatStream::new(GrokChatStream {
             stream: RefCell::new(None),
             failure: Some(error),
@@ -46,7 +47,7 @@ impl GrokChatStream {
 }
 
 impl LlmChatStreamState for GrokChatStream {
-    fn failure(&self) -> &Option<Error> {
+    fn failure(&self) -> &Option<ChatError> {
         &self.failure
     }
 
@@ -89,10 +90,12 @@ impl LlmChatStreamState for GrokChatStream {
                             .delta
                             .content
                             .map(|text| vec![ContentPart::Text(text)]),
-                        tool_calls: choice
-                            .delta
-                            .tool_calls
-                            .map(|calls| calls.iter().map(convert_tool_call).collect()),
+                        tool_calls: choice.delta.tool_calls.map(|calls| {
+                            calls
+                                .into_iter()
+                                .map(convert_client_tool_call_to_tool_call)
+                                .collect()
+                        }),
                     })))
                 } else if let Some(usage) = message.usage {
                     let finish_reason = self.finish_reason.borrow();
@@ -118,11 +121,12 @@ struct GrokComponent;
 impl GrokComponent {
     const ENV_VAR_NAME: &'static str = "XAI_API_KEY";
 
-    fn request(client: CompletionsApi, request: CompletionsRequest) -> ChatEvent {
-        match client.send_messages(request) {
-            Ok(response) => process_response(response),
-            Err(err) => ChatEvent::Error(err),
-        }
+    fn request(
+        client: CompletionsApi,
+        request: CompletionsRequest,
+    ) -> Result<ChatResponse, ChatError> {
+        let response = client.send_messages(request)?;
+        process_response(response)
     }
 
     fn streaming_request(
@@ -142,49 +146,26 @@ impl GrokComponent {
 
 impl Guest for GrokComponent {
     type ChatStream = LlmChatStream<GrokChatStream>;
+    type ChatSession = ChatSession<DurableGrokComponent>;
 
-    fn send(messages: Vec<Message>, config: Config) -> ChatEvent {
-        with_config_key(Self::ENV_VAR_NAME, ChatEvent::Error, |xai_api_key| {
-            let client = CompletionsApi::new(xai_api_key);
-
-            match messages_to_request(messages, config) {
-                Ok(request) => Self::request(client, request),
-                Err(err) => ChatEvent::Error(err),
-            }
-        })
+    fn send(config: Config, events: Vec<ChatEvent>) -> Result<ChatResponse, ChatError> {
+        let xai_api_key = get_config_key(Self::ENV_VAR_NAME)?;
+        let client = CompletionsApi::new(xai_api_key);
+        let request = events_to_request(config, events)?;
+        Self::request(client, request)
     }
 
-    fn continue_(
-        messages: Vec<Message>,
-        tool_results: Vec<(ToolCall, ToolResult)>,
-        config: Config,
-    ) -> ChatEvent {
-        with_config_key(Self::ENV_VAR_NAME, ChatEvent::Error, |xai_api_key| {
-            let client = CompletionsApi::new(xai_api_key);
-
-            match messages_to_request(messages, config) {
-                Ok(mut request) => {
-                    request
-                        .messages
-                        .extend(tool_results_to_messages(tool_results));
-                    Self::request(client, request)
-                }
-                Err(err) => ChatEvent::Error(err),
-            }
-        })
-    }
-
-    fn stream(messages: Vec<Message>, config: Config) -> ChatStream {
-        ChatStream::new(Self::unwrapped_stream(messages, config))
+    fn stream(config: Config, messages: Vec<ChatEvent>) -> ChatStream {
+        ChatStream::new(Self::unwrapped_stream(config, messages))
     }
 }
 
 impl ExtendedGuest for GrokComponent {
-    fn unwrapped_stream(messages: Vec<Message>, config: Config) -> LlmChatStream<GrokChatStream> {
+    fn unwrapped_stream(config: Config, messages: Vec<ChatEvent>) -> LlmChatStream<GrokChatStream> {
         with_config_key(Self::ENV_VAR_NAME, GrokChatStream::failed, |xai_api_key| {
             let client = CompletionsApi::new(xai_api_key);
 
-            match messages_to_request(messages, config) {
+            match events_to_request(config, messages) {
                 Ok(request) => Self::streaming_request(client, request),
                 Err(err) => GrokChatStream::failed(err),
             }
