@@ -624,6 +624,7 @@ impl SearchExtendedGuest for PineconeComponent {
 
     fn discover_vectors(
        _collection: String,
+       _target: Option<RecommendationExample>,
        _context_pairs: Vec<ContextPair>,
        _limit: u32,
        _filter: Option<FilterExpression>,

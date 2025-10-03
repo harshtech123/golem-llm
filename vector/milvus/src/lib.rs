@@ -557,6 +557,7 @@ impl SearchExtendedGuest for MilvusComponent {
 
     fn discover_vectors(
         _collection: String,
+        _target: Option<RecommendationExample>,
         _context_pairs: Vec<ContextPair>,
         _limit: u32,
         _filter: Option<FilterExpression>,

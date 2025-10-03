@@ -451,6 +451,7 @@ interface search-extended {
     /// Discovery/context-based search
     discover-vectors: func(
         collection: string,
+        target: option<recommendation-example>,
         context-pairs: list<context-pair>,
         limit: u32,
         filter: option<filter-expression>,

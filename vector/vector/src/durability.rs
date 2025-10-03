@@ -826,6 +826,7 @@ mod durable_impl {
 
         fn discover_vectors(
             collection: String,
+            target: Option<crate::golem::vector::search_extended::RecommendationExample>,
             context_pairs: Vec<crate::golem::vector::search_extended::ContextPair>,
             limit: u32,
             filter: Option<crate::golem::vector::types::FilterExpression>,
@@ -834,7 +835,7 @@ mod durable_impl {
             include_metadata: Option<bool>,
         ) -> Result<Vec<crate::golem::vector::types::SearchResult>, VectorError> {
             init_logging();
-            Impl::discover_vectors(collection, context_pairs, limit, filter, namespace, include_vectors, include_metadata)
+            Impl::discover_vectors(collection, target, context_pairs, limit, filter, namespace, include_vectors, include_metadata)
         }
 
         fn search_groups(
