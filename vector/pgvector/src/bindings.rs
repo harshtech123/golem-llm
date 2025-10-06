@@ -2,12 +2,12 @@
 // Options used:
 //   * runtime_path: "wit_bindgen_rt"
 //   * with "golem:vector/analytics@1.0.0" = "golem_vector::golem::vector::analytics"
-//   * with "golem:vector/namespaces@1.0.0" = "golem_vector::golem::vector::namespaces"
 //   * with "golem:vector/connection@1.0.0" = "golem_vector::golem::vector::connection"
-//   * with "golem:vector/vectors@1.0.0" = "golem_vector::golem::vector::vectors"
+//   * with "golem:vector/namespaces@1.0.0" = "golem_vector::golem::vector::namespaces"
 //   * with "golem:vector/search@1.0.0" = "golem_vector::golem::vector::search"
-//   * with "golem:vector/collections@1.0.0" = "golem_vector::golem::vector::collections"
+//   * with "golem:vector/vectors@1.0.0" = "golem_vector::golem::vector::vectors"
 //   * with "golem:vector/search-extended@1.0.0" = "golem_vector::golem::vector::search_extended"
+//   * with "golem:vector/collections@1.0.0" = "golem_vector::golem::vector::collections"
 //   * with "golem:vector/types@1.0.0" = "golem_vector::golem::vector::types"
 //   * generate_unused_types
 use golem_vector::golem::vector::types as __with_name0;
