@@ -1,6 +1,6 @@
 use golem_llm::error::{error_code_from_status, from_event_source_error, from_reqwest_error};
 use golem_llm::event_source::EventSource;
-use golem_llm::golem::llm::llm::ChatError;
+use golem_llm::golem::llm::llm::Error;
 use log::trace;
 use reqwest::header::HeaderValue;
 use reqwest::{Client, Method, Response};
@@ -28,7 +28,7 @@ impl CompletionsApi {
     pub fn send_messages(
         &self,
         request: CompletionsRequest,
-    ) -> Result<CompletionsResponse, ChatError> {
+    ) -> Result<CompletionsResponse, Error> {
         trace!("Sending request to xAI API: {request:?}");
 
         let response: Response = self
@@ -45,7 +45,7 @@ impl CompletionsApi {
     pub fn stream_send_messages(
         &self,
         request: CompletionsRequest,
-    ) -> Result<EventSource, ChatError> {
+    ) -> Result<EventSource, Error> {
         trace!("Sending request to xAI API: {request:?}");
 
         let response: Response = self
@@ -316,7 +316,7 @@ pub struct ChoiceDelta {
     pub role: String,
 }
 
-fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, ChatError> {
+fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, Error> {
     let status = response.status();
     if status.is_success() {
         let body = response
@@ -333,7 +333,7 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, 
 
         trace!("Received {status} response from xAI API: {error_body:?}");
 
-        Err(ChatError {
+        Err(Error {
             code: error_code_from_status(status),
             message: format!("Request failed with {status}"),
             provider_error_json: Some(serde_json::to_string(&error_body).unwrap()),

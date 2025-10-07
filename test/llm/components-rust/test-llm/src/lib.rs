@@ -65,7 +65,7 @@ impl Guest for Component {
         println!("Response: {:?}", response);
 
         match response {
-            llm::ChatEvent::Message(msg) => {
+            llm::Event::Message(msg) => {
                 format!(
                     "{}",
                     msg.content
@@ -86,10 +86,10 @@ impl Guest for Component {
                         .join(", ")
                 )
             }
-            llm::ChatEvent::ToolRequest(request) => {
+            llm::Event::ToolRequest(request) => {
                 format!("Tool request: {:?}", request)
             }
-            llm::ChatEvent::Error(error) => {
+            llm::Event::Error(error) => {
                 format!(
                     "ERROR: {:?} {} ({})",
                     error.code,
@@ -147,15 +147,15 @@ impl Guest for Component {
             &config,
         );
         let tool_request = match response1 {
-            llm::ChatEvent::Message(msg) => {
+            llm::Event::Message(msg) => {
                 println!("Message 1: {:?}", msg);
                 msg.tool_calls
             }
-            llm::ChatEvent::ToolRequest(request) => {
+            llm::Event::ToolRequest(request) => {
                 println!("Tool request: {:?}", request);
                 request
             }
-            llm::ChatEvent::Error(error) => {
+            llm::Event::Error(error) => {
                 println!(
                     "ERROR: (1) {:?} {} ({})",
                     error.code,
@@ -191,13 +191,13 @@ impl Guest for Component {
             );
 
             match response2 {
-                llm::ChatEvent::Message(msg) => {
+                llm::Event::Message(msg) => {
                     format!("Message 2: {:?}", msg)
                 }
-                llm::ChatEvent::ToolRequest(request) => {
+                llm::Event::ToolRequest(request) => {
                     format!("Tool request 2: {:?}", request)
                 }
-                llm::ChatEvent::Error(error) => {
+                llm::Event::Error(error) => {
                     format!(
                         "ERROR: (2) {:?} {} ({})",
                         error.code,
@@ -388,7 +388,7 @@ impl Guest for Component {
         println!("Response: {:?}", response);
 
         match response {
-            llm::ChatEvent::Message(msg) => {
+            llm::Event::Message(msg) => {
                 format!(
                     "{}",
                     msg.content
@@ -409,10 +409,10 @@ impl Guest for Component {
                         .join(", ")
                 )
             }
-            llm::ChatEvent::ToolRequest(request) => {
+            llm::Event::ToolRequest(request) => {
                 format!("Tool request: {:?}", request)
             }
-            llm::ChatEvent::Error(error) => {
+            llm::Event::Error(error) => {
                 format!(
                     "ERROR: {:?} {} ({})",
                     error.code,
@@ -568,7 +568,7 @@ impl Guest for Component {
         println!("Response: {:?}", response);
 
         match response {
-            llm::ChatEvent::Message(msg) => {
+            llm::Event::Message(msg) => {
                 format!(
                     "{}",
                     msg.content
@@ -589,10 +589,10 @@ impl Guest for Component {
                         .join(", ")
                 )
             }
-            llm::ChatEvent::ToolRequest(request) => {
+            llm::Event::ToolRequest(request) => {
                 format!("Tool request: {:?}", request)
             }
-            llm::ChatEvent::Error(error) => {
+            llm::Event::Error(error) => {
                 format!(
                     "ERROR: {:?} {} ({})",
                     error.code,

@@ -3,7 +3,7 @@ use client::Bedrock;
 use golem_llm::chat_session::ChatSession;
 use golem_llm::durability::{DurableLLM, ExtendedGuest};
 use golem_llm::golem::llm::llm::{
-    self, ChatError, ChatEvent, ChatResponse, ChatStream, Config, Guest, Message,
+    self, ChatStream, Config, Error, Event, Guest, Message, Response,
 };
 use golem_rust::bindings::wasi::clocks::monotonic_clock;
 use indoc::indoc;
@@ -21,40 +21,37 @@ impl Guest for BedrockComponent {
     type ChatStream = BedrockChatStream;
     type ChatSession = ChatSession<DurableBedrockComponent>;
 
-    fn send(config: Config, events: Vec<ChatEvent>) -> Result<ChatResponse, ChatError> {
+    fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
         let runtime = get_async_runtime();
 
         runtime.block_on(async {
             let client = get_bedrock_client().await?;
-            client.converse(config, events).await
+            client.converse(events, config).await
         })
     }
 
-    fn stream(config: Config, events: Vec<ChatEvent>) -> ChatStream {
-        ChatStream::new(Self::unwrapped_stream(config, events))
+    fn stream(events: Vec<Event>, config: Config) -> ChatStream {
+        ChatStream::new(Self::unwrapped_stream(events, config))
     }
 }
 
 impl ExtendedGuest for BedrockComponent {
-    fn unwrapped_stream(config: llm::Config, messages: Vec<llm::ChatEvent>) -> Self::ChatStream {
+    fn unwrapped_stream(messages: Vec<Event>, config: Config) -> Self::ChatStream {
         let runtime = get_async_runtime();
 
         runtime.block_on(async {
             let bedrock = get_bedrock_client().await;
 
             match bedrock {
-                Ok(client) => client.converse_stream(config, messages).await,
+                Ok(client) => client.converse_stream(messages, config).await,
                 Err(err) => BedrockChatStream::failed(err),
             }
         })
     }
 
-    fn retry_prompt(
-        original_events: &[ChatEvent],
-        partial_result: &[llm::StreamDelta],
-    ) -> Vec<ChatEvent> {
+    fn retry_prompt(original_events: &[Event], partial_result: &[llm::StreamDelta]) -> Vec<Event> {
         let mut extended_events = Vec::new();
-        extended_events.push(ChatEvent::Message(Message {
+        extended_events.push(Event::Message(Message {
             role: llm::Role::System,
             name: None,
             content: vec![llm::ContentPart::Text(indoc! {"
@@ -64,7 +61,7 @@ impl ExtendedGuest for BedrockComponent {
                 If the response starts with a new word and no punctuation then add a space to the beginning."
             }.to_string())],
         }));
-        extended_events.push(ChatEvent::Message(Message {
+        extended_events.push(Event::Message(Message {
             role: llm::Role::User,
             name: None,
             content: vec![llm::ContentPart::Text(
@@ -88,7 +85,7 @@ impl ExtendedGuest for BedrockComponent {
             }
         }
 
-        extended_events.push(ChatEvent::Message(Message {
+        extended_events.push(Event::Message(Message {
             role: llm::Role::User,
             name: None,
             content: vec![llm::ContentPart::Text(
@@ -107,7 +104,7 @@ impl ExtendedGuest for BedrockComponent {
     }
 }
 
-async fn get_bedrock_client() -> Result<Bedrock, llm::ChatError> {
+async fn get_bedrock_client() -> Result<Bedrock, llm::Error> {
     Bedrock::new().await
 }
 

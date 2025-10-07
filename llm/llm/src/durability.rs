@@ -1,4 +1,4 @@
-use crate::golem::llm::llm::{ChatEvent, Config, ContentPart, Guest, Message, Role, StreamDelta};
+use crate::golem::llm::llm::{Config, ContentPart, Event, Guest, Message, Role, StreamDelta};
 use golem_rust::wasm_rpc::Pollable;
 use indoc::indoc;
 use std::marker::PhantomData;
@@ -11,18 +11,15 @@ pub struct DurableLLM<Impl> {
 /// Trait to be implemented in addition to the LLM `Guest` trait when wrapping it with `DurableLLM`.
 pub trait ExtendedGuest: Guest + 'static {
     /// Creates an instance of the LLM specific `ChatStream` without wrapping it in a `Resource`
-    fn unwrapped_stream(config: Config, events: Vec<ChatEvent>) -> Self::ChatStream;
+    fn unwrapped_stream(events: Vec<Event>, config: Config) -> Self::ChatStream;
 
     /// Creates the retry prompt with a combination of the original events, and the partially received
     /// streaming responses. There is a default implementation here, but it can be overridden with provider-specific
     /// prompts if needed.
-    fn retry_prompt(
-        original_events: &[ChatEvent],
-        partial_result: &[StreamDelta],
-    ) -> Vec<ChatEvent> {
+    fn retry_prompt(original_events: &[Event], partial_result: &[StreamDelta]) -> Vec<Event> {
         let mut extended_events = Vec::new();
         extended_events.push(
-            ChatEvent::Message(Message {
+            Event::Message(Message {
             role: Role::System,
             name: None,
             content: vec![
@@ -51,7 +48,7 @@ pub trait ExtendedGuest: Guest + 'static {
             }
         }
 
-        extended_events.push(ChatEvent::Message(Message {
+        extended_events.push(Event::Message(Message {
             role: Role::System,
             name: None,
             content: vec![ContentPart::Text(
@@ -72,8 +69,7 @@ pub trait ExtendedGuest: Guest + 'static {
 mod passthrough_impl {
     use crate::durability::{DurableLLM, ExtendedGuest};
     use crate::golem::llm::llm::{
-        ChatError, ChatEvent, ChatResponse, ChatStream, Config, Guest, Message, ToolCall,
-        ToolResult,
+        ChatStream, Config, Error, Event, Guest, Message, Response, ToolCall, ToolResult,
     };
     use crate::init_logging;
 
@@ -81,14 +77,14 @@ mod passthrough_impl {
         type ChatStream = Impl::ChatStream;
         type ChatSession = Impl::ChatSession;
 
-        fn send(config: Config, events: Vec<ChatEvent>) -> Result<ChatResponse, ChatError> {
+        fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
             init_logging();
-            Impl::send(config, events)
+            Impl::send(events, config)
         }
 
-        fn stream(config: Config, events: Vec<ChatEvent>) -> ChatStream {
+        fn stream(events: Vec<Event>, config: Config) -> ChatStream {
             init_logging();
-            Impl::stream(config, events)
+            Impl::stream(events, config)
         }
     }
 }
@@ -105,8 +101,8 @@ mod passthrough_impl {
 mod durable_impl {
     use crate::durability::{DurableLLM, ExtendedGuest};
     use crate::golem::llm::llm::{
-        ChatError, ChatEvent, ChatResponse, ChatStream, Config, Guest, GuestChatStream,
-        StreamDelta, StreamEvent,
+        ChatStream, Config, Error, Event, Guest, GuestChatStream, Response, StreamDelta,
+        StreamEvent,
     };
     use crate::init_logging;
     use golem_rust::bindings::golem::durability::durability::DurableFunctionType;
@@ -122,26 +118,26 @@ mod durable_impl {
         type ChatStream = DurableChatStream<Impl>;
         type ChatSession = Impl::ChatSession;
 
-        fn send(config: Config, events: Vec<ChatEvent>) -> Result<ChatResponse, ChatError> {
+        fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
             init_logging();
 
-            let durability = Durability::<ChatResponse, ChatError>::new(
+            let durability = Durability::<Response, Error>::new(
                 "golem_llm",
                 "send",
                 DurableFunctionType::WriteRemote,
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    Impl::send(config.clone(), events.clone())
+                    Impl::send(events.clone(), config.clone())
                 });
-                durability.persist_serializable(SendInput { config, events }, result.clone());
+                durability.persist_serializable(SendInput { events, config }, result.clone());
                 result
             } else {
                 durability.replay_serializable()
             }
         }
 
-        fn stream(config: Config, events: Vec<ChatEvent>) -> ChatStream {
+        fn stream(events: Vec<Event>, config: Config) -> ChatStream {
             init_logging();
 
             let durability = Durability::<NoOutput, UnusedError>::new(
@@ -152,15 +148,15 @@ mod durable_impl {
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
                     ChatStream::new(DurableChatStream::<Impl>::live(Impl::unwrapped_stream(
-                        config.clone(),
                         events.clone(),
+                        config.clone(),
                     )))
                 });
-                let _ = durability.persist_infallible(SendInput { config, events }, NoOutput);
+                let _ = durability.persist_infallible(SendInput { events, config }, NoOutput);
                 result
             } else {
                 let _: NoOutput = durability.replay_infallible();
-                ChatStream::new(DurableChatStream::<Impl>::replay(config, events))
+                ChatStream::new(DurableChatStream::<Impl>::replay(events, config))
             }
         }
     }
@@ -187,8 +183,8 @@ mod durable_impl {
             pollables: Vec<LazyInitializedPollable>,
         },
         Replay {
+            original_events: Vec<Event>,
             config: Config,
-            original_events: Vec<ChatEvent>,
             #[cfg(not(feature = "nopoll"))]
             pollables: Vec<LazyInitializedPollable>,
             partial_result: Vec<StreamDelta>,
@@ -213,11 +209,11 @@ mod durable_impl {
             }
         }
 
-        fn replay(config: Config, original_events: Vec<ChatEvent>) -> Self {
+        fn replay(original_events: Vec<Event>, config: Config) -> Self {
             Self {
                 state: RefCell::new(Some(DurableChatStreamState::Replay {
-                    config,
                     original_events,
+                    config,
                     #[cfg(not(feature = "nopoll"))]
                     pollables: Vec::new(),
                     partial_result: Vec::new(),
@@ -274,8 +270,8 @@ mod durable_impl {
     }
 
     impl<Impl: ExtendedGuest> GuestChatStream for DurableChatStream<Impl> {
-        fn poll_next(&self) -> Result<Option<Vec<StreamEvent>>, ChatError> {
-            let durability = Durability::<Option<Vec<StreamEvent>>, ChatError>::new(
+        fn poll_next(&self) -> Result<Option<Vec<StreamEvent>>, Error> {
+            let durability = Durability::<Option<Vec<StreamEvent>>, Error>::new(
                 "golem_llm",
                 "poll_next",
                 DurableFunctionType::ReadRemote,
@@ -308,8 +304,8 @@ mod durable_impl {
                             let (stream, first_live_result) =
                                 with_persistence_level(PersistenceLevel::PersistNothing, || {
                                     let stream = <Impl as ExtendedGuest>::unwrapped_stream(
-                                        config.clone(),
                                         extended_events,
+                                        config.clone(),
                                     );
                                     #[cfg(not(feature = "nopoll"))]
                                     for lazy_initialized_pollable in pollables {
@@ -346,7 +342,7 @@ mod durable_impl {
 
                 result
             } else {
-                let result: Result<Option<Vec<StreamEvent>>, ChatError> =
+                let result: Result<Option<Vec<StreamEvent>>, Error> =
                     durability.replay_serializable();
                 let mut state = self.state.borrow_mut();
                 match &mut *state {
@@ -385,7 +381,7 @@ mod durable_impl {
             }
         }
 
-        fn get_next(&self) -> Result<Vec<StreamEvent>, ChatError> {
+        fn get_next(&self) -> Result<Vec<StreamEvent>, Error> {
             #[cfg(not(feature = "nopoll"))]
             let mut subscription = self.subscription.borrow_mut();
             #[cfg(not(feature = "nopoll"))]
@@ -406,8 +402,8 @@ mod durable_impl {
 
     #[derive(Debug, Clone, PartialEq, IntoValue)]
     struct SendInput {
+        events: Vec<Event>,
         config: Config,
-        events: Vec<ChatEvent>,
     }
 
     #[derive(Debug, IntoValue)]

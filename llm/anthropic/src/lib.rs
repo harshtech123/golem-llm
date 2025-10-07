@@ -13,7 +13,7 @@ use golem_llm::config::{get_config_key, with_config_key};
 use golem_llm::durability::{DurableLLM, ExtendedGuest};
 use golem_llm::event_source::EventSource;
 use golem_llm::golem::llm::llm::{
-    ChatError, ChatEvent, ChatResponse, ChatStream, Config, ContentPart, ErrorCode, Guest, Message,
+    ChatStream, Config, ContentPart, Error, ErrorCode, Event, Guest, Message, Response,
     ResponseMetadata, Role, StreamDelta, StreamEvent, ToolCall,
 };
 use golem_rust::wasm_rpc::Pollable;
@@ -31,7 +31,7 @@ struct JsonFragment {
 
 struct AnthropicChatStream {
     stream: RefCell<Option<EventSource>>,
-    failure: Option<ChatError>,
+    failure: Option<Error>,
     finished: RefCell<bool>,
     json_fragments: RefCell<HashMap<u64, JsonFragment>>,
     response_metadata: RefCell<ResponseMetadata>,
@@ -54,7 +54,7 @@ impl AnthropicChatStream {
         })
     }
 
-    pub fn failed(error: ChatError) -> LlmChatStream<Self> {
+    pub fn failed(error: Error) -> LlmChatStream<Self> {
         LlmChatStream::new(AnthropicChatStream {
             stream: RefCell::new(None),
             failure: Some(error),
@@ -72,7 +72,7 @@ impl AnthropicChatStream {
 }
 
 impl LlmChatStreamState for AnthropicChatStream {
-    fn failure(&self) -> &Option<ChatError> {
+    fn failure(&self) -> &Option<Error> {
         &self.failure
     }
 
@@ -92,9 +92,9 @@ impl LlmChatStreamState for AnthropicChatStream {
         self.stream.borrow_mut()
     }
 
-    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, ChatError> {
-        fn decode_internal_error<S: Into<String>>(message: S) -> ChatError {
-            ChatError {
+    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, Error> {
+        fn decode_internal_error<S: Into<String>>(message: S) -> Error {
+            Error {
                 code: ErrorCode::InternalError,
                 message: message.into(),
                 provider_error_json: None,
@@ -258,7 +258,7 @@ struct AnthropicComponent;
 impl AnthropicComponent {
     const ENV_VAR_NAME: &'static str = "ANTHROPIC_API_KEY";
 
-    fn request(client: MessagesApi, request: MessagesRequest) -> Result<ChatResponse, ChatError> {
+    fn request(client: MessagesApi, request: MessagesRequest) -> Result<Response, Error> {
         let response = client.send_messages(request)?;
         process_response(response)
     }
@@ -279,29 +279,26 @@ impl Guest for AnthropicComponent {
     type ChatStream = LlmChatStream<AnthropicChatStream>;
     type ChatSession = ChatSession<DurableAnthropicComponent>;
 
-    fn send(config: Config, events: Vec<ChatEvent>) -> Result<ChatResponse, ChatError> {
+    fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
         let anthropic_api_key = get_config_key(Self::ENV_VAR_NAME)?;
         let client = MessagesApi::new(anthropic_api_key);
-        let request = events_to_request(config, events)?;
+        let request = events_to_request(events, config)?;
         Self::request(client, request)
     }
 
-    fn stream(config: Config, events: Vec<ChatEvent>) -> ChatStream {
-        ChatStream::new(Self::unwrapped_stream(config, events))
+    fn stream(events: Vec<Event>, config: Config) -> ChatStream {
+        ChatStream::new(Self::unwrapped_stream(events, config))
     }
 }
 
 impl ExtendedGuest for AnthropicComponent {
-    fn unwrapped_stream(
-        config: Config,
-        events: Vec<ChatEvent>,
-    ) -> LlmChatStream<AnthropicChatStream> {
+    fn unwrapped_stream(events: Vec<Event>, config: Config) -> LlmChatStream<AnthropicChatStream> {
         with_config_key(
             Self::ENV_VAR_NAME,
             AnthropicChatStream::failed,
             |anthropic_api_key| {
                 let client = MessagesApi::new(anthropic_api_key);
-                match events_to_request(config, events) {
+                match events_to_request(events, config) {
                     Ok(request) => Self::streaming_request(client, request),
                     Err(err) => AnthropicChatStream::failed(err),
                 }
@@ -309,12 +306,9 @@ impl ExtendedGuest for AnthropicComponent {
         )
     }
 
-    fn retry_prompt(
-        original_events: &[ChatEvent],
-        partial_result: &[StreamDelta],
-    ) -> Vec<ChatEvent> {
+    fn retry_prompt(original_events: &[Event], partial_result: &[StreamDelta]) -> Vec<Event> {
         let mut extended_events = Vec::new();
-        extended_events.push(ChatEvent::Message(Message {
+        extended_events.push(Event::Message(Message {
             role: Role::System,
             name: None,
             content: vec![ContentPart::Text(indoc! {"
@@ -323,7 +317,7 @@ impl ExtendedGuest for AnthropicComponent {
                 Do not include the part of the response that was already seen.
             "}.to_string())],
         }));
-        extended_events.push(ChatEvent::Message(Message {
+        extended_events.push(Event::Message(Message {
             role: Role::User,
             name: None,
             content: vec![ContentPart::Text(
@@ -347,7 +341,7 @@ impl ExtendedGuest for AnthropicComponent {
             }
         }
 
-        extended_events.push(ChatEvent::Message(Message {
+        extended_events.push(Event::Message(Message {
             role: Role::User,
             name: None,
             content: vec![ContentPart::Text(

@@ -5,7 +5,7 @@ use crate::client::{
 use base64::{engine::general_purpose, Engine as _};
 use golem_llm::error::error_code_from_status;
 use golem_llm::golem::llm::llm::{
-    ChatError, ChatEvent, ChatResponse, Config, ContentPart, ErrorCode, ImageDetail,
+    Error, Event, Response, Config, ContentPart, ErrorCode, ImageDetail,
     ImageReference, Message, ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
 };
 use reqwest::StatusCode;
@@ -40,13 +40,13 @@ pub fn create_request(
     }
 }
 
-pub fn events_to_input_items(events: Vec<ChatEvent>) -> Vec<InputItem> {
+pub fn events_to_input_items(events: Vec<Event>) -> Vec<InputItem> {
     let mut items = Vec::new();
     for event in events {
         match event {
-            ChatEvent::Message(message) => items.push(llm_message_to_openai_input_item(message)),
-            ChatEvent::Response(response) => items.extend(response_to_openai_input_items(response)),
-            ChatEvent::ToolResults(tool_results) => {
+            Event::Message(message) => items.push(llm_message_to_openai_input_item(message)),
+            Event::Response(response) => items.extend(response_to_openai_input_items(response)),
+            Event::ToolResults(tool_results) => {
                 items.extend(tool_results.into_iter().map(tool_result_to_input_item))
             }
         }
@@ -79,7 +79,7 @@ pub fn tool_result_to_input_item(tool_result: ToolResult) -> InputItem {
     }
 }
 
-pub fn tool_defs_to_tools(tool_definitions: &[ToolDefinition]) -> Result<Vec<Tool>, ChatError> {
+pub fn tool_defs_to_tools(tool_definitions: &[ToolDefinition]) -> Result<Vec<Tool>, Error> {
     let mut tools = Vec::new();
     for tool_def in tool_definitions {
         match serde_json::from_str(&tool_def.parameters_schema) {
@@ -93,7 +93,7 @@ pub fn tool_defs_to_tools(tool_definitions: &[ToolDefinition]) -> Result<Vec<Too
                 tools.push(tool);
             }
             Err(error) => {
-                Err(ChatError {
+                Err(Error {
                     code: ErrorCode::InternalError,
                     message: format!(
                         "Failed to parse tool parameters for {}: {error}",
@@ -164,7 +164,7 @@ pub fn llm_message_to_openai_input_item(message: Message) -> InputItem {
     }
 }
 
-pub fn response_to_openai_input_items(message: ChatResponse) -> Vec<InputItem> {
+pub fn response_to_openai_input_items(message: Response) -> Vec<InputItem> {
     let mut items = Vec::new();
 
     let role = Role::Assistant;
@@ -202,9 +202,9 @@ pub fn parse_error_code(code: String) -> ErrorCode {
 
 pub fn process_model_response(
     response: CreateModelResponseResponse,
-) -> Result<ChatResponse, ChatError> {
+) -> Result<Response, Error> {
     if let Some(error) = response.error {
-        Err(ChatError {
+        Err(Error {
             code: parse_error_code(error.code),
             message: error.message,
             provider_error_json: None,
@@ -245,7 +245,7 @@ pub fn process_model_response(
             }
         }
 
-        Ok(ChatResponse {
+        Ok(Response {
             id: response.id,
             content: contents,
             tool_calls,

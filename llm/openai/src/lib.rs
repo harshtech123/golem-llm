@@ -12,8 +12,8 @@ use golem_llm::config::{get_config_key, with_config_key};
 use golem_llm::durability::{DurableLLM, ExtendedGuest};
 use golem_llm::event_source::EventSource;
 use golem_llm::golem::llm::llm::{
-    ChatError, ChatEvent, ChatResponse, ChatStream, Config, ContentPart, ErrorCode, Guest,
-    StreamDelta, StreamEvent, ToolCall,
+    ChatStream, Config, ContentPart, Error, ErrorCode, Event, Guest, Response, StreamDelta,
+    StreamEvent, ToolCall,
 };
 use golem_rust::wasm_rpc::Pollable;
 use log::trace;
@@ -24,7 +24,7 @@ mod conversions;
 
 struct OpenAIChatStream {
     stream: RefCell<Option<EventSource>>,
-    failure: Option<ChatError>,
+    failure: Option<Error>,
     finished: RefCell<bool>,
 }
 
@@ -37,7 +37,7 @@ impl OpenAIChatStream {
         })
     }
 
-    pub fn failed(error: ChatError) -> LlmChatStream<Self> {
+    pub fn failed(error: Error) -> LlmChatStream<Self> {
         LlmChatStream::new(OpenAIChatStream {
             stream: RefCell::new(None),
             failure: Some(error),
@@ -47,7 +47,7 @@ impl OpenAIChatStream {
 }
 
 impl LlmChatStreamState for OpenAIChatStream {
-    fn failure(&self) -> &Option<ChatError> {
+    fn failure(&self) -> &Option<Error> {
         &self.failure
     }
 
@@ -67,9 +67,9 @@ impl LlmChatStreamState for OpenAIChatStream {
         self.stream.borrow_mut()
     }
 
-    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, ChatError> {
-        fn decode_internal_error<S: Into<String>>(message: S) -> ChatError {
-            ChatError {
+    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, Error> {
+        fn decode_internal_error<S: Into<String>>(message: S) -> Error {
+            Error {
                 code: ErrorCode::InternalError,
                 message: message.into(),
                 provider_error_json: None,
@@ -104,13 +104,13 @@ impl LlmChatStreamState for OpenAIChatStream {
                         })?;
 
                 if let Some(error) = decoded.error {
-                    Err(ChatError {
+                    Err(Error {
                         code: parse_error_code(error.code),
                         message: error.message,
                         provider_error_json: None,
                     })
                 } else {
-                    Err(ChatError {
+                    Err(Error {
                         code: ErrorCode::Unknown,
                         message: "Unknown error".to_string(),
                         provider_error_json: None,
@@ -185,10 +185,10 @@ impl OpenAIComponent {
     const ENV_VAR_NAME: &'static str = "OPENAI_API_KEY";
 
     fn request(
-        config: Config,
         client: ResponsesApi,
         items: Vec<InputItem>,
-    ) -> Result<ChatResponse, ChatError> {
+        config: Config,
+    ) -> Result<Response, Error> {
         let tools = tool_defs_to_tools(&config.tools)?;
         let request = create_request(items, config, tools);
         let response = client.create_model_response(request)?;
@@ -218,20 +218,20 @@ impl Guest for OpenAIComponent {
     type ChatStream = LlmChatStream<OpenAIChatStream>;
     type ChatSession = ChatSession<DurableOpenAIComponent>;
 
-    fn send(config: Config, events: Vec<ChatEvent>) -> Result<ChatResponse, ChatError> {
+    fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
         let openai_api_key = get_config_key(Self::ENV_VAR_NAME)?;
         let client = ResponsesApi::new(openai_api_key);
         let items = events_to_input_items(events);
-        Self::request(config, client, items)
+        Self::request(client, items, config)
     }
 
-    fn stream(config: Config, events: Vec<ChatEvent>) -> ChatStream {
-        ChatStream::new(Self::unwrapped_stream(config, events))
+    fn stream(events: Vec<Event>, config: Config) -> ChatStream {
+        ChatStream::new(Self::unwrapped_stream(events, config))
     }
 }
 
 impl ExtendedGuest for OpenAIComponent {
-    fn unwrapped_stream(config: Config, events: Vec<ChatEvent>) -> Self::ChatStream {
+    fn unwrapped_stream(events: Vec<Event>, config: Config) -> Self::ChatStream {
         with_config_key(
             Self::ENV_VAR_NAME,
             OpenAIChatStream::failed,

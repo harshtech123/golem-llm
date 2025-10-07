@@ -209,7 +209,7 @@ interface llm {
   // --- Error Handling ---
 
   /// LLM error
-  record chat-error {
+  record error {
     /// Error code
     code: error-code,
     /// Error message
@@ -221,7 +221,7 @@ interface llm {
   // --- Chat Response ---
 
   /// Response from an LLM
-  record chat-response {
+  record response {
     /// Response ID
     id: string,
     /// Result contents
@@ -235,11 +235,11 @@ interface llm {
   // --- Chat event  ---
 
   /// Chat events that can happen during a chat session
-  variant chat-event {
+  variant event {
     /// Message asked by the user
     message(message),
     /// Response from the LMM
-    response(chat-response),
+    response(response),
     /// Provided tool results
     tool-results(list<tool-result>),
   }
@@ -265,9 +265,9 @@ interface llm {
   /// Represents an ongoing streaming LLM conversation
   resource chat-stream {
     /// Polls for the next chunk of stream events
-    poll-next: func() -> result<option<list<stream-event>>, chat-error>;
+    poll-next: func() -> result<option<list<stream-event>>, error>;
     /// Blocks until the next chunk of stream events is available
-    get-next: func() -> result<list<stream-event>, chat-error>;
+    get-next: func() -> result<list<stream-event>, error>;
   }
 
   // --- Core Functions ---
@@ -277,14 +277,14 @@ interface llm {
   /// - append tool responses and new messages to the events and use send again
   /// - or use the chat-session wrapper, which help in maintaining the chat events
   send: func(
+    events: list<event>,
     config: config,
-    events: list<chat-event>,
-  ) -> result<chat-response, chat-error>;
+  ) -> result<response, error>;
 
   /// Makes a single call to the LLM and gets back a streaming API to receive the response in chunks.
   %stream: func(
+    events: list<event>,
     config: config,
-    events: list<chat-event>,
   ) -> chat-stream;
 
   // --- Chat session ---
@@ -304,12 +304,12 @@ interface llm {
     add-tool-results: func(tool-results: list<tool-result>);
 
     /// Observe all events in the session
-    get-chat-events: func() -> list<chat-event>;
+    get-chat-events: func() -> list<event>;
     // Replace all events in the session, which allows e.g. compacting them
-    set-chat-events: func(events: list<chat-event>);
+    set-chat-events: func(events: list<event>);
 
     /// Send the full accumulated chat events, responses are automatically added to the session chat events
-    send: func() -> result<chat-response, chat-error>;
+    send: func() -> result<response, error>;
     /// Like Send, but streams responses
     %stream: func() -> chat-stream;
   }

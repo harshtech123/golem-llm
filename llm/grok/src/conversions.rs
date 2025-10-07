@@ -1,15 +1,12 @@
 use crate::client::{CompletionsRequest, CompletionsResponse, Detail, Effort};
 use base64::{engine::general_purpose, Engine as _};
 use golem_llm::golem::llm::llm::{
-    ChatError, ChatEvent, ChatResponse, Config, ContentPart, ErrorCode, FinishReason, ImageDetail,
-    ImageReference, ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
+    Config, ContentPart, Error, ErrorCode, Event, FinishReason, ImageDetail, ImageReference,
+    Response, ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
 };
 use std::collections::HashMap;
 
-pub fn events_to_request(
-    config: Config,
-    events: Vec<ChatEvent>,
-) -> Result<CompletionsRequest, ChatError> {
+pub fn events_to_request(events: Vec<Event>, config: Config) -> Result<CompletionsRequest, Error> {
     let options = config
         .provider_options
         .into_iter()
@@ -19,7 +16,7 @@ pub fn events_to_request(
     let mut completion_messages = Vec::new();
     for event in events {
         match event {
-            ChatEvent::Message(message) => match message.role {
+            Event::Message(message) => match message.role {
                 Role::User => completion_messages.push(crate::client::Message::User {
                     name: message.name,
                     content: convert_content_parts_to_client_content(message.content),
@@ -39,12 +36,12 @@ pub fn events_to_request(
                     tool_call_id: None,
                 }),
             },
-            ChatEvent::ToolResults(tool_results) => {
+            Event::ToolResults(tool_results) => {
                 if !tool_results.is_empty() {
                     completion_messages.extend(tool_results.into_iter().map(tool_result_to_message))
                 }
             }
-            ChatEvent::Response(response) => {
+            Event::Response(response) => {
                 if !response.content.is_empty() || !response.tool_calls.is_empty() {
                     completion_messages.push(crate::client::Message::Assistant {
                         content: (!response.content.is_empty())
@@ -101,7 +98,7 @@ pub fn events_to_request(
     })
 }
 
-pub fn process_response(mut response: CompletionsResponse) -> Result<ChatResponse, ChatError> {
+pub fn process_response(mut response: CompletionsResponse) -> Result<Response, Error> {
     let choice = response.choices.pop();
     match choice {
         Some(choice) => {
@@ -131,14 +128,14 @@ pub fn process_response(mut response: CompletionsResponse) -> Result<ChatRespons
                 provider_metadata_json: None,
             };
 
-            Ok(ChatResponse {
+            Ok(Response {
                 id: response.id,
                 content,
                 tool_calls,
                 metadata,
             })
         }
-        None => Err(ChatError {
+        None => Err(Error {
             code: ErrorCode::InternalError,
             message: "No choices in response".to_string(),
             provider_error_json: None,
@@ -243,7 +240,7 @@ pub fn convert_usage(value: &crate::client::Usage) -> Usage {
     }
 }
 
-fn tool_definition_to_tool(tool: ToolDefinition) -> Result<crate::client::Tool, ChatError> {
+fn tool_definition_to_tool(tool: ToolDefinition) -> Result<crate::client::Tool, Error> {
     match serde_json::from_str(&tool.parameters_schema) {
         Ok(value) => Ok(crate::client::Tool::Function {
             function: crate::client::Function {
@@ -252,7 +249,7 @@ fn tool_definition_to_tool(tool: ToolDefinition) -> Result<crate::client::Tool, 
                 parameters: Some(value),
             },
         }),
-        Err(error) => Err(ChatError {
+        Err(error) => Err(Error {
             code: ErrorCode::InternalError,
             message: format!("Failed to parse tool parameters for {}: {error}", tool.name),
             provider_error_json: None,

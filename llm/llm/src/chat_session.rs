@@ -1,6 +1,6 @@
 use crate::golem::llm::llm::{
-    ChatError, ChatEvent, ChatResponse, ChatStream, Config, Guest, GuestChatSession,
-    GuestChatStream, Message, ResponseMetadata, StreamEvent, ToolResult,
+    ChatStream, Config, Error, Event, Guest, GuestChatSession, GuestChatStream, Message, Response,
+    ResponseMetadata, StreamEvent, ToolResult,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -10,7 +10,7 @@ where
     LlmImpl: Guest + 'static,
 {
     config: Config,
-    events: Rc<RefCell<Vec<ChatEvent>>>,
+    events: Rc<RefCell<Vec<Event>>>,
     _phantom_llm_impl: std::marker::PhantomData<LlmImpl>,
 }
 
@@ -27,44 +27,44 @@ where
     }
 
     fn add_message(&self, message: Message) -> () {
-        self.events.borrow_mut().push(ChatEvent::Message(message));
+        self.events.borrow_mut().push(Event::Message(message));
     }
 
     fn add_messages(&self, messages: Vec<Message>) -> () {
         let mut events = self.events.borrow_mut();
-        events.extend(messages.into_iter().map(|m| ChatEvent::Message(m)));
+        events.extend(messages.into_iter().map(|m| Event::Message(m)));
     }
 
     fn add_tool_result(&self, tool_result: ToolResult) -> () {
         self.events
             .borrow_mut()
-            .push(ChatEvent::ToolResults(vec![tool_result]));
+            .push(Event::ToolResults(vec![tool_result]));
     }
 
     fn add_tool_results(&self, tool_results: Vec<ToolResult>) -> () {
         self.events
             .borrow_mut()
-            .push(ChatEvent::ToolResults(tool_results));
+            .push(Event::ToolResults(tool_results));
     }
 
-    fn get_chat_events(&self) -> Vec<ChatEvent> {
+    fn get_chat_events(&self) -> Vec<Event> {
         self.events.borrow().clone()
     }
 
-    fn set_chat_events(&self, events: Vec<ChatEvent>) -> () {
+    fn set_chat_events(&self, events: Vec<Event>) -> () {
         let mut e = self.events.borrow_mut();
         e.clear();
         e.extend(events)
     }
 
-    fn send(&self) -> Result<ChatResponse, ChatError> {
-        let result = LlmImpl::send(self.config.clone(), self.get_chat_events());
+    fn send(&self) -> Result<Response, Error> {
+        let result = LlmImpl::send(self.get_chat_events(), self.config.clone());
 
         match &result {
             Ok(response) => {
                 self.events
                     .borrow_mut()
-                    .push(ChatEvent::Response(response.clone()));
+                    .push(Event::Response(response.clone()));
             }
             Err(_) => {
                 // NOP
@@ -77,7 +77,7 @@ where
     fn stream(&self) -> ChatStream {
         ChatStream::new(ChatSessionStreamAdapter::new(
             self.events.clone(),
-            LlmImpl::stream(self.config.clone(), self.get_chat_events())
+            LlmImpl::stream(self.get_chat_events(), self.config.clone(), )
                 .into_inner::<LlmImpl::ChatStream>(),
         ))
     }
@@ -87,8 +87,8 @@ struct ChatSessionStreamAdapter<ChatStreamImpl>
 where
     ChatStreamImpl: GuestChatStream + 'static,
 {
-    events: Rc<RefCell<Vec<ChatEvent>>>,
-    chat_response: RefCell<Option<ChatResponse>>,
+    events: Rc<RefCell<Vec<Event>>>,
+    chat_response: RefCell<Option<Response>>,
     inner: ChatStreamImpl,
     _phantom_chat_stream_impl: std::marker::PhantomData<ChatStreamImpl>,
 }
@@ -97,10 +97,10 @@ impl<ChatStreamImpl> ChatSessionStreamAdapter<ChatStreamImpl>
 where
     ChatStreamImpl: GuestChatStream + 'static,
 {
-    pub fn new(events: Rc<RefCell<Vec<ChatEvent>>>, inner: ChatStreamImpl) -> Self {
+    pub fn new(events: Rc<RefCell<Vec<Event>>>, inner: ChatStreamImpl) -> Self {
         Self {
             events,
-            chat_response: RefCell::new(Some(ChatResponse {
+            chat_response: RefCell::new(Some(Response {
                 id: "".to_string(),
                 content: vec![],
                 tool_calls: vec![],
@@ -140,7 +140,7 @@ where
                     complete_response.metadata = metadata.clone();
                     self.events
                         .borrow_mut()
-                        .push(ChatEvent::Response(complete_response));
+                        .push(Event::Response(complete_response));
                 }
             }
         }
@@ -151,7 +151,7 @@ impl<ChatStreamImpl> GuestChatStream for ChatSessionStreamAdapter<ChatStreamImpl
 where
     ChatStreamImpl: GuestChatStream + 'static,
 {
-    fn poll_next(&self) -> Result<Option<Vec<StreamEvent>>, ChatError> {
+    fn poll_next(&self) -> Result<Option<Vec<StreamEvent>>, Error> {
         let result = self.inner.poll_next();
         if let Ok(Some(events)) = &result {
             self.add_stream_events(events);
@@ -159,7 +159,7 @@ where
         result
     }
 
-    fn get_next(&self) -> Result<Vec<StreamEvent>, ChatError> {
+    fn get_next(&self) -> Result<Vec<StreamEvent>, Error> {
         let result = self.inner.get_next();
         if let Ok(events) = &result {
             self.add_stream_events(events);

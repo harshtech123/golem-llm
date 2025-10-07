@@ -12,7 +12,7 @@ use aws_sdk_bedrockruntime::operation::converse::builders::ConverseFluentBuilder
 use aws_sdk_bedrockruntime::operation::converse_stream::builders::ConverseStreamFluentBuilder;
 use aws_types::region;
 use golem_llm::config::{get_config_key, get_config_key_or_none};
-use golem_llm::golem::llm::llm::{ChatError, ChatEvent, ChatResponse, Config};
+use golem_llm::golem::llm::llm::{Error, Event, Response, Config};
 use log::trace;
 use wasi::clocks::monotonic_clock;
 use wstd::runtime::Reactor;
@@ -23,7 +23,7 @@ pub struct Bedrock {
 }
 
 impl Bedrock {
-    pub async fn new() -> Result<Self, ChatError> {
+    pub async fn new() -> Result<Self, Error> {
         let environment = BedrockEnvironment::load_from_env()?;
 
         let sdk_config = aws_config::defaults(BehaviorVersion::latest())
@@ -39,9 +39,9 @@ impl Bedrock {
 
     pub async fn converse(
         &self,
+        events: Vec<Event>,
         config: Config,
-        events: Vec<ChatEvent>,
-    ) -> Result<ChatResponse, ChatError> {
+    ) -> Result<Response, Error> {
         let input = BedrockInput::from_events(config, events).await?;
 
         trace!("Sending request to AWS Bedrock: {input:?}");
@@ -58,8 +58,8 @@ impl Bedrock {
 
     pub async fn converse_stream(
         &self,
+        events: Vec<Event>,
         config: Config,
-        events: Vec<ChatEvent>,
     ) -> BedrockChatStream {
         let bedrock_input = BedrockInput::from_events(config, events).await;
 
@@ -118,7 +118,7 @@ pub struct BedrockEnvironment {
 }
 
 impl BedrockEnvironment {
-    pub fn load_from_env() -> Result<Self, ChatError> {
+    pub fn load_from_env() -> Result<Self, Error> {
         Ok(Self {
             access_key_id: get_config_key("AWS_ACCESS_KEY_ID")?,
             region: get_config_key("AWS_REGION")?,

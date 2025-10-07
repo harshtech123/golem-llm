@@ -1,16 +1,16 @@
 use crate::event_source::{Event, EventSource, MessageEvent};
-use crate::golem::llm::llm::{ChatError, ErrorCode, GuestChatStream, StreamEvent};
+use crate::golem::llm::llm::{Error, ErrorCode, GuestChatStream, StreamEvent};
 use golem_rust::wasm_rpc::Pollable;
 use std::cell::{Ref, RefMut};
 use std::task::Poll;
 
 pub trait LlmChatStreamState: 'static {
-    fn failure(&self) -> &Option<ChatError>;
+    fn failure(&self) -> &Option<Error>;
     fn is_finished(&self) -> bool;
     fn set_finished(&self);
     fn stream(&self) -> Ref<'_, Option<EventSource>>;
     fn stream_mut(&self) -> RefMut<'_, Option<EventSource>>;
-    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, ChatError>;
+    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, Error>;
 }
 
 pub struct LlmChatStream<T> {
@@ -32,7 +32,7 @@ impl<T: LlmChatStreamState> LlmChatStream<T> {
 }
 
 impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
-    fn poll_next(&self) -> Result<Option<Vec<StreamEvent>>, ChatError> {
+    fn poll_next(&self) -> Result<Option<Vec<StreamEvent>>, Error> {
         if self.implementation.is_finished() {
             return Ok(Some(vec![]));
         }
@@ -48,7 +48,7 @@ impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
                     self.implementation.set_finished();
                     Ok(Some(vec![]))
                 }
-                Poll::Ready(Some(Err(error))) => Err(ChatError {
+                Poll::Ready(Some(Err(error))) => Err(Error {
                     code: ErrorCode::InternalError,
                     message: error.to_string(),
                     provider_error_json: None,
@@ -91,7 +91,7 @@ impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
         }
     }
 
-    fn get_next(&self) -> Result<Vec<StreamEvent>, ChatError> {
+    fn get_next(&self) -> Result<Vec<StreamEvent>, Error> {
         let pollable = self.subscribe();
         loop {
             pollable.block();

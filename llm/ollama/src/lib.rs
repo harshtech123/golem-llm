@@ -9,8 +9,8 @@ use golem_llm::{
     durability::{DurableLLM, ExtendedGuest},
     event_source::EventSource,
     golem::llm::llm::{
-        ChatError, ChatEvent, ChatResponse, ChatStream, Config, ContentPart, FinishReason, Guest,
-        Message, ResponseMetadata, Role, StreamDelta, StreamEvent, ToolCall, Usage,
+        ChatStream, Config, ContentPart, Error, Event, FinishReason, Guest, Message, Response,
+        ResponseMetadata, Role, StreamDelta, StreamEvent, ToolCall, Usage,
     },
 };
 use golem_rust::wasm_rpc::Pollable;
@@ -21,7 +21,7 @@ mod conversions;
 
 struct OllamaChatStream {
     stream: RefCell<Option<EventSource>>,
-    failure: Option<ChatError>,
+    failure: Option<Error>,
     finished: RefCell<bool>,
 }
 
@@ -34,7 +34,7 @@ impl OllamaChatStream {
         })
     }
 
-    pub fn failed(error: ChatError) -> LlmChatStream<Self> {
+    pub fn failed(error: Error) -> LlmChatStream<Self> {
         LlmChatStream::new(OllamaChatStream {
             stream: RefCell::new(None),
             failure: Some(error),
@@ -44,7 +44,7 @@ impl OllamaChatStream {
 }
 
 impl LlmChatStreamState for OllamaChatStream {
-    fn failure(&self) -> &Option<ChatError> {
+    fn failure(&self) -> &Option<Error> {
         &self.failure
     }
     fn is_finished(&self) -> bool {
@@ -63,9 +63,9 @@ impl LlmChatStreamState for OllamaChatStream {
         self.stream.borrow_mut()
     }
 
-    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, ChatError> {
-        fn decode_internal_error<S: Into<String>>(message: S) -> ChatError {
-            ChatError {
+    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, Error> {
+        fn decode_internal_error<S: Into<String>>(message: S) -> Error {
+            Error {
                 code: ErrorCode::InternalError,
                 message: message.into(),
                 provider_error_json: None,
@@ -189,7 +189,7 @@ impl LlmChatStreamState for OllamaChatStream {
 struct OllamaComponent;
 
 impl OllamaComponent {
-    fn request(client: &OllamaApi, request: CompletionsRequest) -> Result<ChatResponse, ChatError> {
+    fn request(client: &OllamaApi, request: CompletionsRequest) -> Result<Response, Error> {
         let response = client.send_chat(request)?;
         process_response(response)
     }
@@ -210,33 +210,30 @@ impl Guest for OllamaComponent {
     type ChatStream = LlmChatStream<OllamaChatStream>;
     type ChatSession = ChatSession<DurableOllamaComponent>;
 
-    fn send(config: Config, events: Vec<ChatEvent>) -> Result<ChatResponse, ChatError> {
+    fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
         let client = OllamaApi::new(config.model.clone());
-        let events = events_to_request(config, events)?;
+        let events = events_to_request(events, config)?;
         Self::request(&client, events)
     }
 
-    fn stream(config: Config, events: Vec<ChatEvent>) -> ChatStream {
-        ChatStream::new(Self::unwrapped_stream(config, events))
+    fn stream(events: Vec<Event>, config: Config) -> ChatStream {
+        ChatStream::new(Self::unwrapped_stream(events, config))
     }
 }
 
 impl ExtendedGuest for OllamaComponent {
-    fn unwrapped_stream(config: Config, events: Vec<ChatEvent>) -> LlmChatStream<OllamaChatStream> {
+    fn unwrapped_stream(events: Vec<Event>, config: Config) -> LlmChatStream<OllamaChatStream> {
         let client = OllamaApi::new(config.model.clone());
-        match events_to_request(config, events) {
+        match events_to_request(events, config) {
             Ok(request) => Self::streaming_request(&client, request),
             Err(err) => OllamaChatStream::failed(err),
         }
     }
 
-    fn retry_prompt(
-        original_events: &[ChatEvent],
-        partial_result: &[StreamDelta],
-    ) -> Vec<ChatEvent> {
+    fn retry_prompt(original_events: &[Event], partial_result: &[StreamDelta]) -> Vec<Event> {
         let mut extended_messages = Vec::new();
 
-        extended_messages.push(ChatEvent::Message(Message {
+        extended_messages.push(Event::Message(Message {
             role: Role::System,
             name: None,
             content: vec![ContentPart::Text(
@@ -247,7 +244,7 @@ impl ExtendedGuest for OllamaComponent {
             )],
         }));
 
-        extended_messages.push(ChatEvent::Message(Message {
+        extended_messages.push(Event::Message(Message {
             role: Role::User,
             name: None,
             content: vec![ContentPart::Text(
@@ -272,7 +269,7 @@ impl ExtendedGuest for OllamaComponent {
             }
         }
 
-        extended_messages.push(ChatEvent::Message(Message {
+        extended_messages.push(Event::Message(Message {
             role: Role::User,
             name: None,
             content: vec![ContentPart::Text(

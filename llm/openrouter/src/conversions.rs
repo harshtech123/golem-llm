@@ -3,7 +3,7 @@ use crate::client::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use golem_llm::golem::llm::llm::{
-    ChatEvent, CompleteResponse, Config, ContentPart, Error, ErrorCode, FinishReason, ImageDetail,
+    Event, CompleteResponse, Config, ContentPart, Error, ErrorCode, FinishReason, ImageDetail,
     ImageReference, Message, ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
 };
 use std::collections::HashMap;
@@ -83,7 +83,7 @@ pub fn messages_to_request(
     })
 }
 
-pub fn process_response(response: CompletionsResponse) -> ChatEvent {
+pub fn process_response(response: CompletionsResponse) -> Event {
     let choice = response.choices.first();
     if let Some(choice) = choice {
         let mut contents = Vec::new();
@@ -99,7 +99,7 @@ pub fn process_response(response: CompletionsResponse) -> ChatEvent {
         }
 
         if contents.is_empty() {
-            ChatEvent::ToolRequest(tool_calls)
+            Event::ToolRequest(tool_calls)
         } else {
             let metadata = ResponseMetadata {
                 finish_reason: choice.finish_reason.as_ref().map(convert_finish_reason),
@@ -109,7 +109,7 @@ pub fn process_response(response: CompletionsResponse) -> ChatEvent {
                 provider_metadata_json: None,
             };
 
-            ChatEvent::Message(CompleteResponse {
+            Event::Message(CompleteResponse {
                 id: response.id,
                 content: contents,
                 tool_calls,
@@ -117,7 +117,7 @@ pub fn process_response(response: CompletionsResponse) -> ChatEvent {
             })
         }
     } else {
-        ChatEvent::Error(Error {
+        Event::Error(Error {
             code: ErrorCode::InternalError,
             message: "No choices in response".to_string(),
             provider_error_json: None,

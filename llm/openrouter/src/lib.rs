@@ -12,7 +12,7 @@ use golem_llm::durability::{DurableLLM, ExtendedGuest};
 use golem_llm::error::error_code_from_status;
 use golem_llm::event_source::EventSource;
 use golem_llm::golem::llm::llm::{
-    ChatEvent, ChatStream, Config, ContentPart, Error, FinishReason, Guest, Message,
+    Event, ChatStream, Config, ContentPart, Error, FinishReason, Guest, Message,
     ResponseMetadata, Role, StreamDelta, StreamEvent, ToolCall, ToolResult,
 };
 use golem_rust::wasm_rpc::Pollable;
@@ -229,10 +229,10 @@ struct OpenRouterComponent;
 impl OpenRouterComponent {
     const ENV_VAR_NAME: &'static str = "OPENROUTER_API_KEY";
 
-    fn request(client: CompletionsApi, request: CompletionsRequest) -> ChatEvent {
+    fn request(client: CompletionsApi, request: CompletionsRequest) -> Event {
         match client.send_messages(request) {
             Ok(response) => process_response(response),
-            Err(err) => ChatEvent::Error(err),
+            Err(err) => Event::Error(err),
         }
     }
 
@@ -251,13 +251,13 @@ impl OpenRouterComponent {
 impl Guest for OpenRouterComponent {
     type ChatStream = LlmChatStream<OpenRouterChatStream>;
 
-    fn send(messages: Vec<Message>, config: Config) -> ChatEvent {
-        with_config_key(Self::ENV_VAR_NAME, ChatEvent::Error, |openrouter_api_key| {
+    fn send(messages: Vec<Message>, config: Config) -> Event {
+        with_config_key(Self::ENV_VAR_NAME, Event::Error, |openrouter_api_key| {
             let client = CompletionsApi::new(openrouter_api_key);
 
             match messages_to_request(messages, config) {
                 Ok(request) => Self::request(client, request),
-                Err(err) => ChatEvent::Error(err),
+                Err(err) => Event::Error(err),
             }
         })
     }
@@ -266,8 +266,8 @@ impl Guest for OpenRouterComponent {
         messages: Vec<Message>,
         tool_results: Vec<(ToolCall, ToolResult)>,
         config: Config,
-    ) -> ChatEvent {
-        with_config_key(Self::ENV_VAR_NAME, ChatEvent::Error, |openrouter_api_key| {
+    ) -> Event {
+        with_config_key(Self::ENV_VAR_NAME, Event::Error, |openrouter_api_key| {
             let client = CompletionsApi::new(openrouter_api_key);
 
             match messages_to_request(messages, config) {
@@ -277,7 +277,7 @@ impl Guest for OpenRouterComponent {
                         .extend(tool_results_to_messages(tool_results));
                     Self::request(client, request)
                 }
-                Err(err) => ChatEvent::Error(err),
+                Err(err) => Event::Error(err),
             }
         })
     }

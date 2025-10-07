@@ -4,16 +4,16 @@ use crate::client::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use golem_llm::golem::llm::llm::{
-    ChatError, ChatEvent, ChatResponse, Config, ContentPart, ErrorCode, FinishReason,
+    Error, Event, Response, Config, ContentPart, ErrorCode, FinishReason,
     ImageReference, ImageSource, ImageUrl, ResponseMetadata, Role, ToolCall, ToolDefinition,
     ToolResult, Usage,
 };
 use std::collections::HashMap;
 
 pub fn events_to_request(
+    events: Vec<Event>,
     config: Config,
-    events: Vec<ChatEvent>,
-) -> Result<MessagesRequest, ChatError> {
+) -> Result<MessagesRequest, Error> {
     let options = config
         .provider_options
         .into_iter()
@@ -58,17 +58,17 @@ pub fn events_to_request(
 }
 
 fn events_to_messages_and_system_messages(
-    events: Vec<ChatEvent>,
+    events: Vec<Event>,
 ) -> (Vec<crate::client::Message>, Vec<Content>) {
     let mut messages: Vec<crate::client::Message> = vec![];
     let mut system_messages: Vec<Content> = vec![];
 
     for event in events {
         match event {
-            ChatEvent::Message(message) if message.role == Role::System => {
+            Event::Message(message) if message.role == Role::System => {
                 system_messages.extend(content_parts_to_content(message.content));
             }
-            ChatEvent::Message(message) => messages.push(crate::client::Message {
+            Event::Message(message) => messages.push(crate::client::Message {
                 role: match &message.role {
                     Role::User => crate::client::Role::User,
                     Role::Assistant => crate::client::Role::Assistant,
@@ -77,7 +77,7 @@ fn events_to_messages_and_system_messages(
                 },
                 content: content_parts_to_content(message.content),
             }),
-            ChatEvent::Response(response) => {
+            Event::Response(response) => {
                 if !response.content.is_empty() {
                     messages.push(crate::client::Message {
                         role: crate::client::Role::Assistant,
@@ -95,7 +95,7 @@ fn events_to_messages_and_system_messages(
                     })
                 }
             }
-            ChatEvent::ToolResults(tool_results) => {
+            Event::ToolResults(tool_results) => {
                 messages.extend(tool_results.into_iter().map(tool_result_to_message))
             }
         }
@@ -123,7 +123,7 @@ fn convert_tool_choice(tool_name: String) -> ToolChoice {
     }
 }
 
-pub fn process_response(response: MessagesResponse) -> Result<ChatResponse, ChatError> {
+pub fn process_response(response: MessagesResponse) -> Result<Response, Error> {
     let mut contents = Vec::new();
     let mut tool_calls = Vec::new();
 
@@ -155,7 +155,7 @@ pub fn process_response(response: MessagesResponse) -> Result<ChatResponse, Chat
                             )));
                         }
                         Err(e) => {
-                            return Err(ChatError {
+                            return Err(Error {
                                 code: ErrorCode::InvalidRequest,
                                 message: format!("Failed to decode base64 image data: {e}"),
                                 provider_error_json: None,
@@ -183,7 +183,7 @@ pub fn process_response(response: MessagesResponse) -> Result<ChatResponse, Chat
         provider_metadata_json: None,
     };
 
-    Ok(ChatResponse {
+    Ok(Response {
         id: response.id,
         content: contents,
         tool_calls,
@@ -284,7 +284,7 @@ fn content_parts_to_content(content_parts: Vec<ContentPart>) -> Vec<Content> {
     result
 }
 
-fn tool_definition_to_tool(tool: &ToolDefinition) -> Result<Tool, ChatError> {
+fn tool_definition_to_tool(tool: &ToolDefinition) -> Result<Tool, Error> {
     match serde_json::from_str(&tool.parameters_schema) {
         Ok(value) => Ok(Tool::CustomTool {
             input_schema: value,
@@ -292,7 +292,7 @@ fn tool_definition_to_tool(tool: &ToolDefinition) -> Result<Tool, ChatError> {
             cache_control: None,
             description: tool.description.clone(),
         }),
-        Err(error) => Err(ChatError {
+        Err(error) => Err(Error {
             code: ErrorCode::InternalError,
             message: format!("Failed to parse tool parameters for {}: {error}", tool.name),
             provider_error_json: None,

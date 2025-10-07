@@ -14,7 +14,7 @@ type BedrockEventSource =
 
 pub struct BedrockChatStream {
     stream: RefCell<Option<BedrockEventSource>>,
-    failure: Option<llm::ChatError>,
+    failure: Option<llm::Error>,
     finished: RefCell<bool>,
 }
 
@@ -27,7 +27,7 @@ impl BedrockChatStream {
         }
     }
 
-    pub fn failed(error: llm::ChatError) -> BedrockChatStream {
+    pub fn failed(error: llm::Error) -> BedrockChatStream {
         BedrockChatStream {
             stream: RefCell::new(None),
             failure: Some(error),
@@ -39,7 +39,7 @@ impl BedrockChatStream {
         self.stream.borrow_mut()
     }
 
-    fn failure(&self) -> &Option<llm::ChatError> {
+    fn failure(&self) -> &Option<llm::Error> {
         &self.failure
     }
 
@@ -50,7 +50,7 @@ impl BedrockChatStream {
     fn set_finished(&self) {
         *self.finished.borrow_mut() = true;
     }
-    fn get_single_event(&self) -> Result<Option<llm::StreamEvent>, llm::ChatError> {
+    fn get_single_event(&self) -> Result<Option<llm::StreamEvent>, llm::Error> {
         if let Some(stream) = self.stream_mut().as_mut() {
             let runtime = async_utils::get_async_runtime();
 
@@ -88,7 +88,7 @@ impl BedrockChatStream {
 }
 
 impl llm::GuestChatStream for BedrockChatStream {
-    fn poll_next(&self) -> Result<Option<Vec<llm::StreamEvent>>, llm::ChatError> {
+    fn poll_next(&self) -> Result<Option<Vec<llm::StreamEvent>>, llm::Error> {
         if self.is_finished() {
             return Ok(Some(vec![]));
         }
@@ -112,7 +112,7 @@ impl llm::GuestChatStream for BedrockChatStream {
         }
     }
 
-    fn get_next(&self) -> Result<Vec<llm::StreamEvent>, llm::ChatError> {
+    fn get_next(&self) -> Result<Vec<llm::StreamEvent>, llm::Error> {
         loop {
             if let Some(events) = self.poll_next()? {
                 return Ok(events);
