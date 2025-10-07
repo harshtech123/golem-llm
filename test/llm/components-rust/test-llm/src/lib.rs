@@ -3,7 +3,7 @@ mod bindings;
 
 use crate::bindings::exports::test::llm_exports::test_llm_api::*;
 use crate::bindings::golem::llm::llm;
-use crate::bindings::golem::llm::llm::{ChatSession, StreamEvent};
+use crate::bindings::golem::llm::llm::StreamEvent;
 use crate::bindings::test::helper_client::test_helper_client::TestHelperApi;
 use golem_rust::atomically;
 
@@ -45,9 +45,9 @@ impl Guest for Component {
             temperature: Some(0.2),
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![],
+            tools: None,
             tool_choice: None,
-            provider_options: vec![],
+            provider_options: None,
         };
 
         println!("Sending request to LLM...");
@@ -100,14 +100,14 @@ impl Guest for Component {
     }
 
     /// test2 demonstrates how to use tools with the LLM, including generating a tool response
-    /// and using a chat session to accumulate history
+    /// and collecting chat events
     fn test2() -> String {
         let config = llm::Config {
             model: MODEL.to_string(),
             temperature: Some(0.2),
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![llm::ToolDefinition {
+            tools: Some(vec![llm::ToolDefinition {
                 name: "test-tool".to_string(),
                 description: Some("Test tool for generating test values".to_string()),
                 parameters_schema: r#"{
@@ -124,9 +124,9 @@ impl Guest for Component {
                         "additionalProperties": false
                     }"#
                 .to_string(),
-            }],
+            }]),
             tool_choice: Some("auto".to_string()),
-            provider_options: vec![],
+            provider_options: None,
         };
 
         let input = vec![
@@ -136,17 +136,20 @@ impl Guest for Component {
             ),
         ];
 
-        let session = ChatSession::new(&config);
-        session.add_message(&llm::Message {
+        let mut events = vec![];
+        events.push(llm::Event::Message(llm::Message {
             role: llm::Role::User,
             name: Some("vigoo".to_string()),
             content: input.clone(),
-        });
+        }));
 
         println!("Sending request to LLM...");
-        let response1 = session.send();
+        let response1 = llm::send(&events, &config);
         let tool_request = match response1 {
-            Ok(response) => response.tool_calls,
+            Ok(response) => {
+                events.push(llm::Event::Response(response.clone()));
+                response.tool_calls
+            }
             Err(error) => {
                 println!(
                     "ERROR: (1) {:?} {} ({})",
@@ -160,15 +163,17 @@ impl Guest for Component {
 
         if !tool_request.is_empty() {
             for call in tool_request {
-                session.add_tool_result(&llm::ToolResult::Success(llm::ToolSuccess {
-                    id: call.id,
-                    name: call.name,
-                    result_json: r#"{ "value": 6 }"#.to_string(),
-                    execution_time_ms: None,
-                }));
+                events.push(llm::Event::ToolResults(vec![llm::ToolResult::Success(
+                    llm::ToolSuccess {
+                        id: call.id,
+                        name: call.name,
+                        result_json: r#"{ "value": 6 }"#.to_string(),
+                        execution_time_ms: None,
+                    },
+                )]));
             }
 
-            let response2 = session.send();
+            let response2 = llm::send(&events, &config);
 
             match response2 {
                 Ok(response) => {
@@ -195,9 +200,9 @@ impl Guest for Component {
             temperature: Some(0.2),
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![],
+            tools: None,
             tool_choice: None,
-            provider_options: vec![],
+            provider_options: None,
         };
 
         println!("Starting streaming request to LLM...");
@@ -259,7 +264,7 @@ impl Guest for Component {
             temperature: Some(0.2),
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![llm::ToolDefinition {
+            tools: Some(vec![llm::ToolDefinition {
                 name: "test-tool".to_string(),
                 description: Some("Test tool for generating test values".to_string()),
                 parameters_schema: r#"{
@@ -276,9 +281,9 @@ impl Guest for Component {
                         "additionalProperties": false
                     }"#
                 .to_string(),
-            }],
+            }]),
             tool_choice: Some("auto".to_string()),
-            provider_options: vec![],
+            provider_options: None,
         };
 
         let input = vec![
@@ -344,9 +349,9 @@ impl Guest for Component {
             temperature: None,
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![],
+            tools: None,
             tool_choice: None,
-            provider_options: vec![],
+            provider_options: None,
         };
 
         println!("Sending request to LLM...");
@@ -419,9 +424,9 @@ impl Guest for Component {
             temperature: Some(0.2),
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![],
+            tools: None,
             tool_choice: None,
-            provider_options: vec![],
+            provider_options: None,
         };
 
         println!("Starting streaming request to LLM...");
@@ -470,11 +475,11 @@ impl Guest for Component {
                                             }
                                             llm::ImageReference::Inline(inline_data) => {
                                                 result.push_str(&format!(
-                                                        "INLINE IMAGE: {} bytes, mime: {}, detail: {:?}\n",
-                                                        inline_data.data.len(),
-                                                        inline_data.mime_type,
-                                                        inline_data.detail
-                                                    ));
+                                                    "INLINE IMAGE: {} bytes, mime: {}, detail: {:?}\n",
+                                                    inline_data.data.len(),
+                                                    inline_data.mime_type,
+                                                    inline_data.detail
+                                                ));
                                             }
                                         },
                                     }
@@ -523,9 +528,9 @@ impl Guest for Component {
             temperature: None,
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![],
+            tools: None,
             tool_choice: None,
-            provider_options: vec![],
+            provider_options: None,
         };
 
         println!("Reading image from Initial File System...");
@@ -601,9 +606,9 @@ impl Guest for Component {
             temperature: Some(0.2),
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![],
+            tools: None,
             tool_choice: None,
-            provider_options: vec![],
+            provider_options: None,
         };
 
         let mut events = vec![llm::Event::Message(llm::Message {
