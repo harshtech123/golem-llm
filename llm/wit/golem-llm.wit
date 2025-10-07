@@ -289,7 +289,7 @@ interface llm {
 
   // --- Chat session ---
 
-  /// Chat session is a simple wrapper on top of events to help with maintaining chat sessions
+  /// Chat session is a simple wrapper on top of events to help with maintaining chat history
   resource chat-session {
     /// Create new session with the provided config
     constructor(config: config);
