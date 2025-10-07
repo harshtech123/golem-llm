@@ -7,7 +7,7 @@ members = [
     "llm/anthropic",
     "llm/grok",
     "llm/ollama",
-    #"llm/openai",
+    "llm/openai",
     #"llm/openrouter",
     "websearch/websearch",
     "websearch/brave",
