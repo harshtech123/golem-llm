@@ -238,7 +238,7 @@ interface llm {
   variant event {
     /// Message asked by the user
     message(message),
-    /// Response from the LMM
+    /// Response from the LLM
     response(response),
     /// Provided tool results
     tool-results(list<tool-result>),
