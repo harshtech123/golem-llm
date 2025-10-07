@@ -1,6 +1,6 @@
 use crate::client::{
     CreateModelResponseRequest, CreateModelResponseResponse, Detail, InnerInput, InnerInputItem,
-    Input, InputItem, OutputItem, OutputMessageContent, Tool,
+    Input, InputItem, OpenOutputItem, OutputItem, OutputMessageContent, Tool,
 };
 use base64::{engine::general_purpose, Engine as _};
 use golem_llm::error::error_code_from_status;
@@ -8,6 +8,7 @@ use golem_llm::golem::llm::llm::{
     Config, ContentPart, Error, ErrorCode, Event, ImageDetail, ImageReference, Message, Response,
     ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
 };
+use log::trace;
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -221,30 +222,35 @@ pub fn process_model_response(response: CreateModelResponseResponse) -> Result<R
 
         for output_item in response.output {
             match output_item {
-                OutputItem::Message { content, .. } => {
-                    for content in content {
-                        match content {
-                            OutputMessageContent::Text { text, .. } => {
-                                contents.push(ContentPart::Text(text));
-                            }
-                            OutputMessageContent::Refusal { refusal, .. } => {
-                                contents.push(ContentPart::Text(format!("Refusal: {refusal}")));
+                OpenOutputItem::Known(output_item) => match output_item {
+                    OutputItem::Message { content, .. } => {
+                        for content in content {
+                            match content {
+                                OutputMessageContent::Text { text, .. } => {
+                                    contents.push(ContentPart::Text(text));
+                                }
+                                OutputMessageContent::Refusal { refusal, .. } => {
+                                    contents.push(ContentPart::Text(format!("Refusal: {refusal}")));
+                                }
                             }
                         }
                     }
-                }
-                OutputItem::ToolCall {
-                    arguments,
-                    call_id,
-                    name,
-                    ..
-                } => {
-                    let tool_call = ToolCall {
-                        id: call_id,
+                    OutputItem::ToolCall {
+                        arguments,
+                        call_id,
                         name,
-                        arguments_json: arguments,
-                    };
-                    tool_calls.push(tool_call);
+                        ..
+                    } => {
+                        let tool_call = ToolCall {
+                            id: call_id,
+                            name,
+                            arguments_json: arguments,
+                        };
+                        tool_calls.push(tool_call);
+                    }
+                },
+                OpenOutputItem::Other(value) => {
+                    trace!("Ignoring unknown output item: {value:?}");
                 }
             }
         }

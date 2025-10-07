@@ -1,6 +1,6 @@
 use golem_llm::error::{error_code_from_status, from_event_source_error, from_reqwest_error};
 use golem_llm::event_source::EventSource;
-use golem_llm::golem::llm::llm::Error;
+use golem_llm::golem::llm::llm::{Error, ErrorCode};
 use log::trace;
 use reqwest::header::HeaderValue;
 use reqwest::{Client, Method, Response};
@@ -97,7 +97,7 @@ pub struct CreateModelResponseResponse {
     pub error: Option<ErrorObject>,
     pub incomplete_details: Option<IncompleteDetailsObject>,
     pub status: Status,
-    pub output: Vec<OutputItem>,
+    pub output: Vec<OpenOutputItem>,
     pub usage: Option<Usage>,
     pub metadata: Option<serde_json::Value>,
 }
@@ -120,6 +120,13 @@ pub enum OutputItem {
         id: String,
         status: Status,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum OpenOutputItem {
+    Known(OutputItem),
+    Other(serde_json::Value),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -273,9 +280,15 @@ pub struct ResponseOutputItemDone {
 fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, Error> {
     let status = response.status();
     if status.is_success() {
-        let body = response
-            .json::<T>()
-            .map_err(|err| from_reqwest_error("Failed to decode response body", err))?;
+        let body_text = response
+            .text()
+            .map_err(|err| from_reqwest_error("Failed to receive response body", err))?;
+
+        let body = serde_json::from_str::<T>(&body_text).map_err(|err| Error {
+            code: ErrorCode::InvalidRequest,
+            message: format!("Failed to decode response body: {}", err),
+            provider_error_json: Some(body_text),
+        })?;
 
         trace!("Received response from OpenAI API: {body:?}");
 
