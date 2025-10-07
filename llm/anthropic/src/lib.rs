@@ -13,7 +13,7 @@ use golem_llm::config::{get_config_key, with_config_key};
 use golem_llm::durability::{DurableLLM, ExtendedGuest};
 use golem_llm::event_source::EventSource;
 use golem_llm::golem::llm::llm::{
-    ChatError, ChatEvent, ChatResponse, ChatStream, Config, ContentPart, Guest, Message,
+    ChatError, ChatEvent, ChatResponse, ChatStream, Config, ContentPart, ErrorCode, Guest, Message,
     ResponseMetadata, Role, StreamDelta, StreamEvent, ToolCall,
 };
 use golem_rust::wasm_rpc::Pollable;
@@ -92,10 +92,19 @@ impl LlmChatStreamState for AnthropicChatStream {
         self.stream.borrow_mut()
     }
 
-    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, String> {
+    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, ChatError> {
+        fn decode_internal_error<S: Into<String>>(message: S) -> ChatError {
+            ChatError {
+                code: ErrorCode::InternalError,
+                message: message.into(),
+                provider_error_json: None,
+            }
+        }
+
         trace!("Received raw stream event: {raw}");
-        let json: serde_json::Value = serde_json::from_str(raw)
-            .map_err(|err| format!("Failed to deserialize stream event: {err}"))?;
+        let json: serde_json::Value = serde_json::from_str(raw).map_err(|err| {
+            decode_internal_error(format!("Failed to deserialize stream event: {err}"))
+        })?;
 
         let typ = json
             .as_object()
@@ -103,9 +112,10 @@ impl LlmChatStreamState for AnthropicChatStream {
             .and_then(|v| v.as_str());
         match typ {
             Some("error") => {
-                let error = serde_json::from_value::<ErrorResponse>(json)
-                    .map_err(|err| format!("Failed to deserialize stream event: {err}"))?;
-                Err(error.error.message)
+                let error = serde_json::from_value::<ErrorResponse>(json).map_err(|err| {
+                    decode_internal_error(format!("Failed to deserialize stream event: {err}"))
+                })?;
+                Err(decode_internal_error(error.error.message))
             }
             Some("content_block_start") => {
                 let index = json
@@ -113,19 +123,25 @@ impl LlmChatStreamState for AnthropicChatStream {
                     .and_then(|obj| obj.get("index"))
                     .and_then(|v| v.as_u64())
                     .ok_or_else(|| {
-                        "Unexpected stream event format, does not have 'index' field".to_string()
+                        decode_internal_error(
+                            "Unexpected stream event format, does not have 'index' field",
+                        )
                     })?;
 
                 let raw_content_block = json
                     .as_object()
                     .and_then(|obj| obj.get("content_block"))
                     .ok_or_else(|| {
-                    "Unexpected stream event format, does not have 'content_block' field"
-                        .to_string()
+                    decode_internal_error(
+                        "Unexpected stream event format, does not have 'content_block' field"
+                            .to_string(),
+                    )
                 })?;
 
                 let content_block = serde_json::from_value::<Content>(raw_content_block.clone())
-                    .map_err(|err| format!("Failed to deserialize stream event: {err}"))?;
+                    .map_err(|err| {
+                        decode_internal_error(format!("Failed to deserialize stream event: {err}"))
+                    })?;
 
                 if let Content::ToolUse { id, name, .. } = content_block {
                     self.json_fragments.borrow_mut().insert(
@@ -145,10 +161,14 @@ impl LlmChatStreamState for AnthropicChatStream {
                     .as_object()
                     .and_then(|obj| obj.get("delta"))
                     .ok_or_else(|| {
-                        "Unexpected stream event format, does not have 'delta' field".to_string()
+                        decode_internal_error(
+                            "Unexpected stream event format, does not have 'delta' field",
+                        )
                     })?;
                 let delta = serde_json::from_value::<ContentBlockDelta>(raw_delta.clone())
-                    .map_err(|err| format!("Failed to deserialize stream event: {err}"))?;
+                    .map_err(|err| {
+                        decode_internal_error(format!("Failed to deserialize stream event: {err}"))
+                    })?;
 
                 match delta {
                     ContentBlockDelta::TextDelta { text } => {
@@ -163,8 +183,9 @@ impl LlmChatStreamState for AnthropicChatStream {
                             .and_then(|obj| obj.get("index"))
                             .and_then(|v| v.as_u64())
                             .ok_or_else(|| {
-                                "Unexpected stream event format, does not have 'index' field"
-                                    .to_string()
+                                decode_internal_error(
+                                    "Unexpected stream event format, does not have 'index' field",
+                                )
                             })?;
 
                         let mut json_fragments = self.json_fragments.borrow_mut();
@@ -181,7 +202,9 @@ impl LlmChatStreamState for AnthropicChatStream {
                     .and_then(|obj| obj.get("index"))
                     .and_then(|v| v.as_u64())
                     .ok_or_else(|| {
-                        "Unexpected stream event format, does not have 'index' field".to_string()
+                        decode_internal_error(
+                            "Unexpected stream event format, does not have 'index' field",
+                        )
                     })?;
 
                 if let Some(tool_use) = self.json_fragments.borrow_mut().remove(&index) {
@@ -223,7 +246,9 @@ impl LlmChatStreamState for AnthropicChatStream {
                 Ok(Some(StreamEvent::Finish(response_metadata)))
             }
             Some(_) => Ok(None),
-            None => Err("Unexpected stream event format, does not have 'type' field".to_string()),
+            None => Err(decode_internal_error(
+                "Unexpected stream event format, does not have 'type' field",
+            )),
         }
     }
 }

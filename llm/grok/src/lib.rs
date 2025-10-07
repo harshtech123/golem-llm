@@ -12,8 +12,8 @@ use golem_llm::config::{get_config_key, with_config_key};
 use golem_llm::durability::{DurableLLM, ExtendedGuest};
 use golem_llm::event_source::EventSource;
 use golem_llm::golem::llm::llm::{
-    ChatError, ChatEvent, ChatResponse, ChatStream, Config, ContentPart, FinishReason, Guest,
-    ResponseMetadata, StreamDelta, StreamEvent,
+    ChatError, ChatEvent, ChatResponse, ChatStream, Config, ContentPart, ErrorCode, FinishReason,
+    Guest, ResponseMetadata, StreamDelta, StreamEvent,
 };
 use golem_rust::wasm_rpc::Pollable;
 use log::trace;
@@ -67,10 +67,19 @@ impl LlmChatStreamState for GrokChatStream {
         self.stream.borrow_mut()
     }
 
-    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, String> {
+    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, ChatError> {
+        fn decode_internal_error<S: Into<String>>(message: S) -> ChatError {
+            ChatError {
+                code: ErrorCode::InternalError,
+                message: message.into(),
+                provider_error_json: None,
+            }
+        }
+
         trace!("Received raw stream event: {raw}");
-        let json: serde_json::Value = serde_json::from_str(raw)
-            .map_err(|err| format!("Failed to deserialize stream event: {err}"))?;
+        let json: serde_json::Value = serde_json::from_str(raw).map_err(|err| {
+            decode_internal_error(format!("Failed to deserialize stream event: {err}"))
+        })?;
 
         let typ = json
             .as_object()
@@ -78,8 +87,9 @@ impl LlmChatStreamState for GrokChatStream {
             .and_then(|v| v.as_str());
         match typ {
             Some("chat.completion.chunk") => {
-                let message: ChatCompletionChunk = serde_json::from_value(json)
-                    .map_err(|err| format!("Failed to parse stream event: {err}"))?;
+                let message: ChatCompletionChunk = serde_json::from_value(json).map_err(|err| {
+                    decode_internal_error(format!("Failed to parse stream event: {err}"))
+                })?;
                 if let Some(choice) = message.choices.into_iter().next() {
                     if let Some(finish_reason) = choice.finish_reason {
                         *self.finish_reason.borrow_mut() =
@@ -111,7 +121,9 @@ impl LlmChatStreamState for GrokChatStream {
                 }
             }
             Some(_) => Ok(None),
-            None => Err("Unexpected stream event format, does not have 'object' field".to_string()),
+            None => Err(decode_internal_error(
+                "Unexpected stream event format, does not have 'object' field",
+            )),
         }
     }
 }

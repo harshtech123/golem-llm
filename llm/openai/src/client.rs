@@ -1,6 +1,6 @@
 use golem_llm::error::{error_code_from_status, from_event_source_error, from_reqwest_error};
 use golem_llm::event_source::EventSource;
-use golem_llm::golem::llm::llm::Error;
+use golem_llm::golem::llm::llm::ChatError;
 use log::trace;
 use reqwest::header::HeaderValue;
 use reqwest::{Client, Method, Response};
@@ -32,7 +32,7 @@ impl ResponsesApi {
     pub fn create_model_response(
         &self,
         request: CreateModelResponseRequest,
-    ) -> Result<CreateModelResponseResponse, Error> {
+    ) -> Result<CreateModelResponseResponse, ChatError> {
         trace!("Sending request to OpenAI API: {request:?}");
 
         let response: Response = self
@@ -49,7 +49,7 @@ impl ResponsesApi {
     pub fn stream_model_response(
         &self,
         request: CreateModelResponseRequest,
-    ) -> Result<EventSource, Error> {
+    ) -> Result<EventSource, ChatError> {
         trace!("Sending request to OpenAI API: {request:?}");
 
         let response: Response = self
@@ -270,7 +270,7 @@ pub struct ResponseOutputItemDone {
     pub output_index: u32,
 }
 
-fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, Error> {
+fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, ChatError> {
     let status = response.status();
     if status.is_success() {
         let body = response
@@ -287,7 +287,7 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response) -> Result<T, 
 
         trace!("Received {status} response from OpenAI API: {body:?}");
 
-        Err(Error {
+        Err(ChatError {
             code: error_code_from_status(status),
             message: format!("Request failed with {status}"),
             provider_error_json: Some(body),

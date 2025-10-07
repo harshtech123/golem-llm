@@ -3,6 +3,7 @@ use std::cell::{Ref, RefCell, RefMut};
 use client::{CompletionsRequest, OllamaApi};
 use conversions::{events_to_request, process_response};
 use golem_llm::chat_session::ChatSession;
+use golem_llm::golem::llm::llm::ErrorCode;
 use golem_llm::{
     chat_stream::{LlmChatStream, LlmChatStreamState},
     durability::{DurableLLM, ExtendedGuest},
@@ -62,10 +63,18 @@ impl LlmChatStreamState for OllamaChatStream {
         self.stream.borrow_mut()
     }
 
-    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, String> {
+    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, ChatError> {
+        fn decode_internal_error<S: Into<String>>(message: S) -> ChatError {
+            ChatError {
+                code: ErrorCode::InternalError,
+                message: message.into(),
+                provider_error_json: None,
+            }
+        }
+
         trace!("Parsing NDJSON line: {raw}");
-        let json: serde_json::Value =
-            serde_json::from_str(raw.trim()).map_err(|e| format!("JSON parse error: {e}"))?;
+        let json: serde_json::Value = serde_json::from_str(raw.trim())
+            .map_err(|e| decode_internal_error(format!("JSON parse error: {e}")))?;
 
         if json.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {
             let input_tokens = json

@@ -10,7 +10,7 @@ pub trait LlmChatStreamState: 'static {
     fn set_finished(&self);
     fn stream(&self) -> Ref<'_, Option<EventSource>>;
     fn stream_mut(&self) -> RefMut<'_, Option<EventSource>>;
-    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, String>;
+    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, ChatError>;
 }
 
 pub struct LlmChatStream<T> {
@@ -60,22 +60,15 @@ impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
                         Event::Open => {}
                         Event::Message(MessageEvent { data, .. }) => {
                             if data != "[DONE]" {
-                                match self.implementation.decode_message(&data) {
-                                    Ok(Some(stream_event)) => {
+                                match self.implementation.decode_message(&data)? {
+                                    Some(stream_event) => {
                                         if matches!(stream_event, StreamEvent::Finish(_)) {
                                             self.implementation.set_finished();
                                         }
                                         events.push(stream_event);
                                     }
-                                    Ok(None) => {
+                                    None => {
                                         // Ignored event
-                                    }
-                                    Err(error) => {
-                                        return Err(ChatError {
-                                            code: ErrorCode::InternalError,
-                                            message: error,
-                                            provider_error_json: None,
-                                        })
                                     }
                                 }
                             }
