@@ -8,7 +8,7 @@ members = [
     "llm/grok",
     "llm/ollama",
     "llm/openai",
-    #"llm/openrouter",
+    "llm/openrouter",
     "websearch/websearch",
     "websearch/brave",
     "websearch/google",

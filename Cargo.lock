@@ -1729,6 +1729,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "golem-llm-openrouter"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "golem-llm",
+ "golem-rust",
+ "log 0.4.28",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.41.0",
+]
+
+[[package]]
 name = "golem-rust"
 version = "1.7.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
