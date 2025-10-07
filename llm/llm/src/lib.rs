@@ -1,4 +1,3 @@
-pub mod chat_session;
 pub mod chat_stream;
 pub mod config;
 pub mod durability;

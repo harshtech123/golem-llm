@@ -7,7 +7,6 @@ use crate::client::{
 use crate::conversions::{
     convert_usage, events_to_request, process_response, stop_reason_to_finish_reason,
 };
-use golem_llm::chat_session::ChatSession;
 use golem_llm::chat_stream::{LlmChatStream, LlmChatStreamState};
 use golem_llm::config::{get_config_key, with_config_key};
 use golem_llm::durability::{DurableLLM, ExtendedGuest};
@@ -277,7 +276,6 @@ impl AnthropicComponent {
 
 impl Guest for AnthropicComponent {
     type ChatStream = LlmChatStream<AnthropicChatStream>;
-    type ChatSession = ChatSession<DurableAnthropicComponent>;
 
     fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
         let anthropic_api_key = get_config_key(Self::ENV_VAR_NAME)?;

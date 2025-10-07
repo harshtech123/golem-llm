@@ -2,7 +2,6 @@ use std::cell::{Ref, RefCell, RefMut};
 
 use client::{CompletionsRequest, OllamaApi};
 use conversions::{events_to_request, process_response};
-use golem_llm::chat_session::ChatSession;
 use golem_llm::golem::llm::llm::ErrorCode;
 use golem_llm::{
     chat_stream::{LlmChatStream, LlmChatStreamState},
@@ -208,7 +207,6 @@ impl OllamaComponent {
 
 impl Guest for OllamaComponent {
     type ChatStream = LlmChatStream<OllamaChatStream>;
-    type ChatSession = ChatSession<DurableOllamaComponent>;
 
     fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
         let client = OllamaApi::new(config.model.clone());

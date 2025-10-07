@@ -14,9 +14,13 @@ use std::collections::HashMap;
 pub fn events_to_request(events: Vec<Event>, config: Config) -> Result<CompletionsRequest, Error> {
     let options = config
         .provider_options
-        .iter()
-        .map(|kv| (kv.key.as_str(), kv.value.as_str()))
-        .collect::<HashMap<_, _>>();
+        .map(|options| {
+            options
+                .into_iter()
+                .map(|kv| (kv.key, kv.value))
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_default();
 
     let mut request_messages = Vec::new();
 
@@ -31,7 +35,7 @@ pub fn events_to_request(events: Vec<Event>, config: Config) -> Result<Completio
     }
 
     let mut tools = Vec::new();
-    for tool in &config.tools {
+    for tool in config.tools.unwrap_or_default() {
         let param = serde_json::from_str(&tool.parameters_schema).map_err(|err| Error {
             code: ErrorCode::InternalError,
             message: format!("Failed to parse tool parameters for {}: {err}", tool.name),
@@ -40,8 +44,8 @@ pub fn events_to_request(events: Vec<Event>, config: Config) -> Result<Completio
         tools.push(Tool {
             tool_type: String::from("function"),
             function: FunctionTool {
-                description: tool.description.clone().unwrap_or_default(),
-                name: tool.name.clone(),
+                description: tool.description.unwrap_or_default(),
+                name: tool.name,
                 parameters: param,
             },
         });
@@ -217,7 +221,7 @@ fn tool_result_to_request(tool_result: ToolResult) -> MessageRequest {
     }
 }
 
-fn parse_option<T: std::str::FromStr>(options: &HashMap<&str, &str>, key: &str) -> Option<T> {
+fn parse_option<T: std::str::FromStr>(options: &HashMap<String, String>, key: &str) -> Option<T> {
     options.get(key).and_then(|v| v.parse::<T>().ok())
 }
 

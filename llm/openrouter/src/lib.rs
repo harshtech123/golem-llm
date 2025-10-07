@@ -5,7 +5,6 @@ use crate::client::{ChatCompletionChunk, CompletionsApi, CompletionsRequest, Fun
 use crate::conversions::{
     convert_finish_reason, convert_usage, events_to_request, process_response,
 };
-use golem_llm::chat_session::ChatSession;
 use golem_llm::chat_stream::{LlmChatStream, LlmChatStreamState};
 use golem_llm::config::{get_config_key, with_config_key};
 use golem_llm::durability::{DurableLLM, ExtendedGuest};
@@ -259,7 +258,6 @@ impl OpenRouterComponent {
 
 impl Guest for OpenRouterComponent {
     type ChatStream = LlmChatStream<OpenRouterChatStream>;
-    type ChatSession = ChatSession<DurableOpenRouterComponent>;
 
     fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
         let openrouter_api_key = get_config_key(Self::ENV_VAR_NAME)?;

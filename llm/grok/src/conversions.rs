@@ -9,9 +9,13 @@ use std::collections::HashMap;
 pub fn events_to_request(events: Vec<Event>, config: Config) -> Result<CompletionsRequest, Error> {
     let options = config
         .provider_options
-        .into_iter()
-        .map(|kv| (kv.key, kv.value))
-        .collect::<HashMap<_, _>>();
+        .map(|options| {
+            options
+                .into_iter()
+                .map(|kv| (kv.key, kv.value))
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_default();
 
     let mut completion_messages = Vec::new();
     for event in events {
@@ -61,7 +65,7 @@ pub fn events_to_request(events: Vec<Event>, config: Config) -> Result<Completio
     }
 
     let mut tools = Vec::new();
-    for tool in config.tools {
+    for tool in config.tools.unwrap_or_default() {
         tools.push(tool_definition_to_tool(tool)?)
     }
 

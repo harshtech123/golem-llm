@@ -173,11 +173,11 @@ interface llm {
     /// A sequence where the model stops generating tokens
     stop-sequences: option<list<string>>,
     /// List of available tools
-    tools: list<tool-definition>,
+    tools: option<list<tool-definition>>,
     /// Tool choice policy
     tool-choice: option<string>,
     /// Additional LLM provider specific key-value pairs
-    provider-options: list<kv>,
+    provider-options: option<list<kv>>,
   }
 
   // --- Usage / Metadata ---
@@ -286,33 +286,6 @@ interface llm {
     events: list<event>,
     config: config,
   ) -> chat-stream;
-
-  // --- Chat session ---
-
-  /// Chat session is a simple wrapper on top of events to help with maintaining chat history
-  resource chat-session {
-    /// Create new session with the provided config
-    constructor(config: config);
-
-    /// Add a single user message to the chat events
-    add-message: func(message: message);
-    /// Add multiple user messages to the chat events
-    add-messages: func(messages: list<message>);
-    /// Add a single tool result to the chat events
-    add-tool-result: func(tool-result: tool-result);
-    /// Add multiple tool results to the chat events
-    add-tool-results: func(tool-results: list<tool-result>);
-
-    /// Observe all events in the session
-    get-chat-events: func() -> list<event>;
-    // Replace all events in the session, which allows e.g. compacting them
-    set-chat-events: func(events: list<event>);
-
-    /// Send the full accumulated chat events, responses are automatically added to the session chat events
-    send: func() -> result<response, error>;
-    /// Like Send, but streams responses
-    %stream: func() -> chat-stream;
-  }
 }
 
 world llm-library {

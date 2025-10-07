@@ -6,7 +6,6 @@ use crate::conversions::{
     create_request, create_response_metadata, events_to_input_items, parse_error_code,
     process_model_response, tool_defs_to_tools,
 };
-use golem_llm::chat_session::ChatSession;
 use golem_llm::chat_stream::{LlmChatStream, LlmChatStreamState};
 use golem_llm::config::{get_config_key, with_config_key};
 use golem_llm::durability::{DurableLLM, ExtendedGuest};
@@ -189,7 +188,7 @@ impl OpenAIComponent {
         items: Vec<InputItem>,
         config: Config,
     ) -> Result<Response, Error> {
-        let tools = tool_defs_to_tools(&config.tools)?;
+        let tools = tool_defs_to_tools(config.tools.clone())?;
         let request = create_request(items, config, tools);
         let response = client.create_model_response(request)?;
         process_model_response(response)
@@ -200,7 +199,7 @@ impl OpenAIComponent {
         items: Vec<InputItem>,
         config: Config,
     ) -> LlmChatStream<OpenAIChatStream> {
-        match tool_defs_to_tools(&config.tools) {
+        match tool_defs_to_tools(config.tools.clone()) {
             Ok(tools) => {
                 let mut request = create_request(items, config, tools);
                 request.stream = true;
@@ -216,7 +215,6 @@ impl OpenAIComponent {
 
 impl Guest for OpenAIComponent {
     type ChatStream = LlmChatStream<OpenAIChatStream>;
-    type ChatSession = ChatSession<DurableOpenAIComponent>;
 
     fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
         let openai_api_key = get_config_key(Self::ENV_VAR_NAME)?;

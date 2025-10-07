@@ -6,7 +6,6 @@ use crate::conversions::{
     convert_client_tool_call_to_tool_call, convert_finish_reason, convert_usage, events_to_request,
     process_response,
 };
-use golem_llm::chat_session::ChatSession;
 use golem_llm::chat_stream::{LlmChatStream, LlmChatStreamState};
 use golem_llm::config::{get_config_key, with_config_key};
 use golem_llm::durability::{DurableLLM, ExtendedGuest};
@@ -155,7 +154,6 @@ impl GrokComponent {
 
 impl Guest for GrokComponent {
     type ChatStream = LlmChatStream<GrokChatStream>;
-    type ChatSession = ChatSession<DurableGrokComponent>;
 
     fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
         let xai_api_key = get_config_key(Self::ENV_VAR_NAME)?;

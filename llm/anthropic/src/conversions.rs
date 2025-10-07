@@ -12,22 +12,28 @@ use std::collections::HashMap;
 pub fn events_to_request(events: Vec<Event>, config: Config) -> Result<MessagesRequest, Error> {
     let options = config
         .provider_options
-        .into_iter()
-        .map(|kv| (kv.key, kv.value))
-        .collect::<HashMap<_, _>>();
+        .map(|options| {
+            options
+                .into_iter()
+                .map(|kv| (kv.key, kv.value))
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_default();
 
     let (user_messages, system_messages) = events_to_messages_and_system_messages(events);
 
     let tool_choice = config.tool_choice.map(convert_tool_choice);
-    let tools = if config.tools.is_empty() {
-        None
-    } else {
-        let mut tools = Vec::new();
-        for tool in &config.tools {
-            tools.push(tool_definition_to_tool(tool)?)
-        }
-        Some(tools)
-    };
+    let tools = config
+        .tools
+        .and_then(|tools| {
+            (!tools.is_empty()).then(|| {
+                tools
+                    .into_iter()
+                    .map(tool_definition_to_tool)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+        })
+        .transpose()?;
 
     Ok(MessagesRequest {
         max_tokens: config.max_tokens.unwrap_or(4096),
@@ -280,13 +286,13 @@ fn content_parts_to_content(content_parts: Vec<ContentPart>) -> Vec<Content> {
     result
 }
 
-fn tool_definition_to_tool(tool: &ToolDefinition) -> Result<Tool, Error> {
+fn tool_definition_to_tool(tool: ToolDefinition) -> Result<Tool, Error> {
     match serde_json::from_str(&tool.parameters_schema) {
         Ok(value) => Ok(Tool::CustomTool {
             input_schema: value,
-            name: tool.name.clone(),
+            name: tool.name,
             cache_control: None,
-            description: tool.description.clone(),
+            description: tool.description,
         }),
         Err(error) => Err(Error {
             code: ErrorCode::InternalError,

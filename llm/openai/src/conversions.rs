@@ -19,9 +19,13 @@ pub fn create_request(
 ) -> CreateModelResponseRequest {
     let options = config
         .provider_options
-        .into_iter()
-        .map(|kv| (kv.key, kv.value))
-        .collect::<HashMap<_, _>>();
+        .map(|options| {
+            options
+                .into_iter()
+                .map(|kv| (kv.key, kv.value))
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_default();
 
     CreateModelResponseRequest {
         input: Input::List(items),
@@ -79,9 +83,11 @@ pub fn tool_result_to_input_item(tool_result: ToolResult) -> InputItem {
     }
 }
 
-pub fn tool_defs_to_tools(tool_definitions: &[ToolDefinition]) -> Result<Vec<Tool>, Error> {
+pub fn tool_defs_to_tools(
+    tool_definitions: Option<Vec<ToolDefinition>>,
+) -> Result<Vec<Tool>, Error> {
     let mut tools = Vec::new();
-    for tool_def in tool_definitions {
+    for tool_def in tool_definitions.unwrap_or_default() {
         match serde_json::from_str(&tool_def.parameters_schema) {
             Ok(value) => {
                 let tool = Tool::Function {

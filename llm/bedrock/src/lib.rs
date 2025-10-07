@@ -1,6 +1,5 @@
 use async_utils::get_async_runtime;
 use client::Bedrock;
-use golem_llm::chat_session::ChatSession;
 use golem_llm::durability::{DurableLLM, ExtendedGuest};
 use golem_llm::golem::llm::llm::{
     self, ChatStream, Config, Error, Event, Guest, Message, Response,
@@ -19,7 +18,6 @@ struct BedrockComponent;
 
 impl Guest for BedrockComponent {
     type ChatStream = BedrockChatStream;
-    type ChatSession = ChatSession<DurableBedrockComponent>;
 
     fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
         let runtime = get_async_runtime();

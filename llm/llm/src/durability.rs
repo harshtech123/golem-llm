@@ -75,7 +75,6 @@ mod passthrough_impl {
 
     impl<Impl: ExtendedGuest> Guest for DurableLLM<Impl> {
         type ChatStream = Impl::ChatStream;
-        type ChatSession = Impl::ChatSession;
 
         fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
             init_logging();
@@ -116,7 +115,6 @@ mod durable_impl {
 
     impl<Impl: ExtendedGuest> Guest for DurableLLM<Impl> {
         type ChatStream = DurableChatStream<Impl>;
-        type ChatSession = Impl::ChatSession;
 
         fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
             init_logging();

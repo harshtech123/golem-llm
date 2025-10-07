@@ -30,9 +30,13 @@ impl BedrockInput {
 
         let options = config
             .provider_options
-            .iter()
-            .map(|kv| (kv.key.clone(), Document::String(kv.value.clone())))
-            .collect::<HashMap<_, _>>();
+            .map(|options| {
+                options
+                    .into_iter()
+                    .map(|kv| (kv.key, Document::String(kv.value)))
+                    .collect::<HashMap<_, _>>()
+            })
+            .unwrap_or_default();
 
         Ok(BedrockInput {
             model_id: config.model.clone(),
@@ -47,7 +51,7 @@ impl BedrockInput {
                 .build(),
             messages: user_messages,
             system_instructions,
-            tools: tool_defs_to_bedrock_tool_config(config.tools.clone())?,
+            tools: tool_defs_to_bedrock_tool_config(config.tools.unwrap_or_default())?,
             additional_fields: Document::Object(options),
         })
     }
