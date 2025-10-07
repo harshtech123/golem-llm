@@ -106,7 +106,7 @@ pub fn process_response(mut response: CompletionsResponse) -> Result<Response, E
                 .message
                 .content
                 .into_iter()
-                .map(|content| ContentPart::Text(content))
+                .map(ContentPart::Text)
                 .collect();
 
             let tool_calls = choice
@@ -115,7 +115,7 @@ pub fn process_response(mut response: CompletionsResponse) -> Result<Response, E
                 .map(|tool_calls| {
                     tool_calls
                         .into_iter()
-                        .map(|tool_call| convert_client_tool_call_to_tool_call(tool_call))
+                        .map(convert_client_tool_call_to_tool_call)
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();

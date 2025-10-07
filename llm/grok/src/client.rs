@@ -25,10 +25,7 @@ impl CompletionsApi {
         Self { api_key, client }
     }
 
-    pub fn send_messages(
-        &self,
-        request: CompletionsRequest,
-    ) -> Result<CompletionsResponse, Error> {
+    pub fn send_messages(&self, request: CompletionsRequest) -> Result<CompletionsResponse, Error> {
         trace!("Sending request to xAI API: {request:?}");
 
         let response: Response = self
@@ -42,10 +39,7 @@ impl CompletionsApi {
         parse_response(response)
     }
 
-    pub fn stream_send_messages(
-        &self,
-        request: CompletionsRequest,
-    ) -> Result<EventSource, Error> {
+    pub fn stream_send_messages(&self, request: CompletionsRequest) -> Result<EventSource, Error> {
         trace!("Sending request to xAI API: {request:?}");
 
         let response: Response = self

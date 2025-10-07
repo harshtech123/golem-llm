@@ -4,16 +4,12 @@ use crate::client::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use golem_llm::golem::llm::llm::{
-    Error, Event, Response, Config, ContentPart, ErrorCode, FinishReason,
-    ImageReference, ImageSource, ImageUrl, ResponseMetadata, Role, ToolCall, ToolDefinition,
-    ToolResult, Usage,
+    Config, ContentPart, Error, ErrorCode, Event, FinishReason, ImageReference, ImageSource,
+    ImageUrl, Response, ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
 };
 use std::collections::HashMap;
 
-pub fn events_to_request(
-    events: Vec<Event>,
-    config: Config,
-) -> Result<MessagesRequest, Error> {
+pub fn events_to_request(events: Vec<Event>, config: Config) -> Result<MessagesRequest, Error> {
     let options = config
         .provider_options
         .into_iter()

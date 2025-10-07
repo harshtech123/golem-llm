@@ -5,8 +5,8 @@ use crate::client::{
 use base64::{engine::general_purpose, Engine as _};
 use golem_llm::error::error_code_from_status;
 use golem_llm::golem::llm::llm::{
-    Error, Event, Response, Config, ContentPart, ErrorCode, ImageDetail,
-    ImageReference, Message, ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
+    Config, ContentPart, Error, ErrorCode, Event, ImageDetail, ImageReference, Message, Response,
+    ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
 };
 use reqwest::StatusCode;
 use std::collections::HashMap;
@@ -151,7 +151,7 @@ pub fn content_part_to_inner_input_item(role: &Role, content_part: ContentPart) 
 }
 
 pub fn llm_message_to_openai_input_item(message: Message) -> InputItem {
-    let role = message.role.clone();
+    let role = message.role;
     InputItem::InputMessage {
         role: to_openai_role_name(&role).to_string(),
         content: InnerInput::List(
@@ -200,9 +200,7 @@ pub fn parse_error_code(code: String) -> ErrorCode {
     }
 }
 
-pub fn process_model_response(
-    response: CreateModelResponseResponse,
-) -> Result<Response, Error> {
+pub fn process_model_response(response: CreateModelResponseResponse) -> Result<Response, Error> {
     if let Some(error) = response.error {
         Err(Error {
             code: parse_error_code(error.code),

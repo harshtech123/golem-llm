@@ -26,22 +26,22 @@ where
         }
     }
 
-    fn add_message(&self, message: Message) -> () {
+    fn add_message(&self, message: Message) {
         self.events.borrow_mut().push(Event::Message(message));
     }
 
-    fn add_messages(&self, messages: Vec<Message>) -> () {
+    fn add_messages(&self, messages: Vec<Message>) {
         let mut events = self.events.borrow_mut();
-        events.extend(messages.into_iter().map(|m| Event::Message(m)));
+        events.extend(messages.into_iter().map(Event::Message));
     }
 
-    fn add_tool_result(&self, tool_result: ToolResult) -> () {
+    fn add_tool_result(&self, tool_result: ToolResult) {
         self.events
             .borrow_mut()
             .push(Event::ToolResults(vec![tool_result]));
     }
 
-    fn add_tool_results(&self, tool_results: Vec<ToolResult>) -> () {
+    fn add_tool_results(&self, tool_results: Vec<ToolResult>) {
         self.events
             .borrow_mut()
             .push(Event::ToolResults(tool_results));
@@ -51,7 +51,7 @@ where
         self.events.borrow().clone()
     }
 
-    fn set_chat_events(&self, events: Vec<Event>) -> () {
+    fn set_chat_events(&self, events: Vec<Event>) {
         let mut e = self.events.borrow_mut();
         e.clear();
         e.extend(events)
@@ -77,7 +77,7 @@ where
     fn stream(&self) -> ChatStream {
         ChatStream::new(ChatSessionStreamAdapter::new(
             self.events.clone(),
-            LlmImpl::stream(self.get_chat_events(), self.config.clone(), )
+            LlmImpl::stream(self.get_chat_events(), self.config.clone())
                 .into_inner::<LlmImpl::ChatStream>(),
         ))
     }
@@ -117,7 +117,7 @@ where
         }
     }
 
-    fn add_stream_events(&self, events: &[StreamEvent]) -> () {
+    fn add_stream_events(&self, events: &[StreamEvent]) {
         for event in events {
             match event {
                 StreamEvent::Delta(delta) => {

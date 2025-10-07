@@ -5,16 +5,13 @@ use crate::client::{
 };
 use base64::{engine::general_purpose, Engine};
 use golem_llm::golem::llm::llm::{
-    Error, Event, Response, Config, ContentPart, ErrorCode, FinishReason,
-    ImageReference, Message, ResponseMetadata, Role, ToolCall as GolemToolCall, ToolResult, Usage,
+    Config, ContentPart, Error, ErrorCode, Event, FinishReason, ImageReference, Message, Response,
+    ResponseMetadata, Role, ToolCall as GolemToolCall, ToolResult, Usage,
 };
 use log::trace;
 use std::collections::HashMap;
 
-pub fn events_to_request(
-    events: Vec<Event>,
-    config: Config,
-) -> Result<CompletionsRequest, Error> {
+pub fn events_to_request(events: Vec<Event>, config: Config) -> Result<CompletionsRequest, Error> {
     let options = config
         .provider_options
         .iter()

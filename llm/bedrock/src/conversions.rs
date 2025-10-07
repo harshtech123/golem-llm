@@ -503,12 +503,11 @@ fn process_message_stop_event(event: MessageStopEvent) -> Option<llm::StreamEven
 }
 
 fn json_str_to_smithy_document(value: &str) -> Result<Document, llm::Error> {
-    let json_value: serde_json::Value =
-        serde_json::from_str(value).map_err(|err| llm::Error {
-            code: llm::ErrorCode::InvalidRequest,
-            message: format!("Invalid tool schema: {err}"),
-            provider_error_json: None,
-        })?;
+    let json_value: serde_json::Value = serde_json::from_str(value).map_err(|err| llm::Error {
+        code: llm::ErrorCode::InvalidRequest,
+        message: format!("Invalid tool schema: {err}"),
+        provider_error_json: None,
+    })?;
     Ok(serde_json_to_smithy_document(json_value))
 }
 

@@ -12,7 +12,7 @@ use aws_sdk_bedrockruntime::operation::converse::builders::ConverseFluentBuilder
 use aws_sdk_bedrockruntime::operation::converse_stream::builders::ConverseStreamFluentBuilder;
 use aws_types::region;
 use golem_llm::config::{get_config_key, get_config_key_or_none};
-use golem_llm::golem::llm::llm::{Error, Event, Response, Config};
+use golem_llm::golem::llm::llm::{Config, Error, Event, Response};
 use log::trace;
 use wasi::clocks::monotonic_clock;
 use wstd::runtime::Reactor;
@@ -37,11 +37,7 @@ impl Bedrock {
         Ok(Self { client })
     }
 
-    pub async fn converse(
-        &self,
-        events: Vec<Event>,
-        config: Config,
-    ) -> Result<Response, Error> {
+    pub async fn converse(&self, events: Vec<Event>, config: Config) -> Result<Response, Error> {
         let input = BedrockInput::from_events(config, events).await?;
 
         trace!("Sending request to AWS Bedrock: {input:?}");
@@ -56,11 +52,7 @@ impl Bedrock {
         converse_output_to_complete_response(response)
     }
 
-    pub async fn converse_stream(
-        &self,
-        events: Vec<Event>,
-        config: Config,
-    ) -> BedrockChatStream {
+    pub async fn converse_stream(&self, events: Vec<Event>, config: Config) -> BedrockChatStream {
         let bedrock_input = BedrockInput::from_events(config, events).await;
 
         match bedrock_input {
