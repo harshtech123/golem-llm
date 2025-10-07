@@ -3,7 +3,7 @@ mod bindings;
 
 use crate::bindings::exports::test::llm_exports::test_llm_api::*;
 use crate::bindings::golem::llm::llm;
-use crate::bindings::golem::llm::llm::StreamEvent;
+use crate::bindings::golem::llm::llm::{ChatSession, StreamEvent};
 use crate::bindings::test::helper_client::test_helper_client::TestHelperApi;
 use golem_rust::atomically;
 
@@ -52,23 +52,24 @@ impl Guest for Component {
 
         println!("Sending request to LLM...");
         let response = llm::send(
-            &[llm::Message {
+            &[llm::Event::Message(llm::Message {
                 role: llm::Role::User,
                 name: Some("vigoo".to_string()),
                 content: vec![llm::ContentPart::Text(
                     "What is the usual weather on the Vršič pass in the beginning of May?"
                         .to_string(),
                 )],
-            }],
+            })],
             &config,
         );
         println!("Response: {:?}", response);
 
         match response {
-            llm::Event::Message(msg) => {
+            Ok(response) => {
                 format!(
-                    "{}",
-                    msg.content
+                    "{}, {:?}",
+                    response
+                        .content
                         .into_iter()
                         .map(|content| match content {
                             llm::ContentPart::Text(txt) => txt,
@@ -83,13 +84,11 @@ impl Guest for Component {
                             },
                         })
                         .collect::<Vec<_>>()
-                        .join(", ")
+                        .join(", "),
+                    response.tool_calls
                 )
             }
-            llm::Event::ToolRequest(request) => {
-                format!("Tool request: {:?}", request)
-            }
-            llm::Event::Error(error) => {
+            Err(error) => {
                 format!(
                     "ERROR: {:?} {} ({})",
                     error.code,
@@ -101,7 +100,7 @@ impl Guest for Component {
     }
 
     /// test2 demonstrates how to use tools with the LLM, including generating a tool response
-    /// and continuing the conversation with it.
+    /// and using a chat session to accumulate history
     fn test2() -> String {
         let config = llm::Config {
             model: MODEL.to_string(),
@@ -137,25 +136,18 @@ impl Guest for Component {
             ),
         ];
 
+        let session = ChatSession::new(&config);
+        session.add_message(&llm::Message {
+            role: llm::Role::User,
+            name: Some("vigoo".to_string()),
+            content: input.clone(),
+        });
+
         println!("Sending request to LLM...");
-        let response1 = llm::send(
-            &[llm::Message {
-                role: llm::Role::User,
-                name: Some("vigoo".to_string()),
-                content: input.clone(),
-            }],
-            &config,
-        );
+        let response1 = session.send();
         let tool_request = match response1 {
-            llm::Event::Message(msg) => {
-                println!("Message 1: {:?}", msg);
-                msg.tool_calls
-            }
-            llm::Event::ToolRequest(request) => {
-                println!("Tool request: {:?}", request);
-                request
-            }
-            llm::Event::Error(error) => {
+            Ok(response) => response.tool_calls,
+            Err(error) => {
                 println!(
                     "ERROR: (1) {:?} {} ({})",
                     error.code,
@@ -167,37 +159,22 @@ impl Guest for Component {
         };
 
         if !tool_request.is_empty() {
-            let mut calls = Vec::new();
             for call in tool_request {
-                calls.push((
-                    call.clone(),
-                    llm::ToolResult::Success(llm::ToolSuccess {
-                        id: call.id,
-                        name: call.name,
-                        result_json: r#"{ "value": 6 }"#.to_string(),
-                        execution_time_ms: None,
-                    }),
-                ));
+                session.add_tool_result(&llm::ToolResult::Success(llm::ToolSuccess {
+                    id: call.id,
+                    name: call.name,
+                    result_json: r#"{ "value": 6 }"#.to_string(),
+                    execution_time_ms: None,
+                }));
             }
 
-            let response2 = llm::continue_(
-                &[llm::Message {
-                    role: llm::Role::User,
-                    name: Some("vigoo".to_string()),
-                    content: input.clone(),
-                }],
-                &calls,
-                &config,
-            );
+            let response2 = session.send();
 
             match response2 {
-                llm::Event::Message(msg) => {
-                    format!("Message 2: {:?}", msg)
+                Ok(response) => {
+                    format!("Response 2: {:?}", response)
                 }
-                llm::Event::ToolRequest(request) => {
-                    format!("Tool request 2: {:?}", request)
-                }
-                llm::Event::Error(error) => {
+                Err(error) => {
                     format!(
                         "ERROR: (2) {:?} {} ({})",
                         error.code,
@@ -225,43 +202,49 @@ impl Guest for Component {
 
         println!("Starting streaming request to LLM...");
         let stream = llm::stream(
-            &[llm::Message {
+            &[llm::Event::Message(llm::Message {
                 role: llm::Role::User,
                 name: Some("vigoo".to_string()),
                 content: vec![llm::ContentPart::Text(
                     "What is the usual weather on the Vršič pass in the beginning of May?"
                         .to_string(),
                 )],
-            }],
+            })],
             &config,
         );
 
         let mut result = String::new();
 
         loop {
-            let events = stream.blocking_get_next();
-            if events.is_empty() {
-                break;
-            }
+            let events = stream.get_next();
 
-            for event in events {
-                println!("Received {event:?}");
+            match events {
+                Ok(events) => {
+                    if events.is_empty() {
+                        break;
+                    }
 
-                match event {
-                    StreamEvent::Delta(delta) => {
-                        result.push_str(&format!("DELTA: {:?}\n", delta,));
+                    for event in events {
+                        println!("Received {event:?}");
+
+                        match event {
+                            StreamEvent::Delta(delta) => {
+                                result.push_str(&format!("DELTA: {:?}\n", delta,));
+                            }
+                            StreamEvent::Finish(finish) => {
+                                result.push_str(&format!("FINISH: {:?}\n", finish,));
+                            }
+                        }
                     }
-                    StreamEvent::Finish(finish) => {
-                        result.push_str(&format!("FINISH: {:?}\n", finish,));
-                    }
-                    StreamEvent::Error(error) => {
-                        result.push_str(&format!(
-                            "ERROR: {:?} {} ({})\n",
-                            error.code,
-                            error.message,
-                            error.provider_error_json.unwrap_or_default()
-                        ));
-                    }
+                }
+                Err(error) => {
+                    result.push_str(&format!(
+                        "ERROR: {:?} {} ({})\n",
+                        error.code,
+                        error.message,
+                        error.provider_error_json.unwrap_or_default()
+                    ));
+                    break;
                 }
             }
         }
@@ -307,40 +290,46 @@ impl Guest for Component {
 
         println!("Starting streaming request to LLM...");
         let stream = llm::stream(
-            &[llm::Message {
+            &[llm::Event::Message(llm::Message {
                 role: llm::Role::User,
                 name: Some("vigoo".to_string()),
                 content: input,
-            }],
+            })],
             &config,
         );
 
         let mut result = String::new();
 
         loop {
-            let events = stream.blocking_get_next();
-            if events.is_empty() {
-                break;
-            }
+            let events = stream.get_next();
 
-            for event in events {
-                println!("Received {event:?}");
+            match events {
+                Ok(events) => {
+                    if events.is_empty() {
+                        break;
+                    }
 
-                match event {
-                    StreamEvent::Delta(delta) => {
-                        result.push_str(&format!("DELTA: {:?}\n", delta,));
+                    for event in events {
+                        println!("Received {event:?}");
+
+                        match event {
+                            StreamEvent::Delta(delta) => {
+                                result.push_str(&format!("DELTA: {:?}\n", delta,));
+                            }
+                            StreamEvent::Finish(finish) => {
+                                result.push_str(&format!("FINISH: {:?}\n", finish,));
+                            }
+                        }
                     }
-                    StreamEvent::Finish(finish) => {
-                        result.push_str(&format!("FINISH: {:?}\n", finish,));
-                    }
-                    StreamEvent::Error(error) => {
-                        result.push_str(&format!(
-                            "ERROR: {:?} {} ({})\n",
-                            error.code,
-                            error.message,
-                            error.provider_error_json.unwrap_or_default()
-                        ));
-                    }
+                }
+                Err(error) => {
+                    result.push_str(&format!(
+                        "ERROR: {:?} {} ({})\n",
+                        error.code,
+                        error.message,
+                        error.provider_error_json.unwrap_or_default()
+                    ));
+                    break;
                 }
             }
         }
@@ -363,7 +352,7 @@ impl Guest for Component {
         println!("Sending request to LLM...");
         let response = llm::send(
             &[
-                llm::Message {
+                llm::Event::Message(llm::Message {
                     role: llm::Role::User,
                     name: None,
                     content: vec![
@@ -374,24 +363,25 @@ impl Guest for Component {
                             detail: Some(llm::ImageDetail::High),
                         })),
                     ],
-                },
-                llm::Message {
+                }),
+                llm::Event::Message(llm::Message {
                     role: llm::Role::System,
                     name: None,
                     content: vec![llm::ContentPart::Text(
                         "Produce the output in both English and Hungarian".to_string(),
                     )],
-                },
+                }),
             ],
             &config,
         );
         println!("Response: {:?}", response);
 
         match response {
-            llm::Event::Message(msg) => {
+            Ok(response) => {
                 format!(
-                    "{}",
-                    msg.content
+                    "{}, {:?}",
+                    response
+                        .content
                         .into_iter()
                         .map(|content| match content {
                             llm::ContentPart::Text(txt) => txt,
@@ -406,13 +396,11 @@ impl Guest for Component {
                             },
                         })
                         .collect::<Vec<_>>()
-                        .join(", ")
+                        .join(", "),
+                    response.tool_calls
                 )
             }
-            llm::Event::ToolRequest(request) => {
-                format!("Tool request: {:?}", request)
-            }
-            llm::Event::Error(error) => {
+            Err(error) => {
                 format!(
                     "ERROR: {:?} {} ({})",
                     error.code,
@@ -438,14 +426,14 @@ impl Guest for Component {
 
         println!("Starting streaming request to LLM...");
         let stream = llm::stream(
-            &[llm::Message {
+            &[llm::Event::Message(llm::Message {
                 role: llm::Role::User,
                 name: Some("vigoo".to_string()),
                 content: vec![llm::ContentPart::Text(
                     "What is the usual weather on the Vršič pass in the beginning of May?"
                         .to_string(),
                 )],
-            }],
+            })],
             &config,
         );
 
@@ -455,65 +443,71 @@ impl Guest for Component {
         let mut round = 0;
 
         loop {
-            let events = stream.blocking_get_next();
-            if events.is_empty() {
-                break;
-            }
+            let events = stream.get_next();
 
-            for event in events {
-                println!("Received {event:?}");
+            match events {
+                Ok(events) => {
+                    if events.is_empty() {
+                        break;
+                    }
 
-                match event {
-                    StreamEvent::Delta(delta) => {
-                        for content in delta.content.unwrap_or_default() {
-                            match content {
-                                llm::ContentPart::Text(txt) => {
-                                    result.push_str(&txt);
+                    for event in events {
+                        println!("Received {event:?}");
+
+                        match event {
+                            StreamEvent::Delta(delta) => {
+                                for content in delta.content.unwrap_or_default() {
+                                    match content {
+                                        llm::ContentPart::Text(txt) => {
+                                            result.push_str(&txt);
+                                        }
+                                        llm::ContentPart::Image(image_ref) => match image_ref {
+                                            llm::ImageReference::Url(url_data) => {
+                                                result.push_str(&format!(
+                                                    "IMAGE URL: {} ({:?})\n",
+                                                    url_data.url, url_data.detail
+                                                ));
+                                            }
+                                            llm::ImageReference::Inline(inline_data) => {
+                                                result.push_str(&format!(
+                                                        "INLINE IMAGE: {} bytes, mime: {}, detail: {:?}\n",
+                                                        inline_data.data.len(),
+                                                        inline_data.mime_type,
+                                                        inline_data.detail
+                                                    ));
+                                            }
+                                        },
+                                    }
                                 }
-                                llm::ContentPart::Image(image_ref) => match image_ref {
-                                    llm::ImageReference::Url(url_data) => {
-                                        result.push_str(&format!(
-                                            "IMAGE URL: {} ({:?})\n",
-                                            url_data.url, url_data.detail
-                                        ));
-                                    }
-                                    llm::ImageReference::Inline(inline_data) => {
-                                        result.push_str(&format!(
-                                            "INLINE IMAGE: {} bytes, mime: {}, detail: {:?}\n",
-                                            inline_data.data.len(),
-                                            inline_data.mime_type,
-                                            inline_data.detail
-                                        ));
-                                    }
-                                },
+                            }
+                            StreamEvent::Finish(finish) => {
+                                result.push_str(&format!("\nFINISH: {:?}\n", finish,));
                             }
                         }
                     }
-                    StreamEvent::Finish(finish) => {
-                        result.push_str(&format!("\nFINISH: {:?}\n", finish,));
+
+                    if round == 2 {
+                        atomically(|| {
+                            let client = TestHelperApi::new(&name);
+                            let answer = client.blocking_inc_and_get();
+                            if answer == 1 {
+                                panic!("Simulating crash")
+                            }
+                        });
                     }
-                    StreamEvent::Error(error) => {
-                        result.push_str(&format!(
-                            "\nERROR: {:?} {} ({})\n",
-                            error.code,
-                            error.message,
-                            error.provider_error_json.unwrap_or_default()
-                        ));
-                    }
+
+                    round += 1;
+                }
+                Err(error) => {
+                    result.push_str(&format!(
+                        "\nERROR: {:?} {} ({})\n",
+                        error.code,
+                        error.message,
+                        error.provider_error_json.unwrap_or_default()
+                    ));
+                    break;
                 }
             }
-
-            if round == 2 {
-                atomically(|| {
-                    let client = TestHelperApi::new(&name);
-                    let answer = client.blocking_inc_and_get();
-                    if answer == 1 {
-                        panic!("Simulating crash")
-                    }
-                });
-            }
-
-            round += 1;
         }
 
         result
@@ -548,7 +542,7 @@ impl Guest for Component {
 
         println!("Sending request to LLM with inline image...");
         let response = llm::send(
-            &[llm::Message {
+            &[llm::Event::Message(llm::Message {
                 role: llm::Role::User,
                 name: None,
                 content: vec![
@@ -562,16 +556,17 @@ impl Guest for Component {
                         detail: None,
                     })),
                 ],
-            }],
+            })],
             &config,
         );
         println!("Response: {:?}", response);
 
         match response {
-            llm::Event::Message(msg) => {
+            Ok(response) => {
                 format!(
-                    "{}",
-                    msg.content
+                    "{}, {:?}",
+                    response
+                        .content
                         .into_iter()
                         .map(|content| match content {
                             llm::ContentPart::Text(txt) => txt,
@@ -586,13 +581,11 @@ impl Guest for Component {
                             },
                         })
                         .collect::<Vec<_>>()
-                        .join(", ")
+                        .join(", "),
+                    response.tool_calls
                 )
             }
-            llm::Event::ToolRequest(request) => {
-                format!("Tool request: {:?}", request)
-            }
-            llm::Event::Error(error) => {
+            Err(error) => {
                 format!(
                     "ERROR: {:?} {} ({})",
                     error.code,
@@ -613,44 +606,53 @@ impl Guest for Component {
             provider_options: vec![],
         };
 
-        let mut messages = vec![llm::Message {
+        let mut events = vec![llm::Event::Message(llm::Message {
             role: llm::Role::User,
             name: Some("vigoo".to_string()),
             content: vec![llm::ContentPart::Text(
                 "Do you know what a haiku is?".to_string(),
             )],
-        }];
+        })];
 
-        let stream = llm::stream(&messages, &config);
+        let stream = llm::stream(&events, &config);
 
         let mut result = String::new();
 
         loop {
             match utils::consume_next_event(&stream) {
-                Some(delta) => {
+                Ok(Some(delta)) => {
                     result.push_str(&delta);
                 }
-                None => break,
+                Ok(None) => break,
+                Err(error) => {
+                    result.push_str(&format!(
+                        "ERROR: {:?} {} ({})",
+                        error.code,
+                        error.message,
+                        error.provider_error_json.unwrap_or_default()
+                    ));
+                    break;
+                }
             }
         }
 
-        messages.push(llm::Message {
+        events.push(llm::Event::Message(llm::Message {
             role: llm::Role::Assistant,
             name: Some("assistant".to_string()),
             content: vec![llm::ContentPart::Text(result)],
-        });
+        }));
 
-        messages.push(llm::Message {
+        events.push(llm::Event::Message(llm::Message {
             role: llm::Role::User,
             name: Some("vigoo".to_string()),
             content: vec![llm::ContentPart::Text(
                 "Can you write one for me?".to_string(),
             )],
-        });
+        }));
 
-        println!("Message: {messages:?}");
+        println!("Message: {events:?}");
 
-        let stream = llm::stream(&messages, &config);
+        let stream = llm::stream(&events, &config);
 
         let mut result = String::new();
 
@@ -659,10 +661,19 @@ impl Guest for Component {
 
         loop {
             match utils::consume_next_event(&stream) {
-                Some(delta) => {
+                Ok(Some(delta)) => {
                     result.push_str(&delta);
                 }
-                None => break,
+                Ok(None) => break,
+                Err(error) => {
+                    result.push_str(&format!(
+                        "ERROR: {:?} {} ({})",
+                        error.code,
+                        error.message,
+                        error.provider_error_json.unwrap_or_default()
+                    ));
+                    break;
+                }
             }
 
             if round == 2 {

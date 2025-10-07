@@ -1,10 +1,11 @@
 use crate::bindings::golem::llm::llm;
+use crate::bindings::golem::llm::llm::Error;
 
-pub fn consume_next_event(stream: &llm::ChatStream) -> Option<String> {
-    let events = stream.blocking_get_next();
+pub fn consume_next_event(stream: &llm::ChatStream) -> Result<Option<String>, Error> {
+    let events = stream.get_next()?;
 
     if events.is_empty() {
-        return None;
+        return Ok(None);
     }
 
     let mut result = String::new();
@@ -39,16 +40,8 @@ pub fn consume_next_event(stream: &llm::ChatStream) -> Option<String> {
                 }
             }
             llm::StreamEvent::Finish(..) => {}
-            llm::StreamEvent::Error(error) => {
-                result.push_str(&format!(
-                    "\nERROR: {:?} {} ({})\n",
-                    error.code,
-                    error.message,
-                    error.provider_error_json.unwrap_or_default()
-                ));
-            }
         }
     }
 
-    Some(result)
+    Ok(Some(result))
 }
