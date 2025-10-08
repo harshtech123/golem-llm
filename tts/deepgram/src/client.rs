@@ -405,18 +405,6 @@ pub enum VoiceQuality {
     Professional,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Voice {
-    pub voice_id: String,
-    pub name: String,
-    pub language: String,
-    pub accent: String,
-    pub gender: String,
-    pub age: String,
-    pub characteristics: Vec<String>,
-    pub use_cases: Vec<String>,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct VoiceFilters {
     pub language: Option<String>,

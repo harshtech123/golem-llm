@@ -759,89 +759,11 @@ pub struct SpeechSynthesisTask {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetSpeechSynthesisTaskRequest {
-    #[serde(rename = "TaskId")]
-    pub task_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PutLexiconRequest {
     #[serde(rename = "Name")]
     pub name: String,
     #[serde(rename = "Content")]
     pub content: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListSpeechSynthesisTasksParams {
-    #[serde(rename = "MaxResults", skip_serializing_if = "Option::is_none")]
-    pub max_results: Option<i32>,
-    #[serde(rename = "NextToken", skip_serializing_if = "Option::is_none")]
-    pub next_token: Option<String>,
-    #[serde(rename = "Status", skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListSpeechSynthesisTasksResponse {
-    #[serde(rename = "NextToken", skip_serializing_if = "Option::is_none")]
-    pub next_token: Option<String>,
-    #[serde(rename = "SynthesisTasks", skip_serializing_if = "Option::is_none")]
-    pub synthesis_tasks: Option<Vec<SpeechSynthesisTask>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GetLexiconResponse {
-    #[serde(rename = "Lexicon", skip_serializing_if = "Option::is_none")]
-    pub lexicon: Option<Lexicon>,
-    #[serde(rename = "LexiconAttributes", skip_serializing_if = "Option::is_none")]
-    pub lexicon_attributes: Option<LexiconAttributes>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Lexicon {
-    #[serde(rename = "Content", skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-    #[serde(rename = "Name", skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LexiconAttributes {
-    #[serde(rename = "Alphabet", skip_serializing_if = "Option::is_none")]
-    pub alphabet: Option<String>,
-    #[serde(rename = "LanguageCode", skip_serializing_if = "Option::is_none")]
-    pub language_code: Option<String>,
-    #[serde(rename = "LastModified", skip_serializing_if = "Option::is_none")]
-    pub last_modified: Option<f64>,
-    #[serde(rename = "LexemesCount", skip_serializing_if = "Option::is_none")]
-    pub lexemes_count: Option<i32>,
-    #[serde(rename = "LexiconArn", skip_serializing_if = "Option::is_none")]
-    pub lexicon_arn: Option<String>,
-    #[serde(rename = "Size", skip_serializing_if = "Option::is_none")]
-    pub size: Option<i32>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListLexiconsParams {
-    #[serde(rename = "NextToken", skip_serializing_if = "Option::is_none")]
-    pub next_token: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListLexiconsResponse {
-    #[serde(rename = "Lexicons", skip_serializing_if = "Option::is_none")]
-    pub lexicons: Option<Vec<LexiconDescription>>,
-    #[serde(rename = "NextToken", skip_serializing_if = "Option::is_none")]
-    pub next_token: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LexiconDescription {
-    #[serde(rename = "Attributes", skip_serializing_if = "Option::is_none")]
-    pub attributes: Option<LexiconAttributes>,
-    #[serde(rename = "Name", skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone)]

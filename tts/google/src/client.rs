@@ -436,57 +436,6 @@ pub struct SynthesizeSpeechResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamingSynthesizeRequest {
-    #[serde(rename = "streamingConfig", skip_serializing_if = "Option::is_none")]
-    pub streaming_config: Option<StreamingSynthesizeConfig>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub input: Option<StreamingSynthesisInput>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamingSynthesizeConfig {
-    pub voice: VoiceSelectionParams,
-    #[serde(
-        rename = "streamingAudioConfig",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub streaming_audio_config: Option<StreamingAudioConfig>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamingAudioConfig {
-    #[serde(rename = "audioEncoding")]
-    pub audio_encoding: AudioEncoding,
-    #[serde(rename = "sampleRateHertz", skip_serializing_if = "Option::is_none")]
-    pub sample_rate_hertz: Option<i32>,
-    #[serde(rename = "speakingRate", skip_serializing_if = "Option::is_none")]
-    pub speaking_rate: Option<f64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamingSynthesisInput {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamingSynthesizeResponse {
-    #[serde(rename = "audioContent")]
-    pub audio_content: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SynthesizeLongAudioRequest {
-    pub parent: String,
-    pub input: SynthesisInput,
-    #[serde(rename = "audioConfig")]
-    pub audio_config: AudioConfig,
-    #[serde(rename = "outputGcsUri")]
-    pub output_gcs_uri: String,
-    pub voice: VoiceSelectionParams,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchSynthesisParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_chunk_size: Option<usize>,

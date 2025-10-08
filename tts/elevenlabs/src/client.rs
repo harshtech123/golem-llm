@@ -945,16 +945,6 @@ pub struct CreateVoiceRequest {
     pub labels: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateVoiceJsonRequest {
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    pub files: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub labels: Option<String>,
-}
-
 #[derive(Debug, Clone)]
 pub struct AudioFile {
     pub data: Vec<u8>,
