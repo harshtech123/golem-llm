@@ -5,7 +5,7 @@ use crate::conversions::{
     create_search_request, pg_search_results_to_search_results,
     pg_vector_results_to_vector_records, count_response_to_export_stats, 
 };
-use golem_vector::config::{with_config_key, get_optional_config, with_connection_config_key};
+use golem_vector::config::{with_config_key, with_connection_config_key};
 use golem_vector::durability::{ExtendedGuest, DurableVector};
 use golem_vector::golem::vector::{
     analytics::{Guest as AnalyticsGuest, FieldStats, CollectionStats},
@@ -27,28 +27,24 @@ mod conversions;
 struct PgVectorComponent;
 
 impl PgVectorComponent {
-    const BASE_URL_ENV_VAR: &'static str = "PGVECTOR_BASE_URL";
-    const API_KEY_ENV_VAR: &'static str = "PGVECTOR_API_KEY";
+    const CONNECTION_STRING_ENV_VAR: &'static str = "PGVECTOR_CONNECTION_STRING";
 
     fn create_client() -> Result<PgVectorClient, VectorError> {
-        let base_url = with_config_key(
-            Self::BASE_URL_ENV_VAR,
-            |e| Err(VectorError::ConnectionError(format!("Missing base URL: {e}"))),
+        let connection_string = with_config_key(
+            Self::CONNECTION_STRING_ENV_VAR,
+            |e| Err(VectorError::ConnectionError(format!("Missing connection string: {e}"))),
             |value| Ok(value),
-        ).unwrap_or_else(|_| "http://localhost:3000".to_string());
+        ).unwrap_or_else(|_| "postgres://postgres@localhost:5432/postgres".to_string());
 
-        let api_key = get_optional_config(Self::API_KEY_ENV_VAR);
-
-        Ok(PgVectorClient::new(base_url, api_key))
+        Ok(PgVectorClient::new(connection_string))
     }
 
     fn create_client_with_options(options: &Option<Metadata>) -> Result<PgVectorClient, VectorError> {
-        let base_url = with_connection_config_key(options, "base_url")
-            .unwrap_or_else(|| "http://localhost:3000".to_string());
+        let connection_string = with_connection_config_key(options, "connection_string")
+            .or_else(|| with_connection_config_key(options, "endpoint"))
+            .unwrap_or_else(|| "postgres://postgres@localhost:5432/postgres".to_string());
 
-        let api_key = with_connection_config_key(options, "api_key");
-
-        Ok(PgVectorClient::new(base_url, api_key))
+        Ok(PgVectorClient::new(connection_string))
     }
 }
 
@@ -88,16 +84,16 @@ impl ConnectionGuest for PgVectorComponent {
                     Ok(_) => Ok(ConnectionStatus {
                         connected: true,
                         provider: Some("pgvector".to_string()),
-                        endpoint: Some(client.base_url().to_string()),
+                        endpoint: Some(client.connection_string().to_string()),
                         last_activity: None,
-                        connection_id: Some("pgvector-http".to_string()),
+                        connection_id: Some("pgvector-postgres".to_string()),
                     }),
                     Err(_) => Ok(ConnectionStatus {
                         connected: false,
                         provider: Some("pgvector".to_string()),
-                        endpoint: Some(client.base_url().to_string()),
+                        endpoint: Some(client.connection_string().to_string()),
                         last_activity: None,
-                        connection_id: Some("pgvector-http".to_string()),
+                        connection_id: Some("pgvector-postgres".to_string()),
                     }),
                 }
             }
@@ -106,7 +102,7 @@ impl ConnectionGuest for PgVectorComponent {
                 provider: Some("pgvector".to_string()),
                 endpoint: None,
                 last_activity: None,
-                connection_id: Some("pgvector-http".to_string()),
+                connection_id: Some("pgvector-postgres".to_string()),
             }),
         }
     }

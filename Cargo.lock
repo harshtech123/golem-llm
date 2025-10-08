@@ -2041,7 +2041,6 @@ dependencies = [
  "golem-rust",
  "golem-vector",
  "log 0.4.27",
- "reqwest",
  "serde",
  "serde_json",
  "wit-bindgen-rt 0.40.0",

@@ -13,6 +13,67 @@ use golem_vector::golem::vector::{
     analytics::CollectionStats as ExportCollectionStats,
 };
 use std::collections::HashMap;
+use golem_rust::bindings::golem::rdbms::postgres::DbValue;
+
+pub fn string_value_to_db_value(value: &str, column_type: &str) -> Result<DbValue, VectorError> {
+    match column_type.to_uppercase().as_str() {
+        "TEXT" | "VARCHAR" | "CHAR" | "BPCHAR" => Ok(DbValue::Text(value.to_string())),
+        "INTEGER" | "INT4" => {
+            value.parse::<i32>()
+                .map(DbValue::Int4)
+                .map_err(|_| VectorError::InvalidParams(format!("Invalid integer value: {}", value)))
+        },
+        "BIGINT" | "INT8" => {
+            value.parse::<i64>()
+                .map(DbValue::Int8)
+                .map_err(|_| VectorError::InvalidParams(format!("Invalid bigint value: {}", value)))
+        },
+        "REAL" | "FLOAT4" => {
+            value.parse::<f32>()
+                .map(DbValue::Float4)
+                .map_err(|_| VectorError::InvalidParams(format!("Invalid float value: {}", value)))
+        },
+        "DOUBLE PRECISION" | "FLOAT8" => {
+            value.parse::<f64>()
+                .map(DbValue::Float8)
+                .map_err(|_| VectorError::InvalidParams(format!("Invalid double value: {}", value)))
+        },
+        "BOOLEAN" | "BOOL" => {
+            match value.to_lowercase().as_str() {
+                "true" | "t" | "yes" | "y" | "1" => Ok(DbValue::Boolean(true)),
+                "false" | "f" | "no" | "n" | "0" => Ok(DbValue::Boolean(false)),
+                _ => Err(VectorError::InvalidParams(format!("Invalid boolean value: {}", value)))
+            }
+        },
+        "TIMESTAMP" | "TIMESTAMPTZ" => Ok(DbValue::Text(value.to_string())), 
+        "DATE" => Ok(DbValue::Text(value.to_string())),
+        "TIME" => Ok(DbValue::Text(value.to_string())), 
+        _ => Ok(DbValue::Text(value.to_string())),
+    }
+}
+
+pub fn distance_metric_to_pgvector_operator(metric: &DistanceMetric) -> String {
+    match metric {
+        DistanceMetric::Cosine => "<=>".to_string(),
+        DistanceMetric::Euclidean => "<->".to_string(),
+        DistanceMetric::DotProduct => "<#>".to_string(),
+        DistanceMetric::Manhattan => "<+>".to_string(),
+        DistanceMetric::Hamming => "<->".to_string(), 
+        DistanceMetric::Jaccard => "<->".to_string(),
+    }
+}
+
+pub fn string_to_distance_metric(metric: &str) -> DistanceMetric {
+    match metric.to_uppercase().as_str() {
+        "COSINE" | "<=>" => DistanceMetric::Cosine,
+        "L2" | "EUCLIDEAN" | "<->" => DistanceMetric::Euclidean,
+        "DOT" | "DOTPRODUCT" | "IP" | "<#>" => DistanceMetric::DotProduct,
+        "L1" | "MANHATTAN" | "<+>" => DistanceMetric::Manhattan,
+        "HAMMING" => DistanceMetric::Hamming,
+        "JACCARD" => DistanceMetric::Jaccard,
+        _ => DistanceMetric::Cosine,
+    }
+}
 
 pub fn table_info_to_export_collection_info(
     table_name: &str,
