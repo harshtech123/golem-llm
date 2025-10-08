@@ -83,27 +83,6 @@ impl TypesenseSearchApi {
         parse_response(response)
     }
 
-    pub fn _index_document(
-        &self,
-        collection_name: &str,
-        document: &TypesenseDocument,
-    ) -> Result<IndexDocumentResponse, SearchError> {
-        trace!("Indexing document to collection: {collection_name}");
-
-        let url = format!(
-            "{}/collections/{}/documents",
-            self.base_url, collection_name
-        );
-
-        let response = self
-            .create_request(Method::POST, &url)
-            .json(document)
-            .send()
-            .map_err(|e| internal_error(format!("HTTP request failed: {e}")))?;
-
-        parse_response(response)
-    }
-
     pub fn index_documents(
         &self,
         collection_name: &str,
@@ -248,23 +227,6 @@ impl TypesenseSearchApi {
         }
 
         Ok(params.join("&"))
-    }
-
-    pub fn _multi_search(
-        &self,
-        searches: &MultiSearchQuery,
-    ) -> Result<MultiSearchResponse, SearchError> {
-        trace!("Performing multi-search");
-
-        let url = format!("{}/multi_search", self.base_url);
-
-        let response = self
-            .create_request(Method::POST, &url)
-            .json(searches)
-            .send()
-            .map_err(|e| internal_error(format!("HTTP request failed: {e}")))?;
-
-        parse_response(response)
     }
 }
 
@@ -460,18 +422,6 @@ pub struct SearchQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MultiSearchQuery {
-    pub searches: Vec<MultiSearchRequest>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MultiSearchRequest {
-    pub collection: String,
-    #[serde(flatten)]
-    pub query: SearchQuery,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResponse {
     pub facet_counts: Option<Vec<FacetCount>>,
     pub found: u32,
@@ -526,11 +476,6 @@ pub struct RequestParams {
     pub q: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MultiSearchResponse {
-    pub results: Vec<SearchResponse>,
-}
-
 // Response types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateCollectionResponse {
@@ -552,11 +497,6 @@ pub struct DeleteCollectionResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListCollectionsResponse(pub Vec<CreateCollectionResponse>);
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IndexDocumentResponse {
-    pub id: String,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexDocumentsResponse {

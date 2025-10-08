@@ -82,28 +82,6 @@ pub struct MeilisearchTask {
 pub type MeilisearchDocument = JsonMap<String, JsonValue>;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct MeilisearchDocumentsResponse {
-    pub results: Vec<MeilisearchDocument>,
-    pub offset: u32,
-    pub limit: u32,
-    pub total: u32,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MeilisearchDocumentFetchRequest {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub limit: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub fields: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub filter: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ids: Option<Vec<String>>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct MeilisearchSearchRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub q: Option<String>,
@@ -304,24 +282,6 @@ impl MeilisearchApi {
             .create_request("DELETE", &url)
             .send()
             .map_err(|e| internal_error(format!("Failed to delete index: {e}")))?;
-
-        parse_response(response)
-    }
-
-    pub fn _get_documents(
-        &self,
-        index_uid: &str,
-        request: &MeilisearchDocumentFetchRequest,
-    ) -> Result<MeilisearchDocumentsResponse, SearchError> {
-        trace!("Getting documents from index: {index_uid}");
-
-        let url = format!("{}/indexes/{}/documents/fetch", self.base_url, index_uid);
-
-        let response = self
-            .create_request("POST", &url)
-            .json(request)
-            .send()
-            .map_err(|e| internal_error(format!("Failed to get documents: {e}")))?;
 
         parse_response(response)
     }

@@ -178,13 +178,6 @@ pub struct CompletionsRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Format {
-    #[serde(rename = "type")]
-    pub format_type: String,
-    pub properties: serde_json::Value,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MessageRequest {
     pub role: MessageRole,
     pub content: String,
