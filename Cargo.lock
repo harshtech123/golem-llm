@@ -827,6 +827,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfb"
+version = "0.7.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d38f2da7a0a2c4ccf0065be06397cc26a81f4e528be095826eee9d4adbb8c60f"
+dependencies = [
+ "byteorder",
+ "fnv",
+ "uuid",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1552,6 +1563,80 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
+name = "golem-embed"
+version = "0.0.0"
+dependencies = [
+ "golem-rust",
+ "log 0.4.28",
+ "mime 0.3.17",
+ "nom",
+ "reqwest",
+ "thiserror 2.0.16",
+ "wasi-logger",
+ "wit-bindgen 0.40.0",
+]
+
+[[package]]
+name = "golem-embed-cohere"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "golem-embed",
+ "golem-rust",
+ "infer 0.15.0",
+ "log 0.4.28",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.41.0",
+]
+
+[[package]]
+name = "golem-embed-hugging-face"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "bytemuck",
+ "golem-embed",
+ "golem-rust",
+ "log 0.4.28",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.41.0",
+]
+
+[[package]]
+name = "golem-embed-openai"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "bytemuck",
+ "golem-embed",
+ "golem-rust",
+ "log 0.4.28",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.41.0",
+]
+
+[[package]]
+name = "golem-embed-voyageai"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "bytemuck",
+ "golem-embed",
+ "golem-rust",
+ "log 0.4.28",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "wit-bindgen-rt 0.41.0",
+]
+
+[[package]]
 name = "golem-exec"
 version = "0.0.0"
 dependencies = [
@@ -1675,7 +1760,7 @@ dependencies = [
  "golem-llm",
  "golem-rust",
  "indoc",
- "infer",
+ "infer 0.19.0",
  "log 0.4.28",
  "serde",
  "serde_json",
@@ -2623,6 +2708,15 @@ name = "indoc"
 version = "2.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4c7245a08504955605670dbf141fceab975f15ca21570696aebe9d2e71576bd"
+
+[[package]]
+name = "infer"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb33622da908807a06f9513c19b3c1ad50fab3e4137d82a78107d502075aa199"
+dependencies = [
+ "cfb",
+]
 
 [[package]]
 name = "infer"
