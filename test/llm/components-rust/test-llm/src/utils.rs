@@ -1,7 +1,7 @@
 use crate::bindings::golem::llm::llm;
 
 pub fn consume_next_event(stream: &llm::ChatStream) -> Option<String> {
-    let events = stream.blocking_get_next();
+    let events = stream.get_next();
 
     if events.is_empty() {
         return None;
@@ -13,7 +13,7 @@ pub fn consume_next_event(stream: &llm::ChatStream) -> Option<String> {
         println!("Received {event:?}");
 
         match event {
-            llm::StreamEvent::Delta(delta) => {
+            Ok(llm::StreamEvent::Delta(delta)) => {
                 for content in delta.content.unwrap_or_default() {
                     match content {
                         llm::ContentPart::Text(txt) => {
@@ -38,8 +38,8 @@ pub fn consume_next_event(stream: &llm::ChatStream) -> Option<String> {
                     }
                 }
             }
-            llm::StreamEvent::Finish(..) => {}
-            llm::StreamEvent::Error(error) => {
+            Ok(llm::StreamEvent::Finish(..)) => {}
+            Err(error) => {
                 result.push_str(&format!(
                     "\nERROR: {:?} {} ({})\n",
                     error.code,

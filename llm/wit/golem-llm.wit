@@ -173,11 +173,11 @@ interface llm {
     /// A sequence where the model stops generating tokens
     stop-sequences: option<list<string>>,
     /// List of available tools
-    tools: list<tool-definition>,
+    tools: option<list<tool-definition>>,
     /// Tool choice policy
     tool-choice: option<string>,
     /// Additional LLM provider specific key-value pairs
-    provider-options: list<kv>,
+    provider-options: option<list<kv>>,
   }
 
   // --- Usage / Metadata ---
@@ -206,18 +206,6 @@ interface llm {
     provider-metadata-json: option<string>,
   }
 
-  /// Response from an LLM
-  record complete-response {
-    /// Response ID
-    id: string,
-    /// Result contents
-    content: list<content-part>,
-    /// Tool call requests
-    tool-calls: list<tool-call>,
-    /// Response metadata
-    metadata: response-metadata,
-  }
-
   // --- Error Handling ---
 
   /// LLM error
@@ -230,16 +218,30 @@ interface llm {
     provider-error-json: option<string>,
   }
 
-  // --- Chat Response Variants ---
+  // --- Chat Response ---
 
-  /// One resulting event in an LLM conversation
-  variant chat-event {
-    /// A response in the conversation
-    message(complete-response),
-    /// A request for calling one or more tools
-    tool-request(list<tool-call>),
-    /// An error in the conversation
-    error(error),
+  /// Response from an LLM
+  record response {
+    /// Response ID
+    id: string,
+    /// Result contents
+    content: list<content-part>,
+    /// Tool call requests
+    tool-calls: list<tool-call>,
+    /// Response metadata
+    metadata: response-metadata,
+  }
+
+  // --- Chat event  ---
+
+  /// Chat events that can happen during a chat session
+  variant event {
+    /// Message asked by the user
+    message(message),
+    /// Response from the LLM
+    response(response),
+    /// Provided tool results
+    tool-results(list<tool-result>),
   }
 
   // --- Streaming ---
@@ -258,38 +260,31 @@ interface llm {
     delta(stream-delta),
     /// Converstation finished
     finish(response-metadata),
-    /// Conversation failed
-    error(error),
   }
 
   /// Represents an ongoing streaming LLM conversation
   resource chat-stream {
     /// Polls for the next chunk of stream events
-    get-next: func() -> option<list<stream-event>>;
+    poll-next: func() -> option<list<result<stream-event, error>>>;
     /// Blocks until the next chunk of stream events is available
-    blocking-get-next: func() -> list<stream-event>;
+    get-next: func() -> list<result<stream-event, error>>;
   }
 
   // --- Core Functions ---
 
-  /// Make a single call to the LLM. Continue the conversation with `continue` if needed.
+  /// Make a single call to the LLM.
+  /// To continue the conversation:
+  /// - append tool responses and new messages to the events and use send again
+  /// - or use the chat-session wrapper, which help in maintaining the chat events
   send: func(
-    messages: list<message>,
-    config: config
-  ) -> chat-event;
-
-  /// Continues a previous conversation initiated by `send` or a previous `continue`, by sending the updated
-  /// set of messages, and possible set of tool call results.
-  continue: func(
-    messages: list<message>,
-    tool-results: list<tuple<tool-call, tool-result>>,
-    config: config
-  ) -> chat-event;
+    events: list<event>,
+    config: config,
+  ) -> result<response, error>;
 
   /// Makes a single call to the LLM and gets back a streaming API to receive the response in chunks.
   %stream: func(
-    messages: list<message>,
-    config: config
+    events: list<event>,
+    config: config,
   ) -> chat-stream;
 }
 

@@ -45,30 +45,31 @@ impl Guest for Component {
             temperature: Some(0.2),
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![],
+            tools: None,
             tool_choice: None,
-            provider_options: vec![],
+            provider_options: None,
         };
 
         println!("Sending request to LLM...");
         let response = llm::send(
-            &[llm::Message {
+            &[llm::Event::Message(llm::Message {
                 role: llm::Role::User,
                 name: Some("vigoo".to_string()),
                 content: vec![llm::ContentPart::Text(
                     "What is the usual weather on the Vršič pass in the beginning of May?"
                         .to_string(),
                 )],
-            }],
+            })],
             &config,
         );
         println!("Response: {:?}", response);
 
         match response {
-            llm::ChatEvent::Message(msg) => {
+            Ok(response) => {
                 format!(
-                    "{}",
-                    msg.content
+                    "{}, {:?}",
+                    response
+                        .content
                         .into_iter()
                         .map(|content| match content {
                             llm::ContentPart::Text(txt) => txt,
@@ -83,13 +84,11 @@ impl Guest for Component {
                             },
                         })
                         .collect::<Vec<_>>()
-                        .join(", ")
+                        .join(", "),
+                    response.tool_calls
                 )
             }
-            llm::ChatEvent::ToolRequest(request) => {
-                format!("Tool request: {:?}", request)
-            }
-            llm::ChatEvent::Error(error) => {
+            Err(error) => {
                 format!(
                     "ERROR: {:?} {} ({})",
                     error.code,
@@ -101,14 +100,14 @@ impl Guest for Component {
     }
 
     /// test2 demonstrates how to use tools with the LLM, including generating a tool response
-    /// and continuing the conversation with it.
+    /// and collecting chat events
     fn test2() -> String {
         let config = llm::Config {
             model: MODEL.to_string(),
             temperature: Some(0.2),
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![llm::ToolDefinition {
+            tools: Some(vec![llm::ToolDefinition {
                 name: "test-tool".to_string(),
                 description: Some("Test tool for generating test values".to_string()),
                 parameters_schema: r#"{
@@ -125,9 +124,9 @@ impl Guest for Component {
                         "additionalProperties": false
                     }"#
                 .to_string(),
-            }],
+            }]),
             tool_choice: Some("auto".to_string()),
-            provider_options: vec![],
+            provider_options: None,
         };
 
         let input = vec![
@@ -137,25 +136,21 @@ impl Guest for Component {
             ),
         ];
 
+        let mut events = vec![];
+        events.push(llm::Event::Message(llm::Message {
+            role: llm::Role::User,
+            name: Some("vigoo".to_string()),
+            content: input.clone(),
+        }));
+
         println!("Sending request to LLM...");
-        let response1 = llm::send(
-            &[llm::Message {
-                role: llm::Role::User,
-                name: Some("vigoo".to_string()),
-                content: input.clone(),
-            }],
-            &config,
-        );
+        let response1 = llm::send(&events, &config);
         let tool_request = match response1 {
-            llm::ChatEvent::Message(msg) => {
-                println!("Message 1: {:?}", msg);
-                msg.tool_calls
+            Ok(response) => {
+                events.push(llm::Event::Response(response.clone()));
+                response.tool_calls
             }
-            llm::ChatEvent::ToolRequest(request) => {
-                println!("Tool request: {:?}", request);
-                request
-            }
-            llm::ChatEvent::Error(error) => {
+            Err(error) => {
                 println!(
                     "ERROR: (1) {:?} {} ({})",
                     error.code,
@@ -167,37 +162,24 @@ impl Guest for Component {
         };
 
         if !tool_request.is_empty() {
-            let mut calls = Vec::new();
             for call in tool_request {
-                calls.push((
-                    call.clone(),
-                    llm::ToolResult::Success(llm::ToolSuccess {
+                events.push(llm::Event::ToolResults(vec![llm::ToolResult::Success(
+                    llm::ToolSuccess {
                         id: call.id,
                         name: call.name,
                         result_json: r#"{ "value": 6 }"#.to_string(),
                         execution_time_ms: None,
-                    }),
-                ));
+                    },
+                )]));
             }
 
-            let response2 = llm::continue_(
-                &[llm::Message {
-                    role: llm::Role::User,
-                    name: Some("vigoo".to_string()),
-                    content: input.clone(),
-                }],
-                &calls,
-                &config,
-            );
+            let response2 = llm::send(&events, &config);
 
             match response2 {
-                llm::ChatEvent::Message(msg) => {
-                    format!("Message 2: {:?}", msg)
+                Ok(response) => {
+                    format!("Response 2: {:?}", response)
                 }
-                llm::ChatEvent::ToolRequest(request) => {
-                    format!("Tool request 2: {:?}", request)
-                }
-                llm::ChatEvent::Error(error) => {
+                Err(error) => {
                     format!(
                         "ERROR: (2) {:?} {} ({})",
                         error.code,
@@ -218,28 +200,28 @@ impl Guest for Component {
             temperature: Some(0.2),
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![],
+            tools: None,
             tool_choice: None,
-            provider_options: vec![],
+            provider_options: None,
         };
 
         println!("Starting streaming request to LLM...");
         let stream = llm::stream(
-            &[llm::Message {
+            &[llm::Event::Message(llm::Message {
                 role: llm::Role::User,
                 name: Some("vigoo".to_string()),
                 content: vec![llm::ContentPart::Text(
                     "What is the usual weather on the Vršič pass in the beginning of May?"
                         .to_string(),
                 )],
-            }],
+            })],
             &config,
         );
 
         let mut result = String::new();
 
         loop {
-            let events = stream.blocking_get_next();
+            let events = stream.get_next();
             if events.is_empty() {
                 break;
             }
@@ -248,13 +230,13 @@ impl Guest for Component {
                 println!("Received {event:?}");
 
                 match event {
-                    StreamEvent::Delta(delta) => {
+                    Ok(StreamEvent::Delta(delta)) => {
                         result.push_str(&format!("DELTA: {:?}\n", delta,));
                     }
-                    StreamEvent::Finish(finish) => {
+                    Ok(StreamEvent::Finish(finish)) => {
                         result.push_str(&format!("FINISH: {:?}\n", finish,));
                     }
-                    StreamEvent::Error(error) => {
+                    Err(error) => {
                         result.push_str(&format!(
                             "ERROR: {:?} {} ({})\n",
                             error.code,
@@ -276,7 +258,7 @@ impl Guest for Component {
             temperature: Some(0.2),
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![llm::ToolDefinition {
+            tools: Some(vec![llm::ToolDefinition {
                 name: "test-tool".to_string(),
                 description: Some("Test tool for generating test values".to_string()),
                 parameters_schema: r#"{
@@ -293,9 +275,9 @@ impl Guest for Component {
                         "additionalProperties": false
                     }"#
                 .to_string(),
-            }],
+            }]),
             tool_choice: Some("auto".to_string()),
-            provider_options: vec![],
+            provider_options: None,
         };
 
         let input = vec![
@@ -307,18 +289,19 @@ impl Guest for Component {
 
         println!("Starting streaming request to LLM...");
         let stream = llm::stream(
-            &[llm::Message {
+            &[llm::Event::Message(llm::Message {
                 role: llm::Role::User,
                 name: Some("vigoo".to_string()),
                 content: input,
-            }],
+            })],
             &config,
         );
 
         let mut result = String::new();
 
         loop {
-            let events = stream.blocking_get_next();
+            let events = stream.get_next();
+
             if events.is_empty() {
                 break;
             }
@@ -327,19 +310,20 @@ impl Guest for Component {
                 println!("Received {event:?}");
 
                 match event {
-                    StreamEvent::Delta(delta) => {
+                    Ok(StreamEvent::Delta(delta)) => {
                         result.push_str(&format!("DELTA: {:?}\n", delta,));
                     }
-                    StreamEvent::Finish(finish) => {
+                    Ok(StreamEvent::Finish(finish)) => {
                         result.push_str(&format!("FINISH: {:?}\n", finish,));
                     }
-                    StreamEvent::Error(error) => {
+                    Err(error) => {
                         result.push_str(&format!(
                             "ERROR: {:?} {} ({})\n",
                             error.code,
                             error.message,
                             error.provider_error_json.unwrap_or_default()
                         ));
+                        break;
                     }
                 }
             }
@@ -355,15 +339,15 @@ impl Guest for Component {
             temperature: None,
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![],
+            tools: None,
             tool_choice: None,
-            provider_options: vec![],
+            provider_options: None,
         };
 
         println!("Sending request to LLM...");
         let response = llm::send(
             &[
-                llm::Message {
+                llm::Event::Message(llm::Message {
                     role: llm::Role::User,
                     name: None,
                     content: vec![
@@ -374,24 +358,25 @@ impl Guest for Component {
                             detail: Some(llm::ImageDetail::High),
                         })),
                     ],
-                },
-                llm::Message {
+                }),
+                llm::Event::Message(llm::Message {
                     role: llm::Role::System,
                     name: None,
                     content: vec![llm::ContentPart::Text(
                         "Produce the output in both English and Hungarian".to_string(),
                     )],
-                },
+                }),
             ],
             &config,
         );
         println!("Response: {:?}", response);
 
         match response {
-            llm::ChatEvent::Message(msg) => {
+            Ok(response) => {
                 format!(
-                    "{}",
-                    msg.content
+                    "{}, {:?}",
+                    response
+                        .content
                         .into_iter()
                         .map(|content| match content {
                             llm::ContentPart::Text(txt) => txt,
@@ -406,13 +391,11 @@ impl Guest for Component {
                             },
                         })
                         .collect::<Vec<_>>()
-                        .join(", ")
+                        .join(", "),
+                    response.tool_calls
                 )
             }
-            llm::ChatEvent::ToolRequest(request) => {
-                format!("Tool request: {:?}", request)
-            }
-            llm::ChatEvent::Error(error) => {
+            Err(error) => {
                 format!(
                     "ERROR: {:?} {} ({})",
                     error.code,
@@ -431,21 +414,21 @@ impl Guest for Component {
             temperature: Some(0.2),
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![],
+            tools: None,
             tool_choice: None,
-            provider_options: vec![],
+            provider_options: None,
         };
 
         println!("Starting streaming request to LLM...");
         let stream = llm::stream(
-            &[llm::Message {
+            &[llm::Event::Message(llm::Message {
                 role: llm::Role::User,
                 name: Some("vigoo".to_string()),
                 content: vec![llm::ContentPart::Text(
                     "What is the usual weather on the Vršič pass in the beginning of May?"
                         .to_string(),
                 )],
-            }],
+            })],
             &config,
         );
 
@@ -455,7 +438,8 @@ impl Guest for Component {
         let mut round = 0;
 
         loop {
-            let events = stream.blocking_get_next();
+            let events = stream.get_next();
+
             if events.is_empty() {
                 break;
             }
@@ -464,7 +448,7 @@ impl Guest for Component {
                 println!("Received {event:?}");
 
                 match event {
-                    StreamEvent::Delta(delta) => {
+                    Ok(StreamEvent::Delta(delta)) => {
                         for content in delta.content.unwrap_or_default() {
                             match content {
                                 llm::ContentPart::Text(txt) => {
@@ -489,16 +473,17 @@ impl Guest for Component {
                             }
                         }
                     }
-                    StreamEvent::Finish(finish) => {
+                    Ok(StreamEvent::Finish(finish)) => {
                         result.push_str(&format!("\nFINISH: {:?}\n", finish,));
                     }
-                    StreamEvent::Error(error) => {
+                    Err(error) => {
                         result.push_str(&format!(
                             "\nERROR: {:?} {} ({})\n",
                             error.code,
                             error.message,
                             error.provider_error_json.unwrap_or_default()
                         ));
+                        break;
                     }
                 }
             }
@@ -529,9 +514,9 @@ impl Guest for Component {
             temperature: None,
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![],
+            tools: None,
             tool_choice: None,
-            provider_options: vec![],
+            provider_options: None,
         };
 
         println!("Reading image from Initial File System...");
@@ -548,7 +533,7 @@ impl Guest for Component {
 
         println!("Sending request to LLM with inline image...");
         let response = llm::send(
-            &[llm::Message {
+            &[llm::Event::Message(llm::Message {
                 role: llm::Role::User,
                 name: None,
                 content: vec![
@@ -562,16 +547,17 @@ impl Guest for Component {
                         detail: None,
                     })),
                 ],
-            }],
+            })],
             &config,
         );
         println!("Response: {:?}", response);
 
         match response {
-            llm::ChatEvent::Message(msg) => {
+            Ok(response) => {
                 format!(
-                    "{}",
-                    msg.content
+                    "{}, {:?}",
+                    response
+                        .content
                         .into_iter()
                         .map(|content| match content {
                             llm::ContentPart::Text(txt) => txt,
@@ -586,13 +572,11 @@ impl Guest for Component {
                             },
                         })
                         .collect::<Vec<_>>()
-                        .join(", ")
+                        .join(", "),
+                    response.tool_calls
                 )
             }
-            llm::ChatEvent::ToolRequest(request) => {
-                format!("Tool request: {:?}", request)
-            }
-            llm::ChatEvent::Error(error) => {
+            Err(error) => {
                 format!(
                     "ERROR: {:?} {} ({})",
                     error.code,
@@ -608,20 +592,20 @@ impl Guest for Component {
             temperature: Some(0.2),
             max_tokens: None,
             stop_sequences: None,
-            tools: vec![],
+            tools: None,
             tool_choice: None,
-            provider_options: vec![],
+            provider_options: None,
         };
 
-        let mut messages = vec![llm::Message {
+        let mut events = vec![llm::Event::Message(llm::Message {
             role: llm::Role::User,
             name: Some("vigoo".to_string()),
             content: vec![llm::ContentPart::Text(
                 "Do you know what a haiku is?".to_string(),
             )],
-        }];
+        })];
 
-        let stream = llm::stream(&messages, &config);
+        let stream = llm::stream(&events, &config);
 
         let mut result = String::new();
 
@@ -634,23 +618,23 @@ impl Guest for Component {
             }
         }
 
-        messages.push(llm::Message {
+        events.push(llm::Event::Message(llm::Message {
             role: llm::Role::Assistant,
             name: Some("assistant".to_string()),
             content: vec![llm::ContentPart::Text(result)],
-        });
+        }));
 
-        messages.push(llm::Message {
+        events.push(llm::Event::Message(llm::Message {
             role: llm::Role::User,
             name: Some("vigoo".to_string()),
             content: vec![llm::ContentPart::Text(
                 "Can you write one for me?".to_string(),
             )],
-        });
+        }));
 
-        println!("Message: {messages:?}");
+        println!("Message: {events:?}");
 
-        let stream = llm::stream(&messages, &config);
+        let stream = llm::stream(&events, &config);
 
         let mut result = String::new();
 

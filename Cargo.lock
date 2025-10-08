@@ -1636,6 +1636,7 @@ name = "golem-llm"
 version = "0.0.0"
 dependencies = [
  "golem-rust",
+ "indoc",
  "log 0.4.28",
  "mime 0.3.17",
  "nom",
@@ -1652,6 +1653,7 @@ dependencies = [
  "base64 0.22.1",
  "golem-llm",
  "golem-rust",
+ "indoc",
  "log 0.4.28",
  "reqwest",
  "serde",
@@ -1672,6 +1674,7 @@ dependencies = [
  "bytes",
  "golem-llm",
  "golem-rust",
+ "indoc",
  "infer",
  "log 0.4.28",
  "serde",
@@ -1702,6 +1705,7 @@ dependencies = [
  "base64 0.22.1",
  "golem-llm",
  "golem-rust",
+ "indoc",
  "log 0.4.28",
  "mime_guess 2.0.5",
  "reqwest",

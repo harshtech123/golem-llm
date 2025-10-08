@@ -5,18 +5,18 @@ use crate::client::{
     Content, ContentBlockDelta, ErrorResponse, MessagesApi, MessagesRequest, StopReason, Usage,
 };
 use crate::conversions::{
-    convert_usage, messages_to_request, process_response, stop_reason_to_finish_reason,
-    tool_results_to_messages,
+    convert_usage, events_to_request, process_response, stop_reason_to_finish_reason,
 };
 use golem_llm::chat_stream::{LlmChatStream, LlmChatStreamState};
-use golem_llm::config::with_config_key;
+use golem_llm::config::{get_config_key, with_config_key};
 use golem_llm::durability::{DurableLLM, ExtendedGuest};
 use golem_llm::event_source::EventSource;
 use golem_llm::golem::llm::llm::{
-    ChatEvent, ChatStream, Config, ContentPart, Error, ErrorCode, Guest, Message, ResponseMetadata,
-    Role, StreamDelta, StreamEvent, ToolCall, ToolResult,
+    ChatStream, Config, ContentPart, Error, ErrorCode, Event, Guest, Message, Response,
+    ResponseMetadata, Role, StreamDelta, StreamEvent, ToolCall,
 };
 use golem_rust::wasm_rpc::Pollable;
+use indoc::indoc;
 use log::trace;
 use std::cell::{Ref, RefCell, RefMut};
 use std::collections::HashMap;
@@ -91,10 +91,19 @@ impl LlmChatStreamState for AnthropicChatStream {
         self.stream.borrow_mut()
     }
 
-    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, String> {
+    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, Error> {
+        fn decode_internal_error<S: Into<String>>(message: S) -> Error {
+            Error {
+                code: ErrorCode::InternalError,
+                message: message.into(),
+                provider_error_json: None,
+            }
+        }
+
         trace!("Received raw stream event: {raw}");
-        let json: serde_json::Value = serde_json::from_str(raw)
-            .map_err(|err| format!("Failed to deserialize stream event: {err}"))?;
+        let json: serde_json::Value = serde_json::from_str(raw).map_err(|err| {
+            decode_internal_error(format!("Failed to deserialize stream event: {err}"))
+        })?;
 
         let typ = json
             .as_object()
@@ -102,13 +111,10 @@ impl LlmChatStreamState for AnthropicChatStream {
             .and_then(|v| v.as_str());
         match typ {
             Some("error") => {
-                let error = serde_json::from_value::<ErrorResponse>(json)
-                    .map_err(|err| format!("Failed to deserialize stream event: {err}"))?;
-                Ok(Some(StreamEvent::Error(Error {
-                    code: ErrorCode::InternalError,
-                    message: error.error.message,
-                    provider_error_json: None,
-                })))
+                let error = serde_json::from_value::<ErrorResponse>(json).map_err(|err| {
+                    decode_internal_error(format!("Failed to deserialize stream event: {err}"))
+                })?;
+                Err(decode_internal_error(error.error.message))
             }
             Some("content_block_start") => {
                 let index = json
@@ -116,19 +122,25 @@ impl LlmChatStreamState for AnthropicChatStream {
                     .and_then(|obj| obj.get("index"))
                     .and_then(|v| v.as_u64())
                     .ok_or_else(|| {
-                        "Unexpected stream event format, does not have 'index' field".to_string()
+                        decode_internal_error(
+                            "Unexpected stream event format, does not have 'index' field",
+                        )
                     })?;
 
                 let raw_content_block = json
                     .as_object()
                     .and_then(|obj| obj.get("content_block"))
                     .ok_or_else(|| {
-                    "Unexpected stream event format, does not have 'content_block' field"
-                        .to_string()
+                    decode_internal_error(
+                        "Unexpected stream event format, does not have 'content_block' field"
+                            .to_string(),
+                    )
                 })?;
 
                 let content_block = serde_json::from_value::<Content>(raw_content_block.clone())
-                    .map_err(|err| format!("Failed to deserialize stream event: {err}"))?;
+                    .map_err(|err| {
+                        decode_internal_error(format!("Failed to deserialize stream event: {err}"))
+                    })?;
 
                 if let Content::ToolUse { id, name, .. } = content_block {
                     self.json_fragments.borrow_mut().insert(
@@ -148,10 +160,14 @@ impl LlmChatStreamState for AnthropicChatStream {
                     .as_object()
                     .and_then(|obj| obj.get("delta"))
                     .ok_or_else(|| {
-                        "Unexpected stream event format, does not have 'delta' field".to_string()
+                        decode_internal_error(
+                            "Unexpected stream event format, does not have 'delta' field",
+                        )
                     })?;
                 let delta = serde_json::from_value::<ContentBlockDelta>(raw_delta.clone())
-                    .map_err(|err| format!("Failed to deserialize stream event: {err}"))?;
+                    .map_err(|err| {
+                        decode_internal_error(format!("Failed to deserialize stream event: {err}"))
+                    })?;
 
                 match delta {
                     ContentBlockDelta::TextDelta { text } => {
@@ -166,8 +182,9 @@ impl LlmChatStreamState for AnthropicChatStream {
                             .and_then(|obj| obj.get("index"))
                             .and_then(|v| v.as_u64())
                             .ok_or_else(|| {
-                                "Unexpected stream event format, does not have 'index' field"
-                                    .to_string()
+                                decode_internal_error(
+                                    "Unexpected stream event format, does not have 'index' field",
+                                )
                             })?;
 
                         let mut json_fragments = self.json_fragments.borrow_mut();
@@ -184,7 +201,9 @@ impl LlmChatStreamState for AnthropicChatStream {
                     .and_then(|obj| obj.get("index"))
                     .and_then(|v| v.as_u64())
                     .ok_or_else(|| {
-                        "Unexpected stream event format, does not have 'index' field".to_string()
+                        decode_internal_error(
+                            "Unexpected stream event format, does not have 'index' field",
+                        )
                     })?;
 
                 if let Some(tool_use) = self.json_fragments.borrow_mut().remove(&index) {
@@ -226,7 +245,9 @@ impl LlmChatStreamState for AnthropicChatStream {
                 Ok(Some(StreamEvent::Finish(response_metadata)))
             }
             Some(_) => Ok(None),
-            None => Err("Unexpected stream event format, does not have 'type' field".to_string()),
+            None => Err(decode_internal_error(
+                "Unexpected stream event format, does not have 'type' field",
+            )),
         }
     }
 }
@@ -236,11 +257,9 @@ struct AnthropicComponent;
 impl AnthropicComponent {
     const ENV_VAR_NAME: &'static str = "ANTHROPIC_API_KEY";
 
-    fn request(client: MessagesApi, request: MessagesRequest) -> ChatEvent {
-        match client.send_messages(request) {
-            Ok(response) => process_response(response),
-            Err(err) => ChatEvent::Error(err),
-        }
+    fn request(client: MessagesApi, request: MessagesRequest) -> Result<Response, Error> {
+        let response = client.send_messages(request)?;
+        process_response(response)
     }
 
     fn streaming_request(
@@ -258,54 +277,26 @@ impl AnthropicComponent {
 impl Guest for AnthropicComponent {
     type ChatStream = LlmChatStream<AnthropicChatStream>;
 
-    fn send(messages: Vec<Message>, config: Config) -> ChatEvent {
-        with_config_key(Self::ENV_VAR_NAME, ChatEvent::Error, |anthropic_api_key| {
-            let client = MessagesApi::new(anthropic_api_key);
-
-            match messages_to_request(messages, config) {
-                Ok(request) => Self::request(client, request),
-                Err(err) => ChatEvent::Error(err),
-            }
-        })
+    fn send(events: Vec<Event>, config: Config) -> Result<Response, Error> {
+        let anthropic_api_key = get_config_key(Self::ENV_VAR_NAME)?;
+        let client = MessagesApi::new(anthropic_api_key);
+        let request = events_to_request(events, config)?;
+        Self::request(client, request)
     }
 
-    fn continue_(
-        messages: Vec<Message>,
-        tool_results: Vec<(ToolCall, ToolResult)>,
-        config: Config,
-    ) -> ChatEvent {
-        with_config_key(Self::ENV_VAR_NAME, ChatEvent::Error, |anthropic_api_key| {
-            let client = MessagesApi::new(anthropic_api_key);
-
-            match messages_to_request(messages, config) {
-                Ok(mut request) => {
-                    request
-                        .messages
-                        .extend(tool_results_to_messages(tool_results));
-                    Self::request(client, request)
-                }
-                Err(err) => ChatEvent::Error(err),
-            }
-        })
-    }
-
-    fn stream(messages: Vec<Message>, config: Config) -> ChatStream {
-        ChatStream::new(Self::unwrapped_stream(messages, config))
+    fn stream(events: Vec<Event>, config: Config) -> ChatStream {
+        ChatStream::new(Self::unwrapped_stream(events, config))
     }
 }
 
 impl ExtendedGuest for AnthropicComponent {
-    fn unwrapped_stream(
-        messages: Vec<Message>,
-        config: Config,
-    ) -> LlmChatStream<AnthropicChatStream> {
+    fn unwrapped_stream(events: Vec<Event>, config: Config) -> LlmChatStream<AnthropicChatStream> {
         with_config_key(
             Self::ENV_VAR_NAME,
             AnthropicChatStream::failed,
             |anthropic_api_key| {
                 let client = MessagesApi::new(anthropic_api_key);
-
-                match messages_to_request(messages, config) {
+                match events_to_request(events, config) {
                     Ok(request) => Self::streaming_request(client, request),
                     Err(err) => AnthropicChatStream::failed(err),
                 }
@@ -313,26 +304,32 @@ impl ExtendedGuest for AnthropicComponent {
         )
     }
 
-    fn retry_prompt(original_messages: &[Message], partial_result: &[StreamDelta]) -> Vec<Message> {
-        let mut extended_messages = Vec::new();
-        extended_messages.push(Message {
+    fn retry_prompt(
+        original_events: &[Result<Event, Error>],
+        partial_result: &[StreamDelta],
+    ) -> Vec<Event> {
+        let mut extended_events = Vec::new();
+        extended_events.push(Event::Message(Message {
             role: Role::System,
             name: None,
-            content: vec![
-                ContentPart::Text(
-                    "You were asked the same question previously, but the response was interrupted before completion. \
-                     Please continue your response from where you left off. \
-                     Do not include the part of the response that was already seen.".to_string()),
-            ],
-        });
-        extended_messages.push(Message {
+            content: vec![ContentPart::Text(indoc! {"
+                You were asked the same question previously, but the response was interrupted before completion.
+                Please continue your response from where you left off.
+                Do not include the part of the response that was already seen.
+            "}.to_string())],
+        }));
+        extended_events.push(Event::Message(Message {
             role: Role::User,
             name: None,
             content: vec![ContentPart::Text(
                 "Here is the original question:".to_string(),
             )],
-        });
-        extended_messages.extend_from_slice(original_messages);
+        }));
+        extended_events.extend(
+            original_events
+                .iter()
+                .filter_map(|e| e.as_ref().ok().cloned()),
+        );
 
         let mut partial_result_as_content = Vec::new();
         for delta in partial_result {
@@ -349,7 +346,7 @@ impl ExtendedGuest for AnthropicComponent {
             }
         }
 
-        extended_messages.push(Message {
+        extended_events.push(Event::Message(Message {
             role: Role::User,
             name: None,
             content: vec![ContentPart::Text(
@@ -358,8 +355,8 @@ impl ExtendedGuest for AnthropicComponent {
             .into_iter()
             .chain(partial_result_as_content)
             .collect(),
-        });
-        extended_messages
+        }));
+        extended_events
     }
 
     fn subscribe(stream: &Self::ChatStream) -> Pollable {
