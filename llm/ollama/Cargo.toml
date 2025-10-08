@@ -28,6 +28,7 @@ reqwest = { workspace = true }
 serde.workspace = true
 serde_json = { workspace = true }
 wit-bindgen-rt = { workspace = true }
+indoc = "2.0.6"
 
 
 [package.metadata.component]

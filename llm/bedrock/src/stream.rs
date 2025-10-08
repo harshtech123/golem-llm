@@ -50,7 +50,7 @@ impl BedrockChatStream {
     fn set_finished(&self) {
         *self.finished.borrow_mut() = true;
     }
-    fn get_single_event(&self) -> Result<Option<llm::StreamEvent>, llm::Error> {
+    fn get_single_event(&self) -> Option<Result<llm::StreamEvent, llm::Error>> {
         if let Some(stream) = self.stream_mut().as_mut() {
             let runtime = async_utils::get_async_runtime();
 
@@ -61,61 +61,55 @@ impl BedrockChatStream {
                 match token {
                     Ok(Some(output)) => {
                         log::trace!("Processing bedrock stream event: {output:?}");
-                        Ok(converse_stream_output_to_stream_event(output))
+                        converse_stream_output_to_stream_event(output).map(Ok)
                     }
                     Ok(None) => {
                         log::trace!("running set_finished on stream due to None event received");
                         self.set_finished();
-                        Ok(None)
+                        None
                     }
                     Err(error) => {
                         log::trace!("running set_finished on stream due to error: {error:?}");
                         self.set_finished();
-                        Err(custom_error(
+                        Some(Err(custom_error(
                             llm::ErrorCode::InternalError,
                             format!("An error occurred while reading event stream: {error}"),
-                        ))
+                        )))
                     }
                 }
             })
         } else if let Some(error) = self.failure() {
             self.set_finished();
-            Err(error.clone())
+            Some(Err(error.clone()))
         } else {
-            Ok(None)
+            None
         }
     }
 }
 
 impl llm::GuestChatStream for BedrockChatStream {
-    fn poll_next(&self) -> Result<Option<Vec<llm::StreamEvent>>, llm::Error> {
+    fn poll_next(&self) -> Option<Vec<Result<llm::StreamEvent, llm::Error>>> {
         if self.is_finished() {
-            return Ok(Some(vec![]));
+            return Some(vec![]);
         }
-
-        let event = self.get_single_event()?;
-        match event {
-            Some(event) => {
-                if let llm::StreamEvent::Finish(metadata) = event.clone() {
-                    if let Some(llm::StreamEvent::Finish(final_metadata)) =
-                        self.get_single_event()?
-                    {
-                        return Ok(Some(vec![llm::StreamEvent::Finish(merge_metadata(
-                            metadata,
-                            final_metadata,
-                        ))]));
-                    }
+        self.get_single_event().map(|event| {
+            if let Ok(llm::StreamEvent::Finish(metadata)) = &event {
+                if let Some(Ok(llm::StreamEvent::Finish(final_metadata))) = self.get_single_event()
+                {
+                    return vec![Ok(llm::StreamEvent::Finish(merge_metadata(
+                        metadata.clone(),
+                        final_metadata,
+                    )))];
                 }
-                Ok(Some(vec![event]))
             }
-            None => Ok(None),
-        }
+            vec![event]
+        })
     }
 
-    fn get_next(&self) -> Result<Vec<llm::StreamEvent>, llm::Error> {
+    fn get_next(&self) -> Vec<Result<llm::StreamEvent, llm::Error>> {
         loop {
-            if let Some(events) = self.poll_next()? {
-                return Ok(events);
+            if let Some(events) = self.poll_next() {
+                return events;
             }
         }
     }

@@ -222,34 +222,28 @@ impl Guest for Component {
 
         loop {
             let events = stream.get_next();
+            if events.is_empty() {
+                break;
+            }
 
-            match events {
-                Ok(events) => {
-                    if events.is_empty() {
-                        break;
+            for event in events {
+                println!("Received {event:?}");
+
+                match event {
+                    Ok(StreamEvent::Delta(delta)) => {
+                        result.push_str(&format!("DELTA: {:?}\n", delta,));
                     }
-
-                    for event in events {
-                        println!("Received {event:?}");
-
-                        match event {
-                            StreamEvent::Delta(delta) => {
-                                result.push_str(&format!("DELTA: {:?}\n", delta,));
-                            }
-                            StreamEvent::Finish(finish) => {
-                                result.push_str(&format!("FINISH: {:?}\n", finish,));
-                            }
-                        }
+                    Ok(StreamEvent::Finish(finish)) => {
+                        result.push_str(&format!("FINISH: {:?}\n", finish,));
                     }
-                }
-                Err(error) => {
-                    result.push_str(&format!(
-                        "ERROR: {:?} {} ({})\n",
-                        error.code,
-                        error.message,
-                        error.provider_error_json.unwrap_or_default()
-                    ));
-                    break;
+                    Err(error) => {
+                        result.push_str(&format!(
+                            "ERROR: {:?} {} ({})\n",
+                            error.code,
+                            error.message,
+                            error.provider_error_json.unwrap_or_default()
+                        ));
+                    }
                 }
             }
         }
@@ -308,33 +302,29 @@ impl Guest for Component {
         loop {
             let events = stream.get_next();
 
-            match events {
-                Ok(events) => {
-                    if events.is_empty() {
+            if events.is_empty() {
+                break;
+            }
+
+            for event in events {
+                println!("Received {event:?}");
+
+                match event {
+                    Ok(StreamEvent::Delta(delta)) => {
+                        result.push_str(&format!("DELTA: {:?}\n", delta,));
+                    }
+                    Ok(StreamEvent::Finish(finish)) => {
+                        result.push_str(&format!("FINISH: {:?}\n", finish,));
+                    }
+                    Err(error) => {
+                        result.push_str(&format!(
+                            "ERROR: {:?} {} ({})\n",
+                            error.code,
+                            error.message,
+                            error.provider_error_json.unwrap_or_default()
+                        ));
                         break;
                     }
-
-                    for event in events {
-                        println!("Received {event:?}");
-
-                        match event {
-                            StreamEvent::Delta(delta) => {
-                                result.push_str(&format!("DELTA: {:?}\n", delta,));
-                            }
-                            StreamEvent::Finish(finish) => {
-                                result.push_str(&format!("FINISH: {:?}\n", finish,));
-                            }
-                        }
-                    }
-                }
-                Err(error) => {
-                    result.push_str(&format!(
-                        "ERROR: {:?} {} ({})\n",
-                        error.code,
-                        error.message,
-                        error.provider_error_json.unwrap_or_default()
-                    ));
-                    break;
                 }
             }
         }
@@ -450,69 +440,65 @@ impl Guest for Component {
         loop {
             let events = stream.get_next();
 
-            match events {
-                Ok(events) => {
-                    if events.is_empty() {
-                        break;
-                    }
+            if events.is_empty() {
+                break;
+            }
 
-                    for event in events {
-                        println!("Received {event:?}");
+            for event in events {
+                println!("Received {event:?}");
 
-                        match event {
-                            StreamEvent::Delta(delta) => {
-                                for content in delta.content.unwrap_or_default() {
-                                    match content {
-                                        llm::ContentPart::Text(txt) => {
-                                            result.push_str(&txt);
-                                        }
-                                        llm::ContentPart::Image(image_ref) => match image_ref {
-                                            llm::ImageReference::Url(url_data) => {
-                                                result.push_str(&format!(
-                                                    "IMAGE URL: {} ({:?})\n",
-                                                    url_data.url, url_data.detail
-                                                ));
-                                            }
-                                            llm::ImageReference::Inline(inline_data) => {
-                                                result.push_str(&format!(
-                                                    "INLINE IMAGE: {} bytes, mime: {}, detail: {:?}\n",
-                                                    inline_data.data.len(),
-                                                    inline_data.mime_type,
-                                                    inline_data.detail
-                                                ));
-                                            }
-                                        },
-                                    }
+                match event {
+                    Ok(StreamEvent::Delta(delta)) => {
+                        for content in delta.content.unwrap_or_default() {
+                            match content {
+                                llm::ContentPart::Text(txt) => {
+                                    result.push_str(&txt);
                                 }
-                            }
-                            StreamEvent::Finish(finish) => {
-                                result.push_str(&format!("\nFINISH: {:?}\n", finish,));
+                                llm::ContentPart::Image(image_ref) => match image_ref {
+                                    llm::ImageReference::Url(url_data) => {
+                                        result.push_str(&format!(
+                                            "IMAGE URL: {} ({:?})\n",
+                                            url_data.url, url_data.detail
+                                        ));
+                                    }
+                                    llm::ImageReference::Inline(inline_data) => {
+                                        result.push_str(&format!(
+                                            "INLINE IMAGE: {} bytes, mime: {}, detail: {:?}\n",
+                                            inline_data.data.len(),
+                                            inline_data.mime_type,
+                                            inline_data.detail
+                                        ));
+                                    }
+                                },
                             }
                         }
                     }
-
-                    if round == 2 {
-                        atomically(|| {
-                            let client = TestHelperApi::new(&name);
-                            let answer = client.blocking_inc_and_get();
-                            if answer == 1 {
-                                panic!("Simulating crash")
-                            }
-                        });
+                    Ok(StreamEvent::Finish(finish)) => {
+                        result.push_str(&format!("\nFINISH: {:?}\n", finish,));
                     }
-
-                    round += 1;
-                }
-                Err(error) => {
-                    result.push_str(&format!(
-                        "\nERROR: {:?} {} ({})\n",
-                        error.code,
-                        error.message,
-                        error.provider_error_json.unwrap_or_default()
-                    ));
-                    break;
+                    Err(error) => {
+                        result.push_str(&format!(
+                            "\nERROR: {:?} {} ({})\n",
+                            error.code,
+                            error.message,
+                            error.provider_error_json.unwrap_or_default()
+                        ));
+                        break;
+                    }
                 }
             }
+
+            if round == 2 {
+                atomically(|| {
+                    let client = TestHelperApi::new(&name);
+                    let answer = client.blocking_inc_and_get();
+                    if answer == 1 {
+                        panic!("Simulating crash")
+                    }
+                });
+            }
+
+            round += 1;
         }
 
         result
@@ -625,19 +611,10 @@ impl Guest for Component {
 
         loop {
             match utils::consume_next_event(&stream) {
-                Ok(Some(delta)) => {
+                Some(delta) => {
                     result.push_str(&delta);
                 }
-                Ok(None) => break,
-                Err(error) => {
-                    result.push_str(&format!(
-                        "ERROR: {:?} {} ({})",
-                        error.code,
-                        error.message,
-                        error.provider_error_json.unwrap_or_default()
-                    ));
-                    break;
-                }
+                None => break,
             }
         }
 
@@ -666,19 +643,10 @@ impl Guest for Component {
 
         loop {
             match utils::consume_next_event(&stream) {
-                Ok(Some(delta)) => {
+                Some(delta) => {
                     result.push_str(&delta);
                 }
-                Ok(None) => break,
-                Err(error) => {
-                    result.push_str(&format!(
-                        "ERROR: {:?} {} ({})",
-                        error.code,
-                        error.message,
-                        error.provider_error_json.unwrap_or_default()
-                    ));
-                    break;
-                }
+                None => break,
             }
 
             if round == 2 {

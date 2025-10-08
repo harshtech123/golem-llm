@@ -287,7 +287,10 @@ impl ExtendedGuest for OpenRouterComponent {
         )
     }
 
-    fn retry_prompt(original_events: &[Event], partial_result: &[StreamDelta]) -> Vec<Event> {
+    fn retry_prompt(
+        original_events: &[Result<Event, Error>],
+        partial_result: &[StreamDelta],
+    ) -> Vec<Event> {
         let mut extended_events = Vec::new();
         extended_events.push(Event::Message(Message {
             role: Role::System,
@@ -306,7 +309,11 @@ impl ExtendedGuest for OpenRouterComponent {
                 "Here is the original question:".to_string(),
             )],
         }));
-        extended_events.extend_from_slice(original_events);
+        extended_events.extend(
+            original_events
+                .iter()
+                .filter_map(|event| event.as_ref().ok().cloned()),
+        );
 
         let mut partial_result_as_content = Vec::new();
         for delta in partial_result {

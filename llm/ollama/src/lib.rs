@@ -228,7 +228,10 @@ impl ExtendedGuest for OllamaComponent {
         }
     }
 
-    fn retry_prompt(original_events: &[Event], partial_result: &[StreamDelta]) -> Vec<Event> {
+    fn retry_prompt(
+        original_events: &[Result<Event, Error>],
+        partial_result: &[StreamDelta],
+    ) -> Vec<Event> {
         let mut extended_messages = Vec::new();
 
         extended_messages.push(Event::Message(Message {
@@ -250,7 +253,7 @@ impl ExtendedGuest for OllamaComponent {
             )],
         }));
 
-        extended_messages.extend_from_slice(original_events);
+        extended_messages.extend(original_events.iter().map(|e| e.as_ref().unwrap().clone()));
 
         let mut partial_result_as_content = Vec::new();
         for delta in partial_result {

@@ -32,9 +32,9 @@ impl<T: LlmChatStreamState> LlmChatStream<T> {
 }
 
 impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
-    fn poll_next(&self) -> Result<Option<Vec<StreamEvent>>, Error> {
+    fn poll_next(&self) -> Option<Vec<Result<StreamEvent, Error>>> {
         if self.implementation.is_finished() {
-            return Ok(Some(vec![]));
+            return Some(vec![]);
         }
 
         let mut stream = self.implementation.stream_mut();
@@ -42,17 +42,20 @@ impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
             match stream.poll_next() {
                 Poll::Ready(None) => {
                     self.implementation.set_finished();
-                    Ok(Some(vec![]))
+                    Some(vec![])
                 }
                 Poll::Ready(Some(Err(crate::event_source::error::Error::StreamEnded))) => {
                     self.implementation.set_finished();
-                    Ok(Some(vec![]))
+                    Some(vec![])
                 }
-                Poll::Ready(Some(Err(error))) => Err(Error {
-                    code: ErrorCode::InternalError,
-                    message: error.to_string(),
-                    provider_error_json: None,
-                }),
+                Poll::Ready(Some(Err(error))) => {
+                    self.implementation.set_finished();
+                    Some(vec![Err(Error {
+                        code: ErrorCode::InternalError,
+                        message: error.to_string(),
+                        provider_error_json: None,
+                    })])
+                }
                 Poll::Ready(Some(Ok(event))) => {
                     let mut events = vec![];
 
@@ -60,43 +63,44 @@ impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
                         Event::Open => {}
                         Event::Message(MessageEvent { data, .. }) => {
                             if data != "[DONE]" {
-                                match self.implementation.decode_message(&data)? {
-                                    Some(stream_event) => {
+                                match self.implementation.decode_message(&data) {
+                                    Ok(Some(stream_event)) => {
                                         if matches!(stream_event, StreamEvent::Finish(_)) {
                                             self.implementation.set_finished();
                                         }
-                                        events.push(stream_event);
+                                        events.push(Ok(stream_event));
                                     }
-                                    None => {
+                                    Ok(None) => {
                                         // Ignored event
                                     }
+                                    Err(err) => events.push(Err(err)),
                                 }
                             }
                         }
                     }
 
                     if events.is_empty() {
-                        Ok(None)
+                        None
                     } else {
-                        Ok(Some(events))
+                        Some(events)
                     }
                 }
-                Poll::Pending => Ok(None),
+                Poll::Pending => None,
             }
         } else if let Some(error) = self.implementation.failure().clone() {
             self.implementation.set_finished();
-            Err(error)
+            Some(vec![Err(error)])
         } else {
-            Ok(None)
+            None
         }
     }
 
-    fn get_next(&self) -> Result<Vec<StreamEvent>, Error> {
+    fn get_next(&self) -> Vec<Result<StreamEvent, Error>> {
         let pollable = self.subscribe();
         loop {
             pollable.block();
-            if let Some(events) = self.poll_next()? {
-                return Ok(events);
+            if let Some(events) = self.poll_next() {
+                return events;
             }
         }
     }
