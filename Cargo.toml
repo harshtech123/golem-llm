@@ -9,6 +9,11 @@ members = [
     "llm/ollama",
     "llm/openai",
     "llm/openrouter",
+    "embed/embed",
+    "embed/cohere",
+    "embed/hugging-face",
+    "embed/openai", 
+    "embed/voyageai",
     "websearch/websearch",
     "websearch/brave",
     "websearch/google",
@@ -55,6 +60,7 @@ golem-graph = { path = "graph/graph", version = "0.0.0", default-features = fals
 golem-video = { path = "video/video", version = "0.0.0", default-features = false }
 golem-stt = { path = "stt/stt", version = "0.0.0", default-features = false }
 golem-tts = { path = "tts/tts" , version = "0.0.0" , default-features= false}
+golem-embed = { path = "embed/embed", version = "0.0.0", default-features = false}
 futures = "0.3.31"
 golem-rust = "=1.5.5"
 log = "0.4.27"
