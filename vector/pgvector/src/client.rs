@@ -565,41 +565,10 @@ pub struct TableExistsResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateIndexRequest {
-    pub index_name: String,
-    pub table_name: String,
-    pub column_name: String,
-    pub index_type: String, 
-    pub distance_metric: String, 
-    pub index_options: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreateIndexResponse {
-    pub index_name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DropIndexResponse {
-    pub index_name: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VectorData {
     pub id: String,
     pub embedding: Vec<f32>,
     pub metadata: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InsertVectorsRequest {
-    pub table_name: String,
-    pub vectors: Vec<VectorData>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InsertVectorsResponse {
-    pub inserted_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

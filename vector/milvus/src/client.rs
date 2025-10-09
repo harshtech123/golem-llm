@@ -642,12 +642,6 @@ pub struct SparseFloatVector {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BinaryVector {
-    pub data: Vec<u8>,
-    pub dim: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResult {
     pub id: serde_json::Value,
     pub distance: f32,

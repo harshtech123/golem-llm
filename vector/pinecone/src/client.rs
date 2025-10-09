@@ -215,20 +215,6 @@ impl PineconeClient {
         }
     }
 
-    pub fn _configure_index(&self, index_name: &str, request: &ConfigureIndexRequest) -> Result<IndexModel, VectorError> {
-        trace!("Configuring index: {index_name}");
-
-        let url = format!("{}/indexes/{}/configure", self.control_plane_host, index_name);
-
-        let response = self.execute_with_retry_sync(|| {
-            self.create_request(Method::PATCH, &url)
-                .json(request)
-                .send()
-        })?;
-
-        parse_response(response, "configure_index")
-    }
-
     pub fn upsert_vectors(&self, index_name: &str, request: &UpsertRequest) -> Result<UpsertResponse, VectorError> {
         trace!("Upserting {} vectors to index: {index_name}", request.vectors.len());
 
@@ -303,28 +289,6 @@ impl PineconeClient {
                 .text()
                 .map_err(|e| VectorError::ConnectionError(format!("Failed to read error response: {e}")))?;
             Err(VectorError::ProviderError(format!("Delete vectors failed: {error_body}")))
-        }
-    }
-
-    pub fn _update_vectors(&self, index_name: &str, request: &UpdateRequest) -> Result<(), VectorError> {
-        trace!("Updating vector in index: {index_name}");
-
-        let data_plane_url = self.get_data_plane_url(index_name)?;
-        let url = format!("{}/vectors/update", data_plane_url);
-
-        let response = self.execute_with_retry_sync(|| {
-            self.create_request(Method::POST, &url)
-                .json(request)
-                .send()
-        })?;
-
-        if response.status().is_success() {
-            Ok(())
-        } else {
-            let error_body = response
-                .text()
-                .map_err(|e| VectorError::ConnectionError(format!("Failed to read error response: {e}")))?;
-            Err(VectorError::ProviderError(format!("Update vector failed: {error_body}")))
         }
     }
 
@@ -483,33 +447,6 @@ pub struct IndexStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConfigureIndexRequest {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub spec: Option<ConfigureIndexSpec>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub deletion_protection: Option<DeletionProtection>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum ConfigureIndexSpec {
-    Pod(ConfigurePodSpec),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConfigurePodSpec {
-    pub pod: ConfigurePodConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConfigurePodConfig {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub replicas: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub pod_type: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpsertRequest {
     pub vectors: Vec<Vector>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -616,21 +553,6 @@ pub struct DeleteRequest {
     pub namespace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<HashMap<String, serde_json::Value>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateRequest {
-    pub id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub values: Option<Vec<f32>>,
-    #[serde(rename = "sparseValues")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sparse_values: Option<SparseValues>,
-    #[serde(rename = "setMetadata")]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub set_metadata: Option<HashMap<String, serde_json::Value>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub namespace: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
