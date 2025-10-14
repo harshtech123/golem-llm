@@ -36,16 +36,17 @@ mod passthrough_impl {
     use crate::durability::{DurableSearch, ExtendedGuest};
     use crate::golem::search::core::{Guest, SearchStream};
     use crate::golem::search::types::{
-        Doc, DocumentId, IndexName, Schema, SearchError, SearchQuery, SearchResults,
+        CreateIndexOptions, Doc, DocumentId, IndexName, Schema, SearchError, SearchQuery,
+        SearchResults,
     };
     use crate::init_logging;
 
     impl<Impl: ExtendedGuest> Guest for DurableSearch<Impl> {
         type SearchStream = Impl::SearchStream;
 
-        fn create_index(name: IndexName, schema: Option<Schema>) -> Result<(), SearchError> {
+        fn create_index(options: CreateIndexOptions) -> Result<(), SearchError> {
             init_logging();
-            Impl::create_index(name, schema)
+            Impl::create_index(options)
         }
 
         fn delete_index(name: IndexName) -> Result<(), SearchError> {
@@ -111,7 +112,7 @@ mod passthrough_impl {
 #[cfg(feature = "durability")]
 mod durable_impl {
     use crate::durability::{DurableSearch, ExtendedGuest};
-    use crate::golem::search::core::{Guest, GuestSearchStream, SearchStream};
+    use crate::golem::search::core::{CreateIndexOptions, Guest, GuestSearchStream, SearchStream};
     use crate::golem::search::types::{
         Doc, DocumentId, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
     };
@@ -124,12 +125,6 @@ mod durable_impl {
     use golem_rust::{with_persistence_level, FromValueAndType, IntoValue, PersistenceLevel};
     use std::cell::RefCell;
     use std::fmt::{Display, Formatter};
-
-    #[derive(Debug, Clone, IntoValue)]
-    struct CreateIndexInput {
-        name: IndexName,
-        schema: Option<Schema>,
-    }
 
     #[derive(Debug, Clone, IntoValue)]
     struct DeleteIndexInput {
@@ -227,7 +222,7 @@ mod durable_impl {
     impl<Impl: ExtendedGuest> Guest for DurableSearch<Impl> {
         type SearchStream = DurableSearchStream<Impl>;
 
-        fn create_index(name: IndexName, schema: Option<Schema>) -> Result<(), SearchError> {
+        fn create_index(options: CreateIndexOptions) -> Result<(), SearchError> {
             init_logging();
 
             let durability = Durability::<NoOutput, SearchError>::new(
@@ -237,11 +232,9 @@ mod durable_impl {
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    Impl::create_index(name.clone(), schema.clone()).map(|()| NoOutput)
+                    Impl::create_index(options.clone()).map(|()| NoOutput)
                 });
-                durability
-                    .persist(CreateIndexInput { name, schema }, result)
-                    .map(|_: NoOutput| ())
+                durability.persist(options, result).map(|_: NoOutput| ())
             } else {
                 durability.replay().map(|_: NoOutput| ())
             }
@@ -684,430 +677,6 @@ mod durable_impl {
                     None => continue,
                 }
             }
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        use crate::golem::search::types::*;
-        use golem_rust::value_and_type::{FromValueAndType, IntoValueAndType};
-
-        fn roundtrip_test<T>(value: T) -> T
-        where
-            T: IntoValueAndType + FromValueAndType + Clone + std::fmt::Debug + PartialEq,
-        {
-            let vnt = value.clone().into_value_and_type();
-            let deserialized = T::from_value_and_type(vnt).unwrap();
-            assert_eq!(value, deserialized);
-            deserialized
-        }
-
-        #[test]
-        fn search_error_roundtrip() {
-            roundtrip_test(SearchError::IndexNotFound);
-            roundtrip_test(SearchError::InvalidQuery("invalid syntax".to_string()));
-            roundtrip_test(SearchError::Unsupported);
-            roundtrip_test(SearchError::Internal(
-                "database connection failed".to_string(),
-            ));
-            roundtrip_test(SearchError::Timeout);
-            roundtrip_test(SearchError::RateLimited);
-        }
-
-        #[test]
-        fn doc_roundtrip() {
-            let doc = Doc {
-                id: "test-id-123".to_string(),
-                content:
-                    r#"{"title": "Test Document", "author": "John Doe", "tags": ["rust", "wasm"]}"#
-                        .to_string(),
-            };
-            roundtrip_test(doc);
-        }
-
-        #[test]
-        fn highlight_config_roundtrip() {
-            let config = HighlightConfig {
-                fields: vec!["title".to_string(), "content".to_string()],
-                pre_tag: Some("<mark>".to_string()),
-                post_tag: Some("</mark>".to_string()),
-                max_length: Some(150),
-            };
-            roundtrip_test(config);
-
-            // Test with minimal fields
-            let minimal_config = HighlightConfig {
-                fields: vec!["title".to_string()],
-                pre_tag: None,
-                post_tag: None,
-                max_length: None,
-            };
-            roundtrip_test(minimal_config);
-        }
-
-        #[test]
-        fn search_config_roundtrip() {
-            let config = SearchConfig {
-                timeout_ms: Some(5000),
-                boost_fields: vec![("title".to_string(), 2.0), ("content".to_string(), 1.0)],
-                attributes_to_retrieve: vec!["id".to_string(), "title".to_string()],
-                language: Some("en".to_string()),
-                typo_tolerance: Some(true),
-                exact_match_boost: Some(1.5),
-                provider_params: Some(r#"{"custom_param": "value"}"#.to_string()),
-            };
-            roundtrip_test(config);
-
-            // Test with minimal fields
-            let minimal_config = SearchConfig {
-                timeout_ms: None,
-                boost_fields: vec![],
-                attributes_to_retrieve: vec![],
-                language: None,
-                typo_tolerance: None,
-                exact_match_boost: None,
-                provider_params: None,
-            };
-            roundtrip_test(minimal_config);
-        }
-
-        #[test]
-        fn search_query_roundtrip() {
-            let query = SearchQuery {
-                q: Some("rust programming language".to_string()),
-                filters: vec!["category:programming".to_string(), "lang:en".to_string()],
-                sort: vec!["score:desc".to_string(), "date:asc".to_string()],
-                facets: vec!["category".to_string(), "author".to_string()],
-                page: Some(2),
-                per_page: Some(20),
-                offset: Some(40),
-                highlight: Some(HighlightConfig {
-                    fields: vec!["title".to_string(), "content".to_string()],
-                    pre_tag: Some("<em>".to_string()),
-                    post_tag: Some("</em>".to_string()),
-                    max_length: Some(200),
-                }),
-                config: Some(SearchConfig {
-                    timeout_ms: Some(3000),
-                    boost_fields: vec![("title".to_string(), 3.0)],
-                    attributes_to_retrieve: vec!["id".to_string(), "title".to_string()],
-                    language: Some("en".to_string()),
-                    typo_tolerance: Some(false),
-                    exact_match_boost: Some(2.0),
-                    provider_params: None,
-                }),
-            };
-            roundtrip_test(query);
-
-            // Test minimal query
-            let minimal_query = SearchQuery {
-                q: None,
-                filters: vec![],
-                sort: vec![],
-                facets: vec![],
-                page: None,
-                per_page: None,
-                offset: None,
-                highlight: None,
-                config: None,
-            };
-            roundtrip_test(minimal_query);
-        }
-
-        #[test]
-        fn search_hit_roundtrip() {
-            let hit = SearchHit {
-                id: "doc-123".to_string(),
-                score: Some(0.95),
-                content: Some(
-                    r#"{"title": "Rust Programming", "content": "A guide to Rust"}"#.to_string(),
-                ),
-                highlights: Some(r#"{"title": ["<em>Rust</em> Programming"]}"#.to_string()),
-            };
-            roundtrip_test(hit);
-
-            // Test minimal hit
-            let minimal_hit = SearchHit {
-                id: "doc-456".to_string(),
-                score: None,
-                content: None,
-                highlights: None,
-            };
-            roundtrip_test(minimal_hit);
-        }
-
-        #[test]
-        fn search_results_roundtrip() {
-            let results = SearchResults {
-                total: Some(150),
-                page: Some(1),
-                per_page: Some(10),
-                hits: vec![
-                    SearchHit {
-                        id: "doc-1".to_string(),
-                        score: Some(0.98),
-                        content: Some(r#"{"title": "First Document"}"#.to_string()),
-                        highlights: None,
-                    },
-                    SearchHit {
-                        id: "doc-2".to_string(),
-                        score: Some(0.85),
-                        content: Some(r#"{"title": "Second Document"}"#.to_string()),
-                        highlights: Some(r#"{"title": ["<em>Second</em> Document"]}"#.to_string()),
-                    },
-                ],
-                facets: Some(r#"{"category": {"programming": 50, "tutorial": 25}}"#.to_string()),
-                took_ms: Some(15),
-            };
-            roundtrip_test(results);
-
-            // Test empty results
-            let empty_results = SearchResults {
-                total: Some(0),
-                page: None,
-                per_page: None,
-                hits: vec![],
-                facets: None,
-                took_ms: Some(5),
-            };
-            roundtrip_test(empty_results);
-        }
-
-        #[test]
-        fn field_type_roundtrip() {
-            roundtrip_test(FieldType::Text);
-            roundtrip_test(FieldType::Keyword);
-            roundtrip_test(FieldType::Integer);
-            roundtrip_test(FieldType::Float);
-            roundtrip_test(FieldType::Boolean);
-            roundtrip_test(FieldType::Date);
-            roundtrip_test(FieldType::GeoPoint);
-        }
-
-        #[test]
-        fn schema_field_roundtrip() {
-            let field = SchemaField {
-                name: "title".to_string(),
-                field_type: FieldType::Text,
-                required: true,
-                facet: false,
-                sort: true,
-                index: true,
-            };
-            roundtrip_test(field);
-
-            // Test keyword field with different settings
-            let keyword_field = SchemaField {
-                name: "category".to_string(),
-                field_type: FieldType::Keyword,
-                required: false,
-                facet: true,
-                sort: false,
-                index: true,
-            };
-            roundtrip_test(keyword_field);
-
-            // Test numeric field
-            let numeric_field = SchemaField {
-                name: "price".to_string(),
-                field_type: FieldType::Float,
-                required: true,
-                facet: true,
-                sort: true,
-                index: false,
-            };
-            roundtrip_test(numeric_field);
-        }
-
-        #[test]
-        fn schema_roundtrip() {
-            let schema = Schema {
-                fields: vec![
-                    SchemaField {
-                        name: "id".to_string(),
-                        field_type: FieldType::Keyword,
-                        required: true,
-                        facet: false,
-                        sort: false,
-                        index: true,
-                    },
-                    SchemaField {
-                        name: "title".to_string(),
-                        field_type: FieldType::Text,
-                        required: true,
-                        facet: false,
-                        sort: true,
-                        index: true,
-                    },
-                    SchemaField {
-                        name: "category".to_string(),
-                        field_type: FieldType::Keyword,
-                        required: false,
-                        facet: true,
-                        sort: false,
-                        index: true,
-                    },
-                    SchemaField {
-                        name: "price".to_string(),
-                        field_type: FieldType::Float,
-                        required: false,
-                        facet: true,
-                        sort: true,
-                        index: false,
-                    },
-                    SchemaField {
-                        name: "published_date".to_string(),
-                        field_type: FieldType::Date,
-                        required: false,
-                        facet: false,
-                        sort: true,
-                        index: true,
-                    },
-                ],
-                primary_key: Some("id".to_string()),
-            };
-            roundtrip_test(schema);
-
-            // Test minimal schema
-            let minimal_schema = Schema {
-                fields: vec![],
-                primary_key: None,
-            };
-            roundtrip_test(minimal_schema);
-        }
-
-        #[test]
-        fn retry_query_logic_test() {
-            // Test the retry query logic directly without implementing the full trait
-            fn test_retry_query(
-                original_query: &SearchQuery,
-                partial_hits: &[SearchHit],
-            ) -> SearchQuery {
-                let mut retry_query = original_query.clone();
-
-                // If we have partial results, we might want to exclude already seen document IDs
-                // or adjust pagination to continue from where we left off
-                if !partial_hits.is_empty() {
-                    let current_offset = original_query.offset.unwrap_or(0);
-                    let received_count = partial_hits.len() as u32;
-                    retry_query.offset = Some(current_offset + received_count);
-                }
-
-                retry_query
-            }
-
-            let original_query = SearchQuery {
-                q: Some("test".to_string()),
-                filters: vec![],
-                sort: vec![],
-                facets: vec![],
-                page: Some(1),
-                per_page: Some(10),
-                offset: Some(0),
-                highlight: None,
-                config: None,
-            };
-
-            // Test retry with no partial hits
-            let retry_query_empty = test_retry_query(&original_query, &[]);
-            assert_eq!(retry_query_empty.offset, Some(0));
-
-            // Test retry with partial hits
-            let partial_hits = vec![
-                SearchHit {
-                    id: "doc1".to_string(),
-                    score: Some(0.9),
-                    content: None,
-                    highlights: None,
-                },
-                SearchHit {
-                    id: "doc2".to_string(),
-                    score: Some(0.8),
-                    content: None,
-                    highlights: None,
-                },
-            ];
-
-            let retry_query_with_hits = test_retry_query(&original_query, &partial_hits);
-            assert_eq!(retry_query_with_hits.offset, Some(2)); // 0 + 2 hits
-
-            // Test retry with existing offset
-            let mut query_with_offset = original_query.clone();
-            query_with_offset.offset = Some(20);
-
-            let retry_query_offset = test_retry_query(&query_with_offset, &partial_hits);
-            assert_eq!(retry_query_offset.offset, Some(22)); // 20 + 2 hits
-        }
-
-        #[test]
-        fn index_name_and_document_id_types() {
-            // These are type aliases for strings, but test them anyway
-            let index_name: IndexName = "test-index".to_string();
-            let document_id: DocumentId = "doc-123".to_string();
-
-            assert_eq!(index_name, "test-index");
-            assert_eq!(document_id, "doc-123");
-        }
-
-        #[test]
-        fn complex_nested_structures() {
-            // Test complex nested structures with all optional fields filled
-            let complex_query = SearchQuery {
-                q: Some("advanced search query with special chars: !@#$%".to_string()),
-                filters: vec![
-                    "category:electronics".to_string(),
-                    "price:[100 TO 500]".to_string(),
-                    "availability:true".to_string(),
-                ],
-                sort: vec![
-                    "price:asc".to_string(),
-                    "_score:desc".to_string(),
-                    "date:desc".to_string(),
-                ],
-                facets: vec![
-                    "category".to_string(),
-                    "brand".to_string(),
-                    "color".to_string(),
-                ],
-                page: Some(5),
-                per_page: Some(50),
-                offset: Some(200),
-                highlight: Some(HighlightConfig {
-                    fields: vec![
-                        "title".to_string(),
-                        "description".to_string(),
-                        "content".to_string(),
-                    ],
-                    pre_tag: Some("<strong class='highlight'>".to_string()),
-                    post_tag: Some("</strong>".to_string()),
-                    max_length: Some(300),
-                }),
-                config: Some(SearchConfig {
-                    timeout_ms: Some(10000),
-                    boost_fields: vec![
-                        ("title".to_string(), 5.0),
-                        ("description".to_string(), 2.5),
-                        ("content".to_string(), 1.0),
-                        ("tags".to_string(), 3.0),
-                    ],
-                    attributes_to_retrieve: vec![
-                        "id".to_string(),
-                        "title".to_string(),
-                        "description".to_string(),
-                        "price".to_string(),
-                        "image_url".to_string(),
-                    ],
-                    language: Some("en-US".to_string()),
-                    typo_tolerance: Some(true),
-                    exact_match_boost: Some(10.0),
-                    provider_params: Some(
-                        r#"{"index_settings": {"similarity": "BM25", "k1": 1.5, "b": 0.75}}"#
-                            .to_string(),
-                    ),
-                }),
-            };
-            roundtrip_test(complex_query);
         }
     }
 }

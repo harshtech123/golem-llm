@@ -86,13 +86,13 @@ golem app deploy -b veo-debug
 Depending on the provider selected, an environment variable has to be set for the worker to be started, containing the ENVIRONMENT variable (eg.API key) for the given provider:
 
 ```bash
-golem worker new test:video/debug --env VEO_PROJECT_ID=xxx --env VEO_CLIENT_EMAIL=xxx --env VEO_PRIVATE_KEY=xxx --env GOLEM_VIDEO_LOG=trace
+golem agent  new test:video/debug --env VEO_PROJECT_ID=xxx --env VEO_CLIENT_EMAIL=xxx --env VEO_PRIVATE_KEY=xxx --env GOLEM_VIDEO_LOG=trace
 ```
 
 Then you can invoke the test functions on this worker:
 
 ```bash
-golem worker invoke test:video/debug test1 --stream 
+golem agent  invoke test:video/debug test1 --stream 
 ```
 
 ### Advanced Video Tests
@@ -139,10 +139,10 @@ golem app deploy -b kling-debug
 Depending on the provider selected, an environment variable has to be set for the worker to be started, containing the ENVIRONMENT variable (eg.API key) for the given provider:
 
 ```bash
-golem worker new test:video-advanced/debug --env KLING_ACCESS_KEY=xxx --env KLING_SECRET_KEY=xxx --env GOLEM_VIDEO_LOG=trace
+golem agent  new test:video-advanced/debug --env KLING_ACCESS_KEY=xxx --env KLING_SECRET_KEY=xxx --env GOLEM_VIDEO_LOG=trace
 ```
 
 ```bash
-golem worker invoke test:video-advanced/debug test1 --stream 
+golem agent  invoke test:video-advanced/debug test1 --stream 
 ```
 

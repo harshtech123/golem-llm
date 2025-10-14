@@ -1,14 +1,13 @@
+use crate::{
+    async_utils,
+    conversions::{converse_stream_output_to_stream_event, custom_error, merge_metadata},
+};
 use aws_sdk_bedrockruntime::{
     self as bedrock, primitives::event_stream::EventReceiver,
     types::error::ConverseStreamOutputError,
 };
 use golem_llm::golem::llm::llm;
 use std::cell::{RefCell, RefMut};
-
-use crate::{
-    async_utils,
-    conversions::{converse_stream_output_to_stream_event, custom_error, merge_metadata},
-};
 
 type BedrockEventSource =
     EventReceiver<bedrock::types::ConverseStreamOutput, ConverseStreamOutputError>;
@@ -51,7 +50,7 @@ impl BedrockChatStream {
     fn set_finished(&self) {
         *self.finished.borrow_mut() = true;
     }
-    fn get_single_event(&self) -> Option<llm::StreamEvent> {
+    fn get_single_event(&self) -> Option<Result<llm::StreamEvent, llm::Error>> {
         if let Some(stream) = self.stream_mut().as_mut() {
             let runtime = async_utils::get_async_runtime();
 
@@ -62,7 +61,7 @@ impl BedrockChatStream {
                 match token {
                     Ok(Some(output)) => {
                         log::trace!("Processing bedrock stream event: {output:?}");
-                        converse_stream_output_to_stream_event(output)
+                        converse_stream_output_to_stream_event(output).map(Ok)
                     }
                     Ok(None) => {
                         log::trace!("running set_finished on stream due to None event received");
@@ -72,7 +71,7 @@ impl BedrockChatStream {
                     Err(error) => {
                         log::trace!("running set_finished on stream due to error: {error:?}");
                         self.set_finished();
-                        Some(llm::StreamEvent::Error(custom_error(
+                        Some(Err(custom_error(
                             llm::ErrorCode::InternalError,
                             format!("An error occurred while reading event stream: {error}"),
                         )))
@@ -81,7 +80,7 @@ impl BedrockChatStream {
             })
         } else if let Some(error) = self.failure() {
             self.set_finished();
-            Some(llm::StreamEvent::Error(error.clone()))
+            Some(Err(error.clone()))
         } else {
             None
         }
@@ -89,32 +88,28 @@ impl BedrockChatStream {
 }
 
 impl llm::GuestChatStream for BedrockChatStream {
-    fn get_next(&self) -> Option<Vec<llm::StreamEvent>> {
+    fn poll_next(&self) -> Option<Vec<Result<llm::StreamEvent, llm::Error>>> {
         if self.is_finished() {
             return Some(vec![]);
         }
         self.get_single_event().map(|event| {
-            if let llm::StreamEvent::Finish(metadata) = event.clone() {
-                if let Some(llm::StreamEvent::Finish(final_metadata)) = self.get_single_event() {
-                    return vec![llm::StreamEvent::Finish(merge_metadata(
-                        metadata,
+            if let Ok(llm::StreamEvent::Finish(metadata)) = &event {
+                if let Some(Ok(llm::StreamEvent::Finish(final_metadata))) = self.get_single_event()
+                {
+                    return vec![Ok(llm::StreamEvent::Finish(merge_metadata(
+                        metadata.clone(),
                         final_metadata,
-                    ))];
+                    )))];
                 }
             }
             vec![event]
         })
     }
 
-    fn blocking_get_next(&self) -> Vec<llm::StreamEvent> {
-        let mut result = Vec::new();
+    fn get_next(&self) -> Vec<Result<llm::StreamEvent, llm::Error>> {
         loop {
-            match self.get_next() {
-                Some(events) => {
-                    result.extend(events);
-                    break result;
-                }
-                None => continue,
+            if let Some(events) = self.poll_next() {
+                return events;
             }
         }
     }

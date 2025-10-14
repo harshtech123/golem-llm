@@ -22,6 +22,7 @@ impl NdJsonStreamState {
 /// A Stream of NDJSON events (newline-delimited JSON)
 pub struct NdJsonStream {
     stream: Utf8Stream,
+    body: reqwest::IncomingBody,
     buffer: String,
     state: NdJsonStreamState,
     last_event_id: String,
@@ -29,9 +30,10 @@ pub struct NdJsonStream {
 
 impl LlmStream for NdJsonStream {
     /// Initialize the NdJsonStream with a Stream
-    fn new(stream: InputStream) -> Self {
+    fn new(stream: InputStream, body: reqwest::IncomingBody) -> Self {
         Self {
             stream: Utf8Stream::new(stream),
+            body,
             buffer: String::new(),
             state: NdJsonStreamState::NotStarted,
             last_event_id: String::new(),

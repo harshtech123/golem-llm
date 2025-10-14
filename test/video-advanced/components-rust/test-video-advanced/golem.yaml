@@ -78,10 +78,10 @@ components:
               - wit-generated
               - ../../common-rust
             targets:
-              - ../../target/wasm32-wasip1/release/test_video.wasm
-          - command: wac plug --plug ../../../../target/wasm32-wasip1/release/golem_video_kling.wasm ../../target/wasm32-wasip1/release/test_video.wasm -o ../../target/wasm32-wasip1/release/test_video_plugged.wasm
+              - ../../target/wasm32-wasip1/release/test_video_advanced.wasm
+          - command: wac plug --plug ../../../../target/wasm32-wasip1/release/golem_video_kling.wasm ../../target/wasm32-wasip1/release/test_video_advanced.wasm -o ../../target/wasm32-wasip1/release/test_video_plugged.wasm
             sources:
-              - ../../target/wasm32-wasip1/release/test_video.wasm
+              - ../../target/wasm32-wasip1/release/test_video_advanced.wasm
               - ../../../../target/wasm32-wasip1/release/golem_video_kling.wasm
             targets:
               - ../../target/wasm32-wasip1/release/test_video_plugged.wasm

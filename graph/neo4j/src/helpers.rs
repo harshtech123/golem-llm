@@ -292,7 +292,7 @@ pub(crate) fn config_from_env() -> Result<ConnectionConfig, GraphError> {
         .map_err(|_| GraphError::ConnectionFailed("Missing NEO4J_PASSWORD env var".to_string()))?;
 
     Ok(ConnectionConfig {
-        hosts: vec![host],
+        hosts: Some(vec![host]),
         port,
         database_name: None,
         username: Some(username),

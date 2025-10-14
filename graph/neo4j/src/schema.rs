@@ -2,6 +2,7 @@ use crate::client::{Neo4jStatement, Neo4jStatements};
 use crate::helpers::{config_from_env, map_neo4j_type_to_wit};
 use crate::{GraphNeo4jComponent, SchemaManager};
 use golem_graph::durability::ExtendedGuest;
+use golem_graph::golem::graph::transactions::GuestTransaction;
 use golem_graph::golem::graph::{
     connection::ConnectionConfig,
     errors::GraphError,

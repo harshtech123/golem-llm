@@ -7,7 +7,9 @@ use crate::conversions::{
 use golem_rust::wasm_rpc::Pollable;
 use golem_search::config::with_config_keys;
 use golem_search::durability::{DurableSearch, ExtendedGuest};
-use golem_search::golem::search::core::{Guest, GuestSearchStream, SearchStream};
+use golem_search::golem::search::core::{
+    CreateIndexOptions, Guest, GuestSearchStream, SearchStream,
+};
 use golem_search::golem::search::types::{
     Doc, DocumentId, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
 };
@@ -117,7 +119,7 @@ impl AlgoliaComponent {
 impl Guest for AlgoliaComponent {
     type SearchStream = AlgoliaSearchStream;
 
-    fn create_index(_name: IndexName, _schema: Option<Schema>) -> Result<(), SearchError> {
+    fn create_index(_options: CreateIndexOptions) -> Result<(), SearchError> {
         // Algolia doesn't require explicit index creation - indices are created automatically
         // when you first add documents.
         // providers that don't support index creation should return unsupported.

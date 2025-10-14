@@ -1,7 +1,7 @@
 mod builtin;
 
 use crate::durability::{EmptySnapshot, SessionSnapshot};
-use crate::golem::exec::executor::{Error, ExecResult, File, Language, Limits};
+use crate::golem::exec::executor::{Error, ExecResult, File, Language, RunOptions};
 use crate::golem::exec::types::{LanguageKind, StageResult};
 use crate::{get_contents_as_string, stage_result_failure};
 use futures::TryFutureExt;
@@ -26,15 +26,12 @@ pub struct JavascriptComponent;
 impl JavascriptComponent {
     pub fn run(
         lang: Language,
-        snippet: String,
         files: Vec<File>,
-        stdin: Option<String>,
-        args: Vec<String>,
-        env: Vec<(String, String)>,
-        constraints: Option<Limits>,
+        snippet: String,
+        options: RunOptions,
     ) -> Result<ExecResult, Error> {
         let session = JavaScriptSession::new(lang, files);
-        session.run(snippet, args, stdin, env, constraints)
+        session.run(snippet, options)
     }
 }
 
@@ -127,18 +124,11 @@ impl JavaScriptSession {
         }
     }
 
-    pub fn run(
-        &self,
-        snippet: String,
-        args: Vec<String>,
-        stdin: Option<String>,
-        env: Vec<(String, String)>,
-        constraints: Option<Limits>,
-    ) -> Result<ExecResult, Error> {
+    pub fn run(&self, snippet: String, options: RunOptions) -> Result<ExecResult, Error> {
         ensure_language_is_supported(&self.lang)?;
         self.ensure_initialized()?;
 
-        block_on(async { self.run_async(snippet, args, stdin, env, constraints).await })
+        block_on(async { self.run_async(snippet, options).await })
     }
 
     fn ensure_initialized(&self) -> Result<(), Error> {
@@ -188,26 +178,26 @@ impl JavaScriptSession {
     }
 
     #[allow(clippy::await_holding_refcell_ref)]
-    async fn run_async(
-        &self,
-        snippet: String,
-        args: Vec<String>,
-        stdin: Option<String>,
-        env: Vec<(String, String)>,
-        constraints: Option<Limits>,
-    ) -> Result<ExecResult, Error> {
+    async fn run_async(&self, snippet: String, options: RunOptions) -> Result<ExecResult, Error> {
         let maybe_state = self.state.borrow();
         let state = maybe_state.as_ref().unwrap();
         let start = Instant::now();
 
-        if let Some(constraints) = constraints {
-            if let Some(memory_bytes) = constraints.memory_bytes {
+        if let Some(limits) = options.limits {
+            if let Some(memory_bytes) = limits.memory_bytes {
                 state.rt.set_memory_limit(memory_bytes as usize).await;
             }
         }
 
         let abort_state = async_with!(state.ctx => |ctx| {
-           set_globals(ctx.clone(), stdin, args, env, state.cwd.clone(), constraints.and_then(|c| c.file_size_bytes) ).map_err(js_engine_error)?;
+           set_globals(
+                ctx.clone(),
+                options.stdin,
+                options.args.unwrap_or_default(),
+                options.env.unwrap_or_default(),
+                state.cwd.clone(),
+                options.limits.and_then(|c| c.file_size_bytes),
+            ).map_err(js_engine_error)?;
             builtin::timeout::init_abort(ctx)
         })
         .await?;
@@ -229,7 +219,7 @@ impl JavaScriptSession {
                 })
                 .await
         };
-        let result = if let Some(timeout_ms) = constraints.and_then(|c| c.time_ms) {
+        let result = if let Some(timeout_ms) = options.limits.and_then(|c| c.time_ms) {
             future
                 .timeout(Duration::from_millis(timeout_ms))
                 .map_err(|err| match err.kind() {

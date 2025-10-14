@@ -10,7 +10,7 @@ pub trait LlmChatStreamState: 'static {
     fn set_finished(&self);
     fn stream(&self) -> Ref<'_, Option<EventSource>>;
     fn stream_mut(&self) -> RefMut<'_, Option<EventSource>>;
-    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, String>;
+    fn decode_message(&self, raw: &str) -> Result<Option<StreamEvent>, Error>;
 }
 
 pub struct LlmChatStream<T> {
@@ -32,7 +32,7 @@ impl<T: LlmChatStreamState> LlmChatStream<T> {
 }
 
 impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
-    fn get_next(&self) -> Option<Vec<StreamEvent>> {
+    fn poll_next(&self) -> Option<Vec<Result<StreamEvent, Error>>> {
         if self.implementation.is_finished() {
             return Some(vec![]);
         }
@@ -48,11 +48,14 @@ impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
                     self.implementation.set_finished();
                     Some(vec![])
                 }
-                Poll::Ready(Some(Err(error))) => Some(vec![StreamEvent::Error(Error {
-                    code: ErrorCode::InternalError,
-                    message: error.to_string(),
-                    provider_error_json: None,
-                })]),
+                Poll::Ready(Some(Err(error))) => {
+                    self.implementation.set_finished();
+                    Some(vec![Err(Error {
+                        code: ErrorCode::InternalError,
+                        message: error.to_string(),
+                        provider_error_json: None,
+                    })])
+                }
                 Poll::Ready(Some(Ok(event))) => {
                     let mut events = vec![];
 
@@ -65,18 +68,12 @@ impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
                                         if matches!(stream_event, StreamEvent::Finish(_)) {
                                             self.implementation.set_finished();
                                         }
-                                        events.push(stream_event);
+                                        events.push(Ok(stream_event));
                                     }
                                     Ok(None) => {
                                         // Ignored event
                                     }
-                                    Err(error) => {
-                                        events.push(StreamEvent::Error(Error {
-                                            code: ErrorCode::InternalError,
-                                            message: error,
-                                            provider_error_json: None,
-                                        }));
-                                    }
+                                    Err(err) => events.push(Err(err)),
                                 }
                             }
                         }
@@ -92,23 +89,18 @@ impl<T: LlmChatStreamState> GuestChatStream for LlmChatStream<T> {
             }
         } else if let Some(error) = self.implementation.failure().clone() {
             self.implementation.set_finished();
-            Some(vec![StreamEvent::Error(error)])
+            Some(vec![Err(error)])
         } else {
             None
         }
     }
 
-    fn blocking_get_next(&self) -> Vec<StreamEvent> {
+    fn get_next(&self) -> Vec<Result<StreamEvent, Error>> {
         let pollable = self.subscribe();
-        let mut result = Vec::new();
         loop {
             pollable.block();
-            match self.get_next() {
-                Some(events) => {
-                    result.extend(events);
-                    break result;
-                }
-                None => continue,
+            if let Some(events) = self.poll_next() {
+                return events;
             }
         }
     }
