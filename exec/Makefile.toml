@@ -138,14 +138,22 @@ echo "Copied WIT for module test"
 
 [tasks.build-test-components]
 dependencies = ["build"]
-install_crate = "cargo-binstall"
 description = "Builds exec test components with golem-cli"
 script = '''
-cargo-binstall golem-cli@1.2.5 --locked --no-confirm
-cargo-binstall wac-cli --locked --no-confirm
 cd ../test/exec
 
 golem-cli --version
-golem-cli app clean
-golem-cli app build
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build
+'''
+
+[tasks.release-build-test-components]
+dependencies = ["release-build"]
+description = "Builds exec test components with golem-cli"
+script = '''
+cd ../test/exec
+
+golem-cli --version
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app -b release build
 '''

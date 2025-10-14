@@ -88,12 +88,12 @@ golem app deploy -b algolia-debug
 Depending on the provider selected, environment variables have to be set for the worker to be started, containing the ENVIRONMENT variables (eg. connection details) for the given provider:
 
 ```bash
-golem worker new test:search/debug --env ALGOLIA_APP_ID=xxx --env ALGOLIA_API_KEY=xxx --env GOLEM_SEARCH_LOG=trace
+golem agent  new test:search/debug --env ALGOLIA_APP_ID=xxx --env ALGOLIA_API_KEY=xxx --env GOLEM_SEARCH_LOG=trace
 ```
 
 Then you can invoke the test functions on this worker:
 
 ```bash
-golem worker invoke test:search/debug test1 --stream 
+golem agent  invoke test:search/debug test1 --stream 
 ```
 

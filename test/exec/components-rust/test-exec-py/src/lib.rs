@@ -2,7 +2,7 @@
 mod bindings;
 
 use crate::bindings::exports::test::exec_py_exports::test_exec_py_api::*;
-use crate::bindings::golem::exec::executor::run;
+use crate::bindings::golem::exec::executor::{run, RunOptions};
 use crate::bindings::golem::exec::types::{Encoding, File, Language, LanguageKind};
 use indoc::indoc;
 
@@ -15,18 +15,13 @@ impl Guest for Component {
                 kind: LanguageKind::Python,
                 version: None,
             },
-            indoc!(
-                r#"
-            x = 40 + 2;
-            name = "world"
-            print(f'Hello, {name}!', x)
-            "#
-            ),
             &[],
-            None,
-            &[],
-            &[],
-            None,
+            indoc! {r#"
+                x = 40 + 2;
+                name = "world"
+                print(f'Hello, {name}!', x)
+            "#},
+            &empty_run_options(),
         ) {
             Ok(result) => {
                 println!("Result: {:?}", result);
@@ -45,19 +40,17 @@ impl Guest for Component {
                 kind: LanguageKind::Python,
                 version: None,
             },
-            indoc!(
-                r#"
-            import sys
-            x = 40 + 2;
-            name = sys.stdin.readline()
-            print(f'Hello, {name}!', x)
-            "#
-            ),
             &[],
-            Some("world"),
-            &[],
-            &[],
-            None,
+            indoc! { r#"
+                import sys
+                x = 40 + 2;
+                name = sys.stdin.readline()
+                print(f'Hello, {name}!', x)
+            "# },
+            &RunOptions {
+                stdin: Some("world".to_string()),
+                ..empty_run_options()
+            },
         ) {
             Ok(result) => {
                 println!("Result: {:?}", result);
@@ -76,17 +69,15 @@ impl Guest for Component {
                 kind: LanguageKind::Python,
                 version: None,
             },
-            indoc!(
-                r#"
-            import sys
-            print(sys.argv)
-            "#
-            ),
             &[],
-            None,
-            &["arg1".to_string(), "arg2".to_string()],
-            &[],
-            None,
+            indoc! { r#"
+                import sys
+                print(sys.argv)
+            "# },
+            &RunOptions {
+                args: Some(vec!["arg1".to_string(), "arg2".to_string()]),
+                ..empty_run_options()
+            },
         ) {
             Ok(result) => {
                 println!("Result: {:?}", result);
@@ -105,17 +96,15 @@ impl Guest for Component {
                 kind: LanguageKind::Python,
                 version: None,
             },
-            indoc!(
-                r#"
-            import os
-            print(os.environ.get('TEST_ENV_VAR', 'default_value'))
-            "#
-            ),
             &[],
-            None,
-            &[],
-            &[("TEST_ENV_VAR".to_string(), "test_value".to_string())],
-            None,
+            indoc! { r#"
+                import os
+                print(os.environ.get('TEST_ENV_VAR', 'default_value'))
+            "# },
+            &RunOptions {
+                env: Some(vec![("TEST_ENV_VAR".to_string(), "test_value".to_string())]),
+                ..empty_run_options()
+            },
         ) {
             Ok(result) => {
                 println!("Result: {:?}", result);
@@ -134,12 +123,6 @@ impl Guest for Component {
                 kind: LanguageKind::Python,
                 version: None,
             },
-            indoc!(
-                r#"
-                import mytest.mymodule as t
-                print(f'Hello, {t.name}!', t.x)
-                "#
-            ),
             &[
                 File {
                     name: "mytest/__init__.py".to_string(),
@@ -159,10 +142,11 @@ impl Guest for Component {
                     encoding: None,
                 },
             ],
-            None,
-            &[],
-            &[],
-            None,
+            indoc! { r#"
+                import mytest.mymodule as t
+                print(f'Hello, {t.name}!', t.x)
+            "#},
+            &empty_run_options(),
         ) {
             Ok(result) => {
                 println!("Result: {:?}", result);
@@ -189,12 +173,10 @@ impl Guest for Component {
                 },
                 File {
                     name: "mytest/mymodule.py".to_string(),
-                    content: indoc!(
-                        r#"
-                    x = 40 + 2
-                    name = "world"
-                    "#,
-                    )
+                    content: indoc! { r#"
+                        x = 40 + 2
+                        name = "world"
+                    "#}
                     .as_bytes()
                     .to_vec(),
                     encoding: None,
@@ -204,16 +186,11 @@ impl Guest for Component {
 
         let r1 = session
             .run(
-                indoc!(
-                    r#"
-                import mytest.mymodule as t
-                print(f'Hello, {t.name}!', t.x)
-                "#
-                ),
-                &[],
-                None,
-                &[],
-                None,
+                indoc! { r#"
+                    import mytest.mymodule as t
+                    print(f'Hello, {t.name}!', t.x)
+                "# },
+                &empty_run_options(),
             )
             .map_or_else(
                 |err| {
@@ -228,16 +205,14 @@ impl Guest for Component {
 
         let r2 = session
             .run(
-                indoc!(
-                    r#"
+                indoc! { r#"
                     import sys
                     print(sys.argv)
-                "#
-                ),
-                &["arg1".to_string(), "arg2".to_string()],
-                None,
-                &[],
-                None,
+                "# },
+                &RunOptions {
+                    args: Some(vec!["arg1".to_string(), "arg2".to_string()]),
+                    ..empty_run_options()
+                },
             )
             .map_or_else(
                 |err| {
@@ -252,16 +227,14 @@ impl Guest for Component {
 
         let r3 = session
             .run(
-                indoc!(
-                    r#"
+                indoc! { r#"
                     import sys
                     print(sys.argv)
-                "#
-                ),
-                &["arg3".to_string()],
-                None,
-                &[],
-                None,
+                "# },
+                &RunOptions {
+                    args: Some(vec!["arg3".to_string()]),
+                    ..empty_run_options()
+                },
             )
             .map_or_else(
                 |err| {
@@ -274,8 +247,7 @@ impl Guest for Component {
                 },
             );
 
-        const READLINE_SNIPPET: &str = indoc!(
-            r#"
+        const READLINE_SNIPPET: &str = indoc! { r#"
             import sys
 
             total_sum = 0
@@ -288,11 +260,16 @@ impl Guest for Component {
                     continue
 
             print(f'Total Sum: {total_sum}')
-            "#
-        );
+         "# };
 
         let r4 = session
-            .run(READLINE_SNIPPET, &[], Some("1\n2\n3\n"), &[], None)
+            .run(
+                READLINE_SNIPPET,
+                &RunOptions {
+                    stdin: Some("1\n2\n3\n".to_string()),
+                    ..empty_run_options()
+                },
+            )
             .map_or_else(
                 |err| {
                     println!("Error: {}", err);
@@ -304,7 +281,13 @@ impl Guest for Component {
                 },
             );
         let r5 = session
-            .run(READLINE_SNIPPET, &[], Some("4\n100\n"), &[], None)
+            .run(
+                READLINE_SNIPPET,
+                &RunOptions {
+                    stdin: Some("4\n100\n".to_string()),
+                    ..empty_run_options()
+                },
+            )
             .map_or_else(
                 |err| {
                     println!("Error: {}", err);
@@ -316,7 +299,7 @@ impl Guest for Component {
                 },
             );
 
-        r1 && r2 && r3 && r4 && r5
+        r1 & &r2 & &r3 & &r4 & &r5
     }
 
     fn test7() -> bool {
@@ -344,19 +327,14 @@ impl Guest for Component {
 
         let r2 = session
             .run(
-                indoc!(
-                    r#"
-                with open('test/input.txt', 'r') as f:
-                    content = f.read()
-                print(content)
-                with open('test/output.txt', 'w') as f:
-                    f.write(content + ' - Processed by Golem')
-                "#
-                ),
-                &[],
-                None,
-                &[],
-                None,
+                indoc! { r#"
+                    with open('test/input.txt', 'r') as f:
+                        content = f.read()
+                    print(content)
+                    with open('test/output.txt', 'w') as f:
+                        f.write(content + ' - Processed by Golem')
+                "# },
+                &empty_run_options(),
             )
             .map_or_else(
                 |err| {
@@ -391,20 +369,15 @@ impl Guest for Component {
 
         let r5 = session
             .run(
-                indoc!(
-                    r#"
+                indoc! { r#"
                 with open('input.txt', 'r') as f:
                     content = f.read()
                 print(os.getcwd())
                 print(content)
                 with open('output2.txt', 'w') as f:
                     f.write(content + ' - Processed by Golem')
-                "#
-                ),
-                &[],
-                None,
-                &[],
-                None,
+                "# },
+                &empty_run_options(),
             )
             .map_or_else(
                 |err| {
@@ -430,6 +403,15 @@ impl Guest for Component {
         );
 
         r1 && r2 && r3 && r4 && r5 && r6
+    }
+}
+
+fn empty_run_options() -> RunOptions {
+    RunOptions {
+        stdin: None,
+        args: None,
+        env: None,
+        limits: None,
     }
 }
 

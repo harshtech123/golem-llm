@@ -1,13 +1,14 @@
 use crate::client::{
     CreateModelResponseRequest, CreateModelResponseResponse, Detail, InnerInput, InnerInputItem,
-    Input, InputItem, OutputItem, OutputMessageContent, Tool,
+    Input, InputItem, OpenOutputItem, OutputItem, OutputMessageContent, Tool,
 };
 use base64::{engine::general_purpose, Engine as _};
 use golem_llm::error::error_code_from_status;
 use golem_llm::golem::llm::llm::{
-    ChatEvent, CompleteResponse, Config, ContentPart, Error, ErrorCode, ImageDetail,
-    ImageReference, Message, ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
+    Config, ContentPart, Error, ErrorCode, Event, ImageDetail, ImageReference, Message, Response,
+    ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
 };
+use log::trace;
 use reqwest::StatusCode;
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -19,9 +20,13 @@ pub fn create_request(
 ) -> CreateModelResponseRequest {
     let options = config
         .provider_options
-        .into_iter()
-        .map(|kv| (kv.key, kv.value))
-        .collect::<HashMap<_, _>>();
+        .map(|options| {
+            options
+                .into_iter()
+                .map(|kv| (kv.key, kv.value))
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_default();
 
     CreateModelResponseRequest {
         input: Input::List(items),
@@ -40,45 +45,50 @@ pub fn create_request(
     }
 }
 
-pub fn messages_to_input_items(messages: Vec<Message>) -> Vec<InputItem> {
+pub fn events_to_input_items(events: Vec<Event>) -> Vec<InputItem> {
     let mut items = Vec::new();
-    for message in messages {
-        items.push(llm_message_to_openai_message(message));
+    for event in events {
+        match event {
+            Event::Message(message) => items.push(llm_message_to_openai_input_item(message)),
+            Event::Response(response) => items.extend(response_to_openai_input_items(response)),
+            Event::ToolResults(tool_results) => {
+                items.extend(tool_results.into_iter().map(tool_result_to_input_item))
+            }
+        }
     }
     items
 }
 
-pub fn tool_results_to_input_items(tool_results: Vec<(ToolCall, ToolResult)>) -> Vec<InputItem> {
-    let mut items = Vec::new();
-    for (tool_call, tool_result) in tool_results {
-        let tool_call = InputItem::ToolCall {
-            arguments: tool_call.arguments_json,
-            call_id: tool_call.id,
-            name: tool_call.name,
-        };
-        let tool_result = match tool_result {
-            ToolResult::Success(success) => InputItem::ToolResult {
-                call_id: success.id,
-                output: format!(r#"{{ "success": {} }}"#, success.result_json),
-            },
-            ToolResult::Error(error) => InputItem::ToolResult {
-                call_id: error.id,
-                output: format!(
-                    r#"{{ "error": {{ "code": {}, "message": {} }} }}"#,
-                    error.error_code.unwrap_or_default(),
-                    error.error_message
-                ),
-            },
-        };
-        items.push(tool_call);
-        items.push(tool_result);
+pub fn tool_call_to_input_item(tool_call: ToolCall) -> InputItem {
+    InputItem::ToolCall {
+        arguments: tool_call.arguments_json,
+        call_id: tool_call.id,
+        name: tool_call.name,
     }
-    items
 }
 
-pub fn tool_defs_to_tools(tool_definitions: &[ToolDefinition]) -> Result<Vec<Tool>, Error> {
+pub fn tool_result_to_input_item(tool_result: ToolResult) -> InputItem {
+    match tool_result {
+        ToolResult::Success(success) => InputItem::ToolResult {
+            call_id: success.id,
+            output: format!(r#"{{ "success": {} }}"#, success.result_json),
+        },
+        ToolResult::Error(error) => InputItem::ToolResult {
+            call_id: error.id,
+            output: format!(
+                r#"{{ "error": {{ "code": {}, "message": {} }} }}"#,
+                error.error_code.unwrap_or_default(),
+                error.error_message
+            ),
+        },
+    }
+}
+
+pub fn tool_defs_to_tools(
+    tool_definitions: Option<Vec<ToolDefinition>>,
+) -> Result<Vec<Tool>, Error> {
     let mut tools = Vec::new();
-    for tool_def in tool_definitions {
+    for tool_def in tool_definitions.unwrap_or_default() {
         match serde_json::from_str(&tool_def.parameters_schema) {
             Ok(value) => {
                 let tool = Tool::Function {
@@ -104,7 +114,7 @@ pub fn tool_defs_to_tools(tool_definitions: &[ToolDefinition]) -> Result<Vec<Too
     Ok(tools)
 }
 
-pub fn to_openai_role_name(role: Role) -> &'static str {
+pub fn to_openai_role_name(role: &Role) -> &'static str {
     match role {
         Role::User => "user",
         Role::Assistant => "assistant",
@@ -113,49 +123,77 @@ pub fn to_openai_role_name(role: Role) -> &'static str {
     }
 }
 
-pub fn llm_message_to_openai_message(message: Message) -> InputItem {
+pub fn content_part_to_inner_input_item(role: &Role, content_part: ContentPart) -> InnerInputItem {
+    fn convert_image_detail(detail: Option<ImageDetail>) -> Detail {
+        match detail {
+            Some(ImageDetail::Auto) => Detail::Auto,
+            Some(ImageDetail::Low) => Detail::Low,
+            Some(ImageDetail::High) => Detail::High,
+            None => Detail::default(),
+        }
+    }
+
+    match content_part {
+        ContentPart::Text(msg) => match role {
+            Role::Assistant => InnerInputItem::TextOutput { text: msg },
+            _ => InnerInputItem::TextInput { text: msg },
+        },
+        ContentPart::Image(image_reference) => match image_reference {
+            ImageReference::Url(image_url) => InnerInputItem::ImageInput {
+                image_url: image_url.url,
+                detail: convert_image_detail(image_url.detail),
+            },
+            ImageReference::Inline(image_source) => {
+                let base64_data = general_purpose::STANDARD.encode(&image_source.data);
+                let mime_type = &image_source.mime_type; // This is already a string
+                let data_url = format!("data:{mime_type};base64,{base64_data}");
+
+                InnerInputItem::ImageInput {
+                    image_url: data_url,
+                    detail: convert_image_detail(image_source.detail),
+                }
+            }
+        },
+    }
+}
+
+pub fn llm_message_to_openai_input_item(message: Message) -> InputItem {
+    let role = message.role;
+    InputItem::InputMessage {
+        role: to_openai_role_name(&role).to_string(),
+        content: InnerInput::List(
+            message
+                .content
+                .into_iter()
+                .map(|part| content_part_to_inner_input_item(&role, part))
+                .collect(),
+        ),
+    }
+}
+
+pub fn response_to_openai_input_items(message: Response) -> Vec<InputItem> {
     let mut items = Vec::new();
 
-    for content_part in message.content {
-        let item = match content_part {
-            ContentPart::Text(msg) => match message.role {
-                Role::Assistant => InnerInputItem::TextOutput { text: msg },
-                _ => InnerInputItem::TextInput { text: msg },
-            },
-            ContentPart::Image(image_reference) => match image_reference {
-                ImageReference::Url(image_url) => InnerInputItem::ImageInput {
-                    image_url: image_url.url,
-                    detail: match image_url.detail {
-                        Some(ImageDetail::Auto) => Detail::Auto,
-                        Some(ImageDetail::Low) => Detail::Low,
-                        Some(ImageDetail::High) => Detail::High,
-                        None => Detail::default(),
-                    },
-                },
-                ImageReference::Inline(image_source) => {
-                    let base64_data = general_purpose::STANDARD.encode(&image_source.data);
-                    let mime_type = &image_source.mime_type; // This is already a string
-                    let data_url = format!("data:{mime_type};base64,{base64_data}");
+    let role = Role::Assistant;
 
-                    InnerInputItem::ImageInput {
-                        image_url: data_url,
-                        detail: match image_source.detail {
-                            Some(ImageDetail::Auto) => Detail::Auto,
-                            Some(ImageDetail::Low) => Detail::Low,
-                            Some(ImageDetail::High) => Detail::High,
-                            None => Detail::default(),
-                        },
-                    }
-                }
-            },
-        };
-        items.push(item);
+    if !message.content.is_empty() {
+        items.push(InputItem::InputMessage {
+            role: to_openai_role_name(&role).to_string(),
+            content: InnerInput::List(
+                message
+                    .content
+                    .into_iter()
+                    .map(|part| content_part_to_inner_input_item(&role, part))
+                    .collect(),
+            ),
+        })
     }
 
-    InputItem::InputMessage {
-        role: to_openai_role_name(message.role).to_string(),
-        content: InnerInput::List(items),
+    if !message.tool_calls.is_empty() {
+        items.extend(message.tool_calls.into_iter().map(tool_call_to_input_item))
     }
+
+    items
 }
 
 pub fn parse_error_code(code: String) -> ErrorCode {
@@ -169,9 +207,9 @@ pub fn parse_error_code(code: String) -> ErrorCode {
     }
 }
 
-pub fn process_model_response(response: CreateModelResponseResponse) -> ChatEvent {
+pub fn process_model_response(response: CreateModelResponseResponse) -> Result<Response, Error> {
     if let Some(error) = response.error {
-        ChatEvent::Error(Error {
+        Err(Error {
             code: parse_error_code(error.code),
             message: error.message,
             provider_error_json: None,
@@ -184,44 +222,45 @@ pub fn process_model_response(response: CreateModelResponseResponse) -> ChatEven
 
         for output_item in response.output {
             match output_item {
-                OutputItem::Message { content, .. } => {
-                    for content in content {
-                        match content {
-                            OutputMessageContent::Text { text, .. } => {
-                                contents.push(ContentPart::Text(text));
-                            }
-                            OutputMessageContent::Refusal { refusal, .. } => {
-                                contents.push(ContentPart::Text(format!("Refusal: {refusal}")));
+                OpenOutputItem::Known(output_item) => match output_item {
+                    OutputItem::Message { content, .. } => {
+                        for content in content {
+                            match content {
+                                OutputMessageContent::Text { text, .. } => {
+                                    contents.push(ContentPart::Text(text));
+                                }
+                                OutputMessageContent::Refusal { refusal, .. } => {
+                                    contents.push(ContentPart::Text(format!("Refusal: {refusal}")));
+                                }
                             }
                         }
                     }
-                }
-                OutputItem::ToolCall {
-                    arguments,
-                    call_id,
-                    name,
-                    ..
-                } => {
-                    let tool_call = ToolCall {
-                        id: call_id,
+                    OutputItem::ToolCall {
+                        arguments,
+                        call_id,
                         name,
-                        arguments_json: arguments,
-                    };
-                    tool_calls.push(tool_call);
+                        ..
+                    } => {
+                        let tool_call = ToolCall {
+                            id: call_id,
+                            name,
+                            arguments_json: arguments,
+                        };
+                        tool_calls.push(tool_call);
+                    }
+                },
+                OpenOutputItem::Other(value) => {
+                    trace!("Ignoring unknown output item: {value:?}");
                 }
             }
         }
 
-        if contents.is_empty() {
-            ChatEvent::ToolRequest(tool_calls)
-        } else {
-            ChatEvent::Message(CompleteResponse {
-                id: response.id,
-                content: contents,
-                tool_calls,
-                metadata,
-            })
-        }
+        Ok(Response {
+            id: response.id,
+            content: contents,
+            tool_calls,
+            metadata,
+        })
     }
 }
 

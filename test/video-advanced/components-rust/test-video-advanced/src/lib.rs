@@ -1,11 +1,14 @@
 #[allow(static_mut_refs)]
 mod bindings;
 
-use golem_rust::atomically;
 use crate::bindings::exports::test::video_advanced_exports::test_video_api::*;
+use crate::bindings::golem::video_generation::advanced::{
+    ExtendVideoOptions, GenerateVideoEffectsOptions, MultImageGenerationOptions,
+};
 use crate::bindings::golem::video_generation::types;
-use crate::bindings::golem::video_generation::{video_generation, advanced, lip_sync};
+use crate::bindings::golem::video_generation::{advanced, lip_sync, video_generation};
 use crate::bindings::test::helper_client::test_helper_client::TestHelperApi;
+use golem_rust::atomically;
 use std::fs::File;
 use std::io::Read;
 use std::thread;
@@ -14,11 +17,10 @@ use std::time::Duration;
 struct Component;
 
 impl Guest for Component {
-
     /// Test1 - Image to video generation with first frame and last frame included (both inline images)
     fn test1() -> String {
         println!("Test1: Image to video with first frame and last frame");
-        
+
         // Load test image for both first and last frame
         let (first_image_bytes, first_image_mime_type) = match load_file_bytes("/data/first.png") {
             Ok((bytes, mime_type)) => (bytes, mime_type),
@@ -202,7 +204,7 @@ impl Guest for Component {
             Ok(voices) => {
                 let mut result = String::new();
                 result.push_str("Available voices:\n");
-                
+
                 for voice in voices {
                     result.push_str(&format!(
                         "Voice ID: {}, Name: {}, Language: {:?}\n",
@@ -286,7 +288,7 @@ impl Guest for Component {
             Err(err) => return format!("ERROR: {}", err),
         };
 
-        let input_image = types::InputImage {
+        let input = types::InputImage {
             data: types::MediaData::Bytes(types::RawBytes {
                 bytes: image_bytes,
                 mime_type: image_mime_type,
@@ -296,13 +298,13 @@ impl Guest for Component {
         let effect = types::EffectType::Single(types::SingleImageEffects::Fuzzyfuzzy);
 
         println!("Sending single image effect request...");
-        let job_id = match advanced::generate_video_effects(
-            &input_image,
-            &effect,
-            None,
-            None,
-            None,
-        ) {
+        let job_id = match advanced::generate_video_effects(&GenerateVideoEffectsOptions {
+            input,
+            effect,
+            model: None,
+            duration: None,
+            mode: None,
+        }) {
             Ok(id) => id.trim().to_string(),
             Err(error) => return format!("ERROR: Failed to generate video effects: {:?}", error),
         };
@@ -314,7 +316,7 @@ impl Guest for Component {
     fn test8() -> String {
         println!("Test8: Video effects with two images");
 
-        let input_image = types::InputImage {
+        let input = types::InputImage {
             data: types::MediaData::Url("https://p2-kling.klingai.com/bs2/upload-ylab-stunt/c54e463c95816d959602f1f2541c62b2.png".to_string()),
         };
 
@@ -330,13 +332,13 @@ impl Guest for Component {
         let effect = types::EffectType::Dual(dual_effect);
 
         println!("Sending dual image effect request...");
-        let job_id = match advanced::generate_video_effects(
-            &input_image,
-            &effect,
-            None,
-            None,
-            None,
-        ) {
+        let job_id = match advanced::generate_video_effects(&GenerateVideoEffectsOptions {
+            input,
+            effect,
+            model: None,
+            duration: None,
+            mode: None,
+        }) {
             Ok(id) => id.trim().to_string(),
             Err(error) => return format!("ERROR: Failed to generate video effects: {:?}", error),
         };
@@ -379,9 +381,9 @@ impl Guest for Component {
 
         // First poll until completion
         let _poll_result = poll_job_until_complete(&job_id, "test9_initial");
-        
+
         // For test9, we need to get the generation-id from the completed video
-        // Since poll_job_until_complete returns a string, 
+        // Since poll_job_until_complete returns a string,
         // we need to poll again to get the actual video result
         match video_generation::poll(&job_id) {
             Ok(video_result) => {
@@ -400,15 +402,18 @@ impl Guest for Component {
                     return "ERROR: No videos in result".to_string();
                 };
 
-                println!("Attempting to extend video with generation ID: {}", generation_id);
-                
-                match advanced::extend_video(
-                    &generation_id,
-                    Some("and the sunset fades into night"),
-                    None,
-                    None,
-                    None,
-                ) {
+                println!(
+                    "Attempting to extend video with generation ID: {}",
+                    generation_id
+                );
+
+                match advanced::extend_video(&ExtendVideoOptions {
+                    video_id: generation_id,
+                    prompt: Some("and the sunset fades into night".to_string()),
+                    negative_prompt: None,
+                    cfg_scale: None,
+                    provider_options: None,
+                }) {
                     Ok(extend_job_id) => {
                         let extend_job_id = extend_job_id.trim().to_string();
                         poll_job_until_complete(&extend_job_id, "test9_extended")
@@ -428,7 +433,7 @@ impl Guest for Component {
     fn testx() -> String {
         println!("Test10: Multi-image generation (2 URLs + 1 inline raw bytes)");
 
-        // Load one image as inline bytes  
+        // Load one image as inline bytes
         let (image_bytes, image_mime_type) = match load_file_bytes("/data/multi-image.jpeg") {
             Ok((bytes, mime_type)) => (bytes, mime_type),
             Err(err) => return format!("ERROR: {}", err),
@@ -471,12 +476,18 @@ impl Guest for Component {
             camera_control: None,
         };
 
-        let prompt: Option<&str> = Some("A girl riding a unicorn in the forest, cinematic realism style");
+        let prompt = "A girl riding a unicorn in the forest, cinematic realism style";
 
         println!("Sending multi-image generation request...");
-        let job_id = match advanced::multi_image_generation(&input_images, prompt, &config) {
+        let job_id = match advanced::multi_image_generation(&MultImageGenerationOptions {
+            input_images,
+            prompt: Some(prompt.to_string()),
+            config,
+        }) {
             Ok(id) => id.trim().to_string(),
-            Err(error) => return format!("ERROR: Failed to generate multi-image video: {:?}", error),
+            Err(error) => {
+                return format!("ERROR: Failed to generate multi-image video: {:?}", error)
+            }
         };
 
         poll_job_until_complete(&job_id, "test10")
@@ -545,11 +556,13 @@ impl Guest for Component {
         // Step 4: Extend the video with the generation-id
         println!("Extending video with generation ID: {}", generation_id);
         let extend_job_id = match advanced::extend_video(
-            &generation_id,
-            Some("continue the video with a businesswoman with red hair, in a modern office, front facing, looking at the camera, no camera movement"),
-            None,
-            None,
-            None,
+            &ExtendVideoOptions {
+                video_id: generation_id,
+                prompt: Some("continue the video with a businesswoman with red hair, in a modern office, front facing, looking at the camera, no camera movement".to_string()),
+                negative_prompt: None,
+                cfg_scale: None,
+                provider_options: None,
+            }
         ) {
             Ok(id) => id.trim().to_string(),
             Err(error) => return format!("ERROR: Failed to extend video: {:?}", error),
@@ -583,7 +596,10 @@ impl Guest for Component {
         };
 
         // Step 6: Perform lip-sync on the extended video
-        println!("Performing lip-sync on video with generation ID: {}", extended_generation_id);
+        println!(
+            "Performing lip-sync on video with generation ID: {}",
+            extended_generation_id
+        );
         let lip_sync_video = types::LipSyncVideo::VideoId(extended_generation_id);
 
         let text_to_speech = types::TextToSpeech {
@@ -604,7 +620,6 @@ impl Guest for Component {
         // Step 7: Save and print the final video path
         poll_job_until_complete(&lip_sync_job_id, "test11_lip_sync")
     }
-
 }
 
 // Helper function to save video result
@@ -615,11 +630,14 @@ fn save_video_result(video_result: &types::VideoResult, test_name: &str) -> Stri
         }
         // Handle multiple videos by collecting all results
         let mut results = Vec::new();
-        
+
         for (i, video_data) in videos.iter().enumerate() {
             // Since we no longer download video data, just display the URL
             if let Some(uri) = &video_data.uri {
-                results.push(format!("Video {}-{} available at URI: {}", test_name, i, uri));
+                results.push(format!(
+                    "Video {}-{} available at URI: {}",
+                    test_name, i, uri
+                ));
             } else {
                 results.push(format!("No URI available for video {}-{}", test_name, i));
             }
@@ -666,36 +684,40 @@ fn poll_job_until_complete(job_id: &str, test_name: &str) -> String {
     // Poll every 5 seconds until completion (Kling generation takes few minutes)
     loop {
         match video_generation::poll(&job_id) {
-            Ok(video_result) => {
-                match video_result.status {
-                    types::JobStatus::Pending => {
-                        println!("{} is pending...", test_name);
-                    }
-                    types::JobStatus::Running => {
-                        println!("{} is running...", test_name);
-                    }
-                    types::JobStatus::Succeeded => {
-                        println!("{} completed successfully!", test_name);
-                        let file_path = save_video_result(&video_result, test_name);
-                        return format!("{} generated successfully. Saved to: {}", test_name, file_path);
-                    }
-                    types::JobStatus::Failed(error_msg) => {
-                        return format!("{} failed: {}", test_name, error_msg);
-                    }
+            Ok(video_result) => match video_result.status {
+                types::JobStatus::Pending => {
+                    println!("{} is pending...", test_name);
                 }
-            }
+                types::JobStatus::Running => {
+                    println!("{} is running...", test_name);
+                }
+                types::JobStatus::Succeeded => {
+                    println!("{} completed successfully!", test_name);
+                    let file_path = save_video_result(&video_result, test_name);
+                    return format!(
+                        "{} generated successfully. Saved to: {}",
+                        test_name, file_path
+                    );
+                }
+                types::JobStatus::Failed(error_msg) => {
+                    return format!("{} failed: {}", test_name, error_msg);
+                }
+            },
             Err(error) => {
                 return format!("Error polling {}: {:?}", test_name, error);
             }
         }
-        
+
         // Wait 5 seconds before polling again
         thread::sleep(Duration::from_secs(5));
     }
 }
 
 fn poll_job_until_complete_with_durability(job_id: &str, test_name: &str) -> String {
-    println!("Polling for {} results with job ID: {} (with durability test)", test_name, job_id);
+    println!(
+        "Polling for {} results with job ID: {} (with durability test)",
+        test_name, job_id
+    );
 
     // Wait 5 seconds after job creation before starting polling
     println!("Waiting 5 seconds for job initialization...");
@@ -703,33 +725,37 @@ fn poll_job_until_complete_with_durability(job_id: &str, test_name: &str) -> Str
 
     let name = std::env::var("GOLEM_WORKER_NAME").unwrap();
     let mut round = 0;
-   
+
     // Poll every 5 seconds until completion
     loop {
         match video_generation::poll(&job_id) {
-            Ok(video_result) => {
-                match video_result.status {
-                    types::JobStatus::Pending => {
-                        println!("{} is pending... (round {})", test_name, round);
-                    }
-                    types::JobStatus::Running => {
-                        println!("{} is running... (round {})", test_name, round);
-                    }
-                    types::JobStatus::Succeeded => {
-                        println!("{} completed successfully after {} rounds!", test_name, round);
-                        let file_path = save_video_result(&video_result, test_name);
-                        return format!("{} generated successfully. Saved to: {} (durability test passed)", test_name, file_path);
-                    }
-                    types::JobStatus::Failed(error_msg) => {
-                        return format!("{} failed: {}", test_name, error_msg);
-                    }
+            Ok(video_result) => match video_result.status {
+                types::JobStatus::Pending => {
+                    println!("{} is pending... (round {})", test_name, round);
                 }
-            }
+                types::JobStatus::Running => {
+                    println!("{} is running... (round {})", test_name, round);
+                }
+                types::JobStatus::Succeeded => {
+                    println!(
+                        "{} completed successfully after {} rounds!",
+                        test_name, round
+                    );
+                    let file_path = save_video_result(&video_result, test_name);
+                    return format!(
+                        "{} generated successfully. Saved to: {} (durability test passed)",
+                        test_name, file_path
+                    );
+                }
+                types::JobStatus::Failed(error_msg) => {
+                    return format!("{} failed: {}", test_name, error_msg);
+                }
+            },
             Err(error) => {
                 return format!("Error polling {}: {:?}", test_name, error);
             }
         }
-        
+
         // Durability test simulation: simulate a crash during polling, but only first time
         // After automatic recovery it will continue and finish the request successfully
         if round == 1 {
@@ -743,7 +769,7 @@ fn poll_job_until_complete_with_durability(job_id: &str, test_name: &str) -> Str
         }
 
         round += 1;
-        
+
         println!("Sleeping for 5 seconds");
         // Wait 5 seconds before polling again
         thread::sleep(Duration::from_secs(5));

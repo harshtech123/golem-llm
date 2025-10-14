@@ -126,6 +126,7 @@ impl EventStreamState {
 /// A Stream of events
 pub struct EventStream {
     stream: Utf8Stream,
+    body: reqwest::IncomingBody,
     buffer: String,
     builder: EventBuilder,
     state: EventStreamState,
@@ -134,9 +135,10 @@ pub struct EventStream {
 
 impl LlmStream for EventStream {
     /// Initialize the EventStream with a Stream
-    fn new(stream: InputStream) -> Self {
+    fn new(stream: InputStream, body: reqwest::IncomingBody) -> Self {
         Self {
             stream: Utf8Stream::new(stream),
+            body,
             buffer: String::new(),
             builder: EventBuilder::default(),
             state: EventStreamState::NotStarted,

@@ -20,7 +20,7 @@ pub(crate) fn config_from_env() -> Result<ConnectionConfig, GraphError> {
     let password = env::var("JANUSGRAPH_PASSWORD").ok();
 
     Ok(ConnectionConfig {
-        hosts: vec![host],
+        hosts: Some(vec![host]),
         port,
         database_name: None,
         username,
