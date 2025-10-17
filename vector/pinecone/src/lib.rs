@@ -759,12 +759,12 @@ impl NamespacesGuest for PineconeComponent {
             Ok(namespaces) => {
                 let mut namespace_infos = Vec::new();
                 for ns in namespaces.namespaces {
-                    namespace_infos.push(NamespaceInfo {
-                        name: ns,
+                    namespace_infos.push(golem_vector::golem::vector::namespaces::NamespaceInfo {
+                        name: ns.name,
                         collection: collection.clone(),
-                        vector_count: 0,
+                        vector_count: ns.record_count,
                         size_bytes: 0,
-                        created_at: None,
+                        created_at: None, 
                         metadata: None,
                     });
                 }

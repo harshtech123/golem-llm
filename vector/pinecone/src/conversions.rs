@@ -56,22 +56,8 @@ pub fn vector_data_to_sparse(vector_data: &VectorData) -> Option<crate::client::
                 values: sparse.values.clone(),
             })
         }
-        VectorData::Dense(dense) => {
-            let mut indices = Vec::new();
-            let mut values = Vec::new();
-            
-            for (i, &value) in dense.iter().enumerate() {
-                if value != 0.0 {
-                    indices.push(i as u32);
-                    values.push(value);
-                }
-            }
-            
-            if indices.is_empty() {
-                None
-            } else {
-                Some(crate::client::SparseValues { indices, values })
-            }
+        VectorData::Dense(_dense) => {
+            None
         }
         _ => None,
     }
@@ -232,20 +218,28 @@ pub fn extract_dense_and_sparse_from_query(query: &SearchQuery) -> (Option<Vec<f
     match query {
         SearchQuery::Vector(vector_data) => {
             let dense = match vector_data {
-                VectorData::Dense(_) | VectorData::Hybrid(_) => Some(vector_data_to_dense(vector_data)),
+                VectorData::Dense(_) => Some(vector_data_to_dense(vector_data)),
+                VectorData::Hybrid(_) => Some(vector_data_to_dense(vector_data)),
                 _ => None,
             };
-            let sparse = vector_data_to_sparse(vector_data);
+            let sparse = match vector_data {
+                VectorData::Sparse(_) | VectorData::Hybrid(_) => vector_data_to_sparse(vector_data),
+                _ => None,
+            };
             (dense, sparse)
         }
         SearchQuery::ById(_) => (None, None),
         SearchQuery::MultiVector(vectors) => {
             if let Some((_, vector_data)) = vectors.first() {
                 let dense = match vector_data {
-                    VectorData::Dense(_) | VectorData::Hybrid(_) => Some(vector_data_to_dense(vector_data)),
+                    VectorData::Dense(_) => Some(vector_data_to_dense(vector_data)),
+                    VectorData::Hybrid(_) => Some(vector_data_to_dense(vector_data)),
                     _ => None,
                 };
-                let sparse = vector_data_to_sparse(vector_data);
+                let sparse = match vector_data {
+                    VectorData::Sparse(_) | VectorData::Hybrid(_) => vector_data_to_sparse(vector_data),
+                    _ => None,
+                };
                 (dense, sparse)
             } else {
                 (None, None)

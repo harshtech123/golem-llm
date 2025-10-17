@@ -46,6 +46,7 @@ impl PineconeClient {
             .header("Api-Key", &self.api_key)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json")
+            .header("X-Pinecone-API-Version", "2025-04")
     }
 
     fn get_data_plane_url(&self, index_name: &str) -> Result<String, VectorError> {
@@ -580,7 +581,41 @@ pub struct NamespaceSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListNamespacesResponse {
-    pub namespaces: Vec<String>,
+    pub namespaces: Vec<NamespaceInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pagination: Option<NamespacePagination>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NamespaceInfo {
+    pub name: String,
+    #[serde(deserialize_with = "deserialize_string_or_number")]
+    pub record_count: u64,
+}
+
+fn deserialize_string_or_number<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{Deserialize, Error};
+    
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StringOrNumber {
+        String(String),
+        Number(u64),
+    }
+    
+    match StringOrNumber::deserialize(deserializer)? {
+        StringOrNumber::String(s) => s.parse().map_err(D::Error::custom),
+        StringOrNumber::Number(n) => Ok(n),
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NamespacePagination {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

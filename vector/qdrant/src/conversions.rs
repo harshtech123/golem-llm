@@ -5,7 +5,7 @@ use crate::client::{
     SearchRequest, NamedVectorStruct, Filter, WithPayloadSelector, WithVectorSelector,
     GetPointsRequest, DeletePointsRequest, ScrollRequest, CountRequest,
     BatchSearchRequest, RecommendRequest, RecommendExample, Condition, FieldCondition, FieldConditionOneOf,
-    MatchValue, RangeInterface, DiscoverRequest, ContextPair as QdrantContextPair,
+    MatchCondition, MatchValue, RangeInterface, DiscoverRequest, ContextPair as QdrantContextPair,
 };
 use golem_vector::golem::vector::types::{
     VectorRecord, VectorData, MetadataValue, DistanceMetric,
@@ -42,15 +42,34 @@ pub fn collection_info_to_export_collection_info(
     name: &str,
     info: &QdrantCollectionInfo,
 ) -> Result<ExportCollectionInfo, VectorError> {
-    let (dimension, metric) = match &info.config.vectors {
-        VectorConfig::Single(params) => (params.size, qdrant_distance_to_distance_metric(&params.distance)),
-        VectorConfig::Multiple(vectors) => {
-            if let Some((_, params)) = vectors.iter().next() {
-                (params.size, qdrant_distance_to_distance_metric(&params.distance))
-            } else {
-                return Err(VectorError::ProviderError("No vector configuration found".to_string()));
+    let (dimension, metric) = if let Some(params) = &info.config.params {
+        if let Some(vectors) = &params.vectors {
+            match vectors {
+                VectorConfig::Single(params) => (params.size, qdrant_distance_to_distance_metric(&params.distance)),
+                VectorConfig::Multiple(vectors) => {
+                    if let Some((_, params)) = vectors.iter().next() {
+                        (params.size, qdrant_distance_to_distance_metric(&params.distance))
+                    } else {
+                        return Err(VectorError::ProviderError("No vector configurations found".to_string()));
+                    }
+                }
+            }
+        } else {
+            return Err(VectorError::ProviderError("No vectors configuration found in params".to_string()));
+        }
+    } else if let Some(vectors) = &info.config.vectors {
+        match vectors {
+            VectorConfig::Single(params) => (params.size, qdrant_distance_to_distance_metric(&params.distance)),
+            VectorConfig::Multiple(vectors) => {
+                if let Some((_, params)) = vectors.iter().next() {
+                    (params.size, qdrant_distance_to_distance_metric(&params.distance))
+                } else {
+                    return Err(VectorError::ProviderError("No vector configurations found".to_string()));
+                }
             }
         }
+    } else {
+        return Err(VectorError::ProviderError("No vector configuration found".to_string()));
     };
 
     let vector_count = info.points_count.unwrap_or(0);
@@ -83,10 +102,12 @@ pub fn create_collection_config(
     };
 
     CollectionConfig {
-        vectors: VectorConfig::Single(vector_params),
+        params: None,
         hnsw_config: None,
         wal_config: None,
-        optimizers_config: None,
+        optimizer_config: None,
+        quantization_config: None,
+        vectors: Some(VectorConfig::Single(vector_params)),
         shard_number: None,
         on_disk_payload: None,
     }
@@ -764,7 +785,11 @@ fn filter_condition_to_qdrant_condition(condition: &FilterCondition) -> Result<C
             let match_value = metadata_value_to_match_value(&condition.value)?;
             FieldCondition {
                 key: condition.field.clone(),
-                condition: FieldConditionOneOf::Match { r#match: match_value },
+                 condition: FieldConditionOneOf::Match { 
+                    r#match: MatchCondition { 
+                        value: match_value 
+                    } 
+                },
             }
         }
         FilterOperator::Ne => {
@@ -913,7 +938,9 @@ fn filter_condition_to_qdrant_condition(condition: &FilterCondition) -> Result<C
                 FieldCondition {
                     key: condition.field.clone(),
                     condition: FieldConditionOneOf::Match { 
-                        r#match: MatchValue::Keywords(match_values?) 
+                        r#match: MatchCondition { 
+                            value: MatchValue::Strings(match_values?) 
+                        } 
                     },
                 }
             } else {
@@ -959,7 +986,7 @@ fn filter_condition_to_qdrant_condition(condition: &FilterCondition) -> Result<C
 
 fn metadata_value_to_match_value(value: &MetadataValue) -> Result<MatchValue, VectorError> {
     match value {
-        MetadataValue::StringVal(s) => Ok(MatchValue::Keyword(s.clone())),
+        MetadataValue::StringVal(s) => Ok(MatchValue::String(s.clone())),
         MetadataValue::IntegerVal(i) => Ok(MatchValue::Integer(*i)),
         MetadataValue::BooleanVal(b) => Ok(MatchValue::Boolean(*b)),
         _ => Err(VectorError::InvalidParams("Unsupported metadata value type for match".to_string())),

@@ -331,7 +331,7 @@ impl VectorsGuest for MilvusComponent {
         )?;
         
         match client.delete(&delete_request) {
-            Ok(response) => Ok(response.data.delete_count),
+            Ok(_response) => Ok(ids.len() as u32), 
             Err(e) => Err(e),
         }
     }
@@ -352,7 +352,9 @@ impl VectorsGuest for MilvusComponent {
         )?;
         
         match client.delete(&delete_request) {
-            Ok(response) => Ok(response.data.delete_count),
+            Ok(_response) => {
+                Ok(0)
+            },
             Err(e) => Err(e),
         }
     }

@@ -49,9 +49,15 @@ pub fn collection_info_to_export_collection_info(
 
     let dimension = vector_field.element_type_params
         .as_ref()
-        .and_then(|params| params.get("dim"))
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32)
+        .and_then(|params_array| {
+            params_array.iter()
+                .find_map(|params| params.get("key")
+                    .and_then(|k| k.as_str())
+                    .filter(|&k| k == "dim")
+                    .and_then(|_| params.get("value"))
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| s.parse::<u32>().ok()))
+        })
         .unwrap_or(0);
 
     let metric = info.indexes.first()
@@ -241,7 +247,7 @@ pub fn create_query_request(
     };
 
     let ids_json = if let Some(ids) = ids {
-        Some(ids.iter().map(|id| Value::String(id.clone())).collect())
+        Some(ids.iter().map(|id| json_value_from_id(id)).collect())
     } else {
         None
     };
@@ -260,21 +266,20 @@ pub fn create_query_request(
 
 pub fn create_get_request(
     collection_name: &str,
-    db_name: &str,
+    _db_name: &str,
     ids: &[String],
     output_fields: Option<&[String]>,
 ) -> GetRequest {
     GetRequest {
-        db_name: db_name.to_string(),
         collection_name: collection_name.to_string(),
-        ids: ids.iter().map(|id| Value::String(id.clone())).collect(),
+        id: ids.iter().map(|id| json_value_from_id(id)).collect(),
         output_fields: output_fields.map(|f| f.to_vec()),
     }
 }
 
 pub fn create_delete_request(
     collection_name: &str,
-    db_name: &str,
+    _db_name: &str, 
     ids: Option<&[String]>,
     filter: Option<&FilterExpression>,
     partition_name: Option<&str>,
@@ -286,30 +291,40 @@ pub fn create_delete_request(
     };
 
     let ids_json = if let Some(ids) = ids {
-        Some(ids.iter().map(|id| Value::String(id.clone())).collect())
+        Some(ids.iter().map(|id| json_value_from_id(id)).collect())
     } else {
         None
     };
 
     Ok(DeleteRequest {
-        db_name: db_name.to_string(),
         collection_name: collection_name.to_string(),
-        ids: ids_json,
+        id: ids_json,
         filter: filter_expr,
-        partition_name: partition_name.map(|s| s.to_string()),
+        partition_names: partition_name.map(|s| vec![s.to_string()]),
     })
 }
 
 pub fn milvus_search_results_to_search_results(
-    results: &[Vec<MilvusSearchResult>],
+    results_value: &serde_json::Value,
 ) -> Result<Vec<SearchResult>, VectorError> {
-    if results.is_empty() {
-        return Ok(Vec::new());
+    if let Ok(nested_results) = serde_json::from_value::<Vec<Vec<MilvusSearchResult>>>(results_value.clone()) {
+        if nested_results.is_empty() {
+            return Ok(Vec::new());
+        }
+        return convert_results_array(&nested_results[0]);
     }
+    
+    if let Ok(flat_results) = serde_json::from_value::<Vec<MilvusSearchResult>>(results_value.clone()) {
+        return convert_results_array(&flat_results);
+    }
+    
+    Ok(Vec::new())
+}
 
+fn convert_results_array(results: &[MilvusSearchResult]) -> Result<Vec<SearchResult>, VectorError> {
     let mut search_results = Vec::new();
     
-    for result in &results[0] {
+    for result in results {
         let vector_data = if let Some(entity) = &result.entity {
             Some(entity_to_vector_data(entity)?)
         } else {

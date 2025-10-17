@@ -240,6 +240,24 @@ impl QdrantClient {
         parse_response(response, "discover_points")
     }
 
+    pub fn create_field_index(&self, collection_name: &str, field_name: &str, field_type: &str) -> Result<(), VectorError> {
+        trace!("Creating index for field {} in collection: {}", field_name, collection_name);
+
+        let request = serde_json::json!({
+            "field_name": field_name,
+            "field_schema": field_type
+        });
+
+        let response = self.execute_with_retry_sync(|| {
+            self.create_request(Method::PUT, &format!("/collections/{}/index", collection_name))
+                .json(&request)
+                .send()
+        })?;
+
+        parse_response::<serde_json::Value>(response, "create_field_index")?;
+        Ok(())
+    }
+
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,17 +285,42 @@ pub struct CreateCollectionRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CollectionConfig {
-    pub vectors: VectorConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<CollectionParams>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hnsw_config: Option<HnswConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wal_config: Option<WalConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub optimizers_config: Option<OptimizersConfig>,
+    pub optimizer_config: Option<OptimizersConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quantization_config: Option<QuantizationConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vectors: Option<VectorConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shard_number: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_disk_payload: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CollectionParams {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vectors: Option<VectorConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shard_number: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sharding_method: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replication_factor: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub write_consistency_factor: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub read_fan_out_factor: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_disk_payload: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sparse_vectors: Option<HashMap<String, serde_json::Value>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -414,10 +457,9 @@ pub struct CollectionInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OptimizerStatus {
-    pub ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
+#[serde(untagged)]
+pub enum OptimizerStatus {
+    String(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -535,7 +577,7 @@ pub struct FieldCondition {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum FieldConditionOneOf {
-    Match { r#match: MatchValue },
+    Match { r#match: MatchCondition },
     Range { range: RangeInterface },
     GeoBoundingBox { geo_bounding_box: GeoBoundingBox },
     GeoRadius { geo_radius: GeoRadius },
@@ -544,12 +586,17 @@ pub enum FieldConditionOneOf {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MatchCondition {
+    pub value: MatchValue,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum MatchValue {
-    Keyword(String),
+    String(String),
     Integer(i64),
     Boolean(bool),
-    Keywords(Vec<String>),
+    Strings(Vec<String>),
     Integers(Vec<i64>),
     Except(MatchExcept),
 }

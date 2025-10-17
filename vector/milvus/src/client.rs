@@ -266,7 +266,7 @@ impl MilvusClient {
         trace!("Getting vectors by IDs from collection: {}", request.collection_name);
 
         let response = self.execute_with_retry_sync(|| {
-            self.create_request(Method::POST, "/v2/vectordb/entities/get")
+            self.create_request(Method::POST, "/v1/vector/get")
                 .json(request)
                 .send()
         })?;
@@ -278,7 +278,7 @@ impl MilvusClient {
         trace!("Deleting vectors from collection: {}", request.collection_name);
 
         let response = self.execute_with_retry_sync(|| {
-            self.create_request(Method::POST, "/v2/vectordb/entities/delete")
+            self.create_request(Method::POST, "/v1/vector/delete")
                 .json(request)
                 .send()
         })?;
@@ -554,18 +554,18 @@ pub struct CollectionSchema {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldSchema {
-    #[serde(rename = "fieldName")]
+    #[serde(rename = "name")]
     pub field_name: String,
-    #[serde(rename = "dataType")]
+    #[serde(rename = "type")]
     pub data_type: String,
-    #[serde(rename = "isPrimary", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "primaryKey", skip_serializing_if = "Option::is_none")]
     pub is_primary: Option<bool>,
     #[serde(rename = "elementDataType", skip_serializing_if = "Option::is_none")]
     pub element_data_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(rename = "elementTypeParams", skip_serializing_if = "Option::is_none")]
-    pub element_type_params: Option<HashMap<String, serde_json::Value>>,
+    #[serde(rename = "params", skip_serializing_if = "Option::is_none")]
+    pub element_type_params: Option<Vec<HashMap<String, serde_json::Value>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -632,7 +632,7 @@ pub struct SearchRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResponse {
     pub code: i32,
-    pub data: Vec<Vec<SearchResult>>,
+    pub data: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -677,11 +677,9 @@ pub struct QueryResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetRequest {
-    #[serde(rename = "dbName")]
-    pub db_name: String,
     #[serde(rename = "collectionName")]
     pub collection_name: String,
-    pub ids: Vec<serde_json::Value>,
+    pub id: Vec<serde_json::Value>,
     #[serde(rename = "outputFields", skip_serializing_if = "Option::is_none")]
     pub output_fields: Option<Vec<String>>,
 }
@@ -694,28 +692,19 @@ pub struct GetResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteRequest {
-    #[serde(rename = "dbName")]
-    pub db_name: String,
     #[serde(rename = "collectionName")]
     pub collection_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub ids: Option<Vec<serde_json::Value>>,
+    pub id: Option<Vec<serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub filter: Option<String>,
-    #[serde(rename = "partitionName", skip_serializing_if = "Option::is_none")]
-    pub partition_name: Option<String>,
+    #[serde(rename = "partitionNames", skip_serializing_if = "Option::is_none")]
+    pub partition_names: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteResponse {
     pub code: i32,
-    pub data: DeleteData,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DeleteData {
-    #[serde(rename = "deleteCount")]
-    pub delete_count: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -726,8 +715,8 @@ pub struct IndexInfo {
     pub index_name: String,
     #[serde(rename = "metricType")]
     pub metric_type: String,
-    #[serde(rename = "indexType")]
-    pub index_type: String,
+    #[serde(rename = "indexType", skip_serializing_if = "Option::is_none")]
+    pub index_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -966,7 +955,7 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response, operation: &s
                 
                 if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&body) {
                     if let Some(code) = json_value.get("code").and_then(|c| c.as_i64()) {
-                        if code != 0 {
+                        if code != 0 && code != 200 {
                             let message = json_value.get("message")
                                 .and_then(|m| m.as_str())
                                 .unwrap_or("No error message provided");

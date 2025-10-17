@@ -51,6 +51,46 @@ impl QdrantComponent {
 
         Ok(QdrantClient::new(url, api_key))
     }
+    
+    fn metadata_indexes(
+        client: &QdrantClient,
+        collection_name: &str,
+        vectors: &[VectorRecord],
+    ) -> Result<(), VectorError> {
+        use std::collections::HashSet;
+        
+        let mut attempted_fields: HashSet<(String, String)> = HashSet::new();
+        
+        for vector in vectors {
+            if let Some(metadata) = &vector.metadata {
+                for (field_name, field_value) in metadata {
+                    let field_type = match field_value {
+                        MetadataValue::StringVal(_) => "keyword",
+                        MetadataValue::IntegerVal(_) => "integer", 
+                        MetadataValue::NumberVal(_) => "float",
+                        MetadataValue::BooleanVal(_) => "bool",
+                        MetadataValue::GeoVal(_) => "geo",
+                        MetadataValue::ArrayVal(_) | 
+                        MetadataValue::ObjectVal(_) |
+                        MetadataValue::DatetimeVal(_) |
+                        MetadataValue::BlobVal(_) |
+                        MetadataValue::NullVal => continue,
+                    };
+                    
+                    let field_key = (field_name.clone(), field_type.to_string());
+                    
+                    if !attempted_fields.contains(&field_key) {
+                        attempted_fields.insert(field_key);
+                        
+                        if let Err(_) = client.create_field_index(collection_name, field_name, field_type) {
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
 }
 
 impl ExtendedGuest for QdrantComponent {
@@ -216,6 +256,10 @@ impl VectorsGuest for QdrantComponent {
         _namespace: Option<String>,
     ) -> Result<BatchResult, VectorError> {
         let client = Self::create_client()?;
+        
+        if !vectors.is_empty() {
+            Self::metadata_indexes(&client, &collection, &vectors)?;
+        }
         
         let upsert_request = vector_records_to_upsert_request(&vectors)?;
         
@@ -714,13 +758,30 @@ impl AnalyticsGuest for QdrantComponent {
                 
                 Ok(CollectionStats {
                     vector_count: info.points_count.unwrap_or(0),
-                    dimension: match &info.config.vectors {
-                        client::VectorConfig::Single(params) => params.size,
-                        client::VectorConfig::Multiple(map) => {
-                            map.values().next()
-                                .map(|params| params.size)
-                                .unwrap_or(0)
+                    dimension: if let Some(vectors) = &info.config.vectors {
+                        match vectors {
+                            client::VectorConfig::Single(params) => params.size,
+                            client::VectorConfig::Multiple(map) => {
+                                map.values().next()
+                                    .map(|params| params.size)
+                                    .unwrap_or(0)
+                            }
                         }
+                    } else if let Some(params) = &info.config.params {
+                        if let Some(vectors) = &params.vectors {
+                            match vectors {
+                                client::VectorConfig::Single(params) => params.size,
+                                client::VectorConfig::Multiple(map) => {
+                                    map.values().next()
+                                        .map(|params| params.size)
+                                        .unwrap_or(0)
+                                }
+                            }
+                        } else {
+                            0
+                        }
+                    } else {
+                        0
                     },
                     size_bytes: 0, 
                     index_size_bytes: None,
@@ -762,7 +823,7 @@ impl NamespacesGuest for QdrantComponent {
     fn list_namespaces(
         _collection: String,
     ) -> Result<Vec<NamespaceInfo>, VectorError> {
-        Ok(vec![])
+        Err(VectorError::ProviderError("Namespaces not supported in Qdrant".to_string()))
     }
 
     fn get_namespace(
