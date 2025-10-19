@@ -81,7 +81,11 @@ pub fn table_info_to_export_collection_info(
     count: u64,
 ) -> Result<ExportCollectionInfo, VectorError> {
     let vector_column = columns.iter()
-        .find(|col| col.data_type.starts_with("vector"))
+        .find(|col| {
+            col.data_type.starts_with("vector") || 
+            col.data_type.to_lowercase() == "user-defined" ||
+            col.name.to_lowercase() == "embedding"
+        })
         .ok_or_else(|| VectorError::ProviderError("No vector column found".to_string()))?;
 
     let dimension = if vector_column.data_type == "vector" {
@@ -351,7 +355,7 @@ fn string_map_to_metadata(
     metadata
 }
 
-fn filter_expression_to_pg_filters(
+pub fn filter_expression_to_pg_filters(
     filter: &FilterExpression,
 ) -> Result<HashMap<String, String>, VectorError> {
     let sql_where = build_sql_where_clause(filter)?;

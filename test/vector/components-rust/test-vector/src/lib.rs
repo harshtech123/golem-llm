@@ -49,7 +49,8 @@ const TEST_API_KEY: &'static str = "";
 
 // PgVector configuration
 #[cfg(feature = "pgvector")]
-const TEST_ENDPOINT: &'static str = "postgres://postgres@localhost:5432/postgres";
+const TEST_ENDPOINT: &'static str = "postgresql://postgres:mysecretpassword@localhost:3000/mydatabase
+";
 #[cfg(feature = "pgvector")]
 const TEST_DATABASE: &'static str = "postgres";
 

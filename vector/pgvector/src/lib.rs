@@ -7,6 +7,7 @@ use crate::conversions::{
 };
 use golem_vector::config::{with_config_key, with_connection_config_key};
 use golem_vector::durability::{ExtendedGuest, DurableVector};
+use std::collections::HashMap;
 use golem_vector::golem::vector::{
     analytics::{Guest as AnalyticsGuest, FieldStats, CollectionStats},
     collections::{Guest as CollectionsGuest, CollectionInfo, IndexConfig},
@@ -334,13 +335,23 @@ impl VectorsGuest for PgVectorComponent {
     }
 
     fn delete_by_filter(
-        _collection: String,
-        _filter: FilterExpression,
+        collection: String,
+        filter: FilterExpression,
         _namespace: Option<String>,
     ) -> Result<u32, VectorError> {
-        Err(VectorError::UnsupportedFeature(
-            "Delete by filter not yet implemented for pgvector".to_string()
-        ))
+        let client = Self::create_client()?;
+        
+        let filters = crate::conversions::filter_expression_to_pg_filters(&filter)?;
+        
+        let delete_request = client::DeleteByFilterRequest {
+            table_name: collection,
+            filters,
+        };
+        
+        match client.delete_by_filter(&delete_request) {
+            Ok(response) => Ok(response.deleted_count),
+            Err(e) => Err(e),
+        }
     }
 
     fn delete_namespace(
@@ -348,22 +359,62 @@ impl VectorsGuest for PgVectorComponent {
         _namespace: String,
     ) -> Result<u32, VectorError> {
         Err(VectorError::UnsupportedFeature(
-            "PostgreSQL doesn't support namespaces like Pinecone".to_string()
+            "PostgreSQL doesn't support namespaces".to_string()
         ))
     }
 
     fn list_vectors(
-        _collection: String,
+        collection: String,
         _namespace: Option<String>,
-        _filter: Option<FilterExpression>,
-        _limit: Option<u32>,
-        _cursor: Option<String>,
-        _include_vectors: Option<bool>,
-        _include_metadata: Option<bool>,
+        filter: Option<FilterExpression>,
+        limit: Option<u32>,
+        cursor: Option<String>,
+        include_vectors: Option<bool>,
+        include_metadata: Option<bool>,
     ) -> Result<ListResponse, VectorError> {
-        Err(VectorError::UnsupportedFeature(
-            "List vectors not yet implemented for pgvector".to_string()
-        ))
+        let client = Self::create_client()?;
+        
+        let mut select_columns = vec!["id".to_string()];
+        if include_vectors.unwrap_or(true) {
+            select_columns.push("embedding".to_string());
+        }
+        
+        if include_metadata.unwrap_or(true) {
+            let describe_response = client.describe_table(&collection)?;
+            for column in &describe_response.columns {
+                if column.name != "id" && column.name != "embedding" {
+                    select_columns.push(column.name.clone());
+                }
+            }
+        }
+        
+        let filters = if let Some(filter_expr) = filter {
+            crate::conversions::filter_expression_to_pg_filters(&filter_expr)?
+        } else {
+            HashMap::new()
+        };
+        
+        let offset = cursor.as_ref().and_then(|c| c.parse::<u64>().ok());
+        
+        let list_request = client::ListVectorsRequest {
+            table_name: collection,
+            filters,
+            limit: limit.unwrap_or(100),
+            offset,
+            select_columns,
+        };
+        
+        match client.list_vectors(&list_request) {
+            Ok(response) => {
+                let vectors = pg_vector_results_to_vector_records(&response.vectors);
+                Ok(ListResponse {
+                    vectors,
+                    next_cursor: response.cursor,
+                    total_count: None,
+                })
+            },
+            Err(e) => Err(e),
+        }
     }
 
     fn count_vectors(
@@ -532,19 +583,79 @@ impl SearchExtendedGuest for PgVectorComponent {
     }
 
     fn search_range(
-        _collection: String,
-        _vector: VectorData,
-        _min_distance: Option<f32>,
-        _max_distance: f32,
-        _filter: Option<FilterExpression>,
+        collection: String,
+        vector: VectorData,
+        min_distance: Option<f32>,
+        max_distance: f32,
+        filter: Option<FilterExpression>,
         _namespace: Option<String>,
-        _limit: Option<u32>,
-        _include_vectors: Option<bool>,
-        _include_metadata: Option<bool>,
+        limit: Option<u32>,
+        include_vectors: Option<bool>,
+        include_metadata: Option<bool>,
     ) -> Result<Vec<SearchResult>, VectorError> {
-        Err(VectorError::UnsupportedFeature(
-            "Range search not yet implemented for pgvector".to_string()
-        ))
+        let client = Self::create_client()?;
+        
+        let query_vector = match vector {
+            VectorData::Dense(dense) => dense,
+            VectorData::Sparse(sparse) => {
+                let max_idx = sparse.indices.iter().max().unwrap_or(&0);
+                let mut dense = vec![0.0; (*max_idx as usize + 1).max(sparse.indices.len())];
+                for (i, &idx) in sparse.indices.iter().enumerate() {
+                    if (idx as usize) < dense.len() && i < sparse.values.len() {
+                        dense[idx as usize] = sparse.values[i];
+                    }
+                }
+                dense
+            },
+            VectorData::Binary(_) => {
+                return Err(VectorError::UnsupportedFeature(
+                    "Binary vectors not supported in range search".to_string()
+                ));
+            },
+            VectorData::Half(half) => half.data,
+            VectorData::Named(_) => {
+                return Err(VectorError::UnsupportedFeature(
+                    "Named vectors not supported in range search".to_string()
+                ));
+            },
+            VectorData::Hybrid((dense, _sparse)) => dense,
+        };
+        
+        let mut output_fields = vec!["id".to_string()];
+        if include_vectors.unwrap_or(false) {
+            output_fields.push("embedding".to_string());
+        }
+        
+        if include_metadata.unwrap_or(true) {
+            let describe_response = client.describe_table(&collection)?;
+            for column in &describe_response.columns {
+                if column.name != "id" && column.name != "embedding" {
+                    output_fields.push(column.name.clone());
+                }
+            }
+        }
+        
+        let filters = if let Some(filter_expr) = filter {
+            crate::conversions::filter_expression_to_pg_filters(&filter_expr)?
+        } else {
+            HashMap::new()
+        };
+        
+        let range_request = client::SearchRangeRequest {
+            table_name: collection,
+            query_vector,
+            distance_metric: "cosine".to_string(), 
+            min_distance,
+            max_distance,
+            filters,
+            select_columns: output_fields,
+            limit,
+        };
+        
+        match client.search_range(&range_request) {
+            Ok(response) => Ok(pg_search_results_to_search_results(&response.results)),
+            Err(e) => Err(e),
+        }
     }
 
     fn search_text(
@@ -555,7 +666,7 @@ impl SearchExtendedGuest for PgVectorComponent {
         _namespace: Option<String>,
     ) -> Result<Vec<SearchResult>, VectorError> {
         Err(VectorError::UnsupportedFeature(
-            "Text search not supported by pgvector (requires text embedding model)".to_string()
+            "Text search not supported by pgvector".to_string()
         ))
     }
 }
@@ -586,24 +697,66 @@ impl AnalyticsGuest for PgVectorComponent {
     }
 
     fn get_field_stats(
-        _collection: String,
-        _field: String,
+        collection: String,
+        field: String,
         _namespace: Option<String>,
     ) -> Result<FieldStats, VectorError> {
-        Err(VectorError::UnsupportedFeature(
-            "Field statistics not yet implemented for pgvector".to_string()
-        ))
+        let client = Self::create_client()?;
+        
+        let stats_request = client::FieldStatsRequest {
+            table_name: collection,
+            field_name: field,
+        };
+        
+        match client.get_field_stats(&stats_request) {
+            Ok(response) => Ok(FieldStats {
+                field_name: response.field_name,
+                data_type: response.field_type,
+                value_count: response.count,
+                unique_values: response.unique_count.unwrap_or(0),
+                sample_values: Vec::new(),
+                null_count: 0, 
+            }),
+            Err(e) => Err(e),
+        }
     }
 
     fn get_field_distribution(
-        _collection: String,
-        _field: String,
-        _limit: Option<u32>,
+        collection: String,
+        field: String,
+        limit: Option<u32>,
         _namespace: Option<String>,
     ) -> Result<Vec<(MetadataValue, u64)>, VectorError> {
-        Err(VectorError::UnsupportedFeature(
-            "Field distribution not yet implemented for pgvector".to_string()
-        ))
+        let client = Self::create_client()?;
+        
+        let distribution_request = client::FieldDistributionRequest {
+            table_name: collection,
+            field_name: field,
+            limit: limit.unwrap_or(100),
+        };
+        
+        match client.get_field_distribution(&distribution_request) {
+            Ok(response) => {
+                let distribution = response.distribution.into_iter()
+                    .map(|(value, count)| {
+                        let metadata_value = if value == "null" {
+                            MetadataValue::NullVal
+                        } else if let Ok(b) = value.parse::<bool>() {
+                            MetadataValue::BooleanVal(b)
+                        } else if let Ok(i) = value.parse::<i64>() {
+                            MetadataValue::IntegerVal(i)
+                        } else if let Ok(f) = value.parse::<f64>() {
+                            MetadataValue::NumberVal(f)
+                        } else {
+                            MetadataValue::StringVal(value)
+                        };
+                        (metadata_value, count)
+                    })
+                    .collect();
+                Ok(distribution)
+            },
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -614,7 +767,7 @@ impl NamespacesGuest for PgVectorComponent {
         _metadata: Option<Metadata>,
     ) -> Result<NamespaceInfo, VectorError> {
         Err(VectorError::UnsupportedFeature(
-            "PostgreSQL doesn't support namespaces like Pinecone".to_string()
+            "PostgreSQL doesn't support namespaces".to_string()
         ))
     }
 
@@ -622,7 +775,7 @@ impl NamespacesGuest for PgVectorComponent {
         _collection: String,
     ) -> Result<Vec<NamespaceInfo>, VectorError> {
         Err(VectorError::UnsupportedFeature(
-            "PostgreSQL doesn't support namespaces like Pinecone".to_string()
+            "PostgreSQL doesn't support namespaces".to_string()
         ))
     }
 
@@ -631,7 +784,7 @@ impl NamespacesGuest for PgVectorComponent {
         _namespace: String,
     ) -> Result<NamespaceInfo, VectorError> {
         Err(VectorError::UnsupportedFeature(
-            "PostgreSQL doesn't support namespaces like Pinecone".to_string()
+            "PostgreSQL doesn't support namespaces".to_string()
         ))
     }
 
@@ -640,7 +793,7 @@ impl NamespacesGuest for PgVectorComponent {
         _namespace: String,
     ) -> Result<(), VectorError> {
         Err(VectorError::UnsupportedFeature(
-            "PostgreSQL doesn't support namespaces like Pinecone".to_string()
+            "PostgreSQL doesn't support namespaces".to_string()
         ))
     }
 
@@ -649,7 +802,7 @@ impl NamespacesGuest for PgVectorComponent {
         _namespace: String,
     ) -> Result<bool, VectorError> {
         Err(VectorError::UnsupportedFeature(
-            "PostgreSQL doesn't support namespaces like Pinecone".to_string()
+            "PostgreSQL doesn't support namespaces".to_string()
         ))
     }
 }
