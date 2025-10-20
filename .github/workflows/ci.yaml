@@ -398,7 +398,13 @@ jobs:
 
           echo "Waiting for pgvector to be ready..."
 
-          docker exec -it pgvector-db psql -U postgres -d mydatabase -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          until docker exec pgvector-db pg_isready -U postgres -d mydatabase -q; do
+            echo "Waiting for pgvector database to be ready..."
+            sleep 2
+          done
+
+          echo "Database is ready. Creating extension..."
+          docker exec pgvector-db psql -U postgres -d mydatabase -c "CREATE EXTENSION IF NOT EXISTS vector;"
           echo "PGVECTOR is ready"
 
           # Qdrant
