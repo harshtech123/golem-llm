@@ -10,8 +10,6 @@ components:
     profiles:
       # DEBUG PROFILES
       milvus-debug:
-        env:
-           MILVUS_DATABASE: default
         build:
           - command: cargo component build --no-default-features --features milvus
             sources:
@@ -56,8 +54,6 @@ components:
           - src/bindings.rs
 
       pgvector-debug:
-        env: 
-          PGVECTOR_CONNECTION_STRING: postgresql://postgres:mysecretpassword@localhost:3000/mydatabase
         build:
           - command: cargo component build --no-default-features --features pgvector
             sources:
