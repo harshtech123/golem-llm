@@ -1,24 +1,28 @@
 use crate::client::MilvusClient;
 use crate::conversions::{
-    collection_info_to_export_collection_info,
-    vector_records_to_upsert_request, create_search_request, create_query_request,
-    create_get_request, create_delete_request, milvus_search_results_to_search_results,
-    milvus_entities_to_vector_records, collection_stats_to_export_stats, distance_metric_to_string,
+    collection_info_to_export_collection_info, collection_stats_to_export_stats,
+    create_delete_request, create_get_request, create_query_request, create_search_request,
+    distance_metric_to_string, milvus_entities_to_vector_records,
+    milvus_search_results_to_search_results, vector_records_to_upsert_request, QueryRequestParams,
+    SearchRequestParams,
 };
-use golem_vector::config::{with_config_key, get_optional_config, with_connection_config_key};
-use golem_vector::durability::{ExtendedGuest, DurableVector};
+use golem_vector::config::{get_optional_config, with_config_key, with_connection_config_key};
+use golem_vector::durability::{DurableVector, ExtendedGuest};
 use golem_vector::golem::vector::{
-    analytics::{Guest as AnalyticsGuest, FieldStats, CollectionStats},
-    collections::{Guest as CollectionsGuest, CollectionInfo, IndexConfig},
-    connection::{Credentials, Guest as ConnectionGuest, ConnectionStatus  },
+    analytics::{CollectionStats, FieldStats, Guest as AnalyticsGuest},
+    collections::{CollectionInfo, Guest as CollectionsGuest, IndexConfig},
+    connection::{ConnectionStatus, Credentials, Guest as ConnectionGuest},
     namespaces::{Guest as NamespacesGuest, NamespaceInfo},
     search::{Guest as SearchGuest, SearchQuery},
-    search_extended::{Guest as SearchExtendedGuest, GroupedSearchResult, RecommendationExample, RecommendationStrategy, ContextPair},
-    types::{
-        DistanceMetric, FilterExpression, Id, Metadata, SearchResult, VectorData,
-        VectorError, VectorRecord, MetadataValue,
+    search_extended::{
+        ContextPair, GroupedSearchResult, Guest as SearchExtendedGuest, RecommendationExample,
+        RecommendationStrategy,
     },
-    vectors::{Guest as VectorsGuest, ListResponse, BatchResult},
+    types::{
+        DistanceMetric, FilterExpression, Id, Metadata, MetadataValue, SearchResult, VectorData,
+        VectorError, VectorRecord,
+    },
+    vectors::{BatchResult, Guest as VectorsGuest, ListResponse},
 };
 
 mod client;
@@ -35,8 +39,9 @@ impl MilvusComponent {
         let uri = with_config_key(
             Self::URI_ENV_VAR,
             |e| Err(VectorError::ConnectionError(format!("Missing URI: {e}"))),
-            |value| Ok(value),
-        ).unwrap_or_else(|_| "http://localhost:19530".to_string());
+            Ok,
+        )
+        .unwrap_or_else(|_| "http://localhost:19530".to_string());
 
         let token = get_optional_config(Self::TOKEN_ENV_VAR);
         let database = get_optional_config(Self::DATABASE_ENV_VAR);
@@ -88,24 +93,22 @@ impl ConnectionGuest for MilvusComponent {
 
     fn get_connection_status() -> Result<ConnectionStatus, VectorError> {
         match Self::create_client() {
-            Ok(client) => {
-                match client.list_collections() {
-                    Ok(_) => Ok(ConnectionStatus {
-                        connected: true,
-                        provider: Some("milvus".to_string()),
-                        endpoint: Some(client.base_url().to_string()),
-                        last_activity: None,
-                        connection_id: Some("milvus-api".to_string()),
-                    }),
-                    Err(_) => Ok(ConnectionStatus {
-                        connected: false,
-                        provider: Some("milvus".to_string()),
-                        endpoint: Some(client.base_url().to_string()),
-                        last_activity: None,
-                        connection_id: Some("milvus-api".to_string()),
-                    }),
-                }
-            }
+            Ok(client) => match client.list_collections() {
+                Ok(_) => Ok(ConnectionStatus {
+                    connected: true,
+                    provider: Some("milvus".to_string()),
+                    endpoint: Some(client.base_url().to_string()),
+                    last_activity: None,
+                    connection_id: Some("milvus-api".to_string()),
+                }),
+                Err(_) => Ok(ConnectionStatus {
+                    connected: false,
+                    provider: Some("milvus".to_string()),
+                    endpoint: Some(client.base_url().to_string()),
+                    last_activity: None,
+                    connection_id: Some("milvus-api".to_string()),
+                }),
+            },
             Err(_) => Ok(ConnectionStatus {
                 connected: false,
                 provider: Some("milvus".to_string()),
@@ -123,12 +126,10 @@ impl ConnectionGuest for MilvusComponent {
         options: Option<Metadata>,
     ) -> Result<bool, VectorError> {
         match Self::create_client_with_options(&options) {
-            Ok(client) => {
-                match client.list_collections() {
-                    Ok(_) => Ok(true),
-                    Err(_) => Ok(false),
-                }
-            }
+            Ok(client) => match client.list_collections() {
+                Ok(_) => Ok(true),
+                Err(_) => Ok(false),
+            },
             Err(_) => Ok(false),
         }
     }
@@ -144,7 +145,7 @@ impl CollectionsGuest for MilvusComponent {
         _metadata: Option<Metadata>,
     ) -> Result<CollectionInfo, VectorError> {
         let client = Self::create_client()?;
-        
+
         let create_request = client::CreateCollectionRequest {
             db_name: client.database().to_string(),
             collection_name: name.clone(),
@@ -160,24 +161,20 @@ impl CollectionsGuest for MilvusComponent {
         };
 
         match client.create_collection(&create_request) {
-            Ok(_) => {
-                match client.load_collection(&name) {
-                    Ok(_) => {
-                        match client.describe_collection(&name) {
-                            Ok(response) => collection_info_to_export_collection_info(&response.data),
-                            Err(e) => Err(e),
-                        }
-                    }
+            Ok(_) => match client.load_collection(&name) {
+                Ok(_) => match client.describe_collection(&name) {
+                    Ok(response) => collection_info_to_export_collection_info(&response.data),
                     Err(e) => Err(e),
-                }
-            }
+                },
+                Err(e) => Err(e),
+            },
             Err(e) => Err(e),
         }
     }
 
     fn list_collections() -> Result<Vec<String>, VectorError> {
         let client = Self::create_client()?;
-        
+
         match client.list_collections() {
             Ok(response) => Ok(response.data),
             Err(e) => Err(e),
@@ -186,7 +183,7 @@ impl CollectionsGuest for MilvusComponent {
 
     fn get_collection(name: String) -> Result<CollectionInfo, VectorError> {
         let client = Self::create_client()?;
-        
+
         match client.describe_collection(&name) {
             Ok(response) => collection_info_to_export_collection_info(&response.data),
             Err(e) => Err(e),
@@ -203,9 +200,9 @@ impl CollectionsGuest for MilvusComponent {
 
     fn delete_collection(name: String) -> Result<(), VectorError> {
         let client = Self::create_client()?;
-        
+
         let _ = client.release_collection(&name);
-        
+
         match client.drop_collection(&name) {
             Ok(_) => Ok(()),
             Err(e) => Err(e),
@@ -214,7 +211,7 @@ impl CollectionsGuest for MilvusComponent {
 
     fn collection_exists(name: String) -> Result<bool, VectorError> {
         let client = Self::create_client()?;
-        
+
         match client.has_collection(&name) {
             Ok(response) => Ok(response.data.has),
             Err(_) => Ok(false),
@@ -229,9 +226,14 @@ impl VectorsGuest for MilvusComponent {
         namespace: Option<String>,
     ) -> Result<BatchResult, VectorError> {
         let client = Self::create_client()?;
-        
-        let upsert_request = vector_records_to_upsert_request(&collection, client.database(), &vectors, namespace.as_deref())?;
-        
+
+        let upsert_request = vector_records_to_upsert_request(
+            &collection,
+            client.database(),
+            &vectors,
+            namespace.as_deref(),
+        )?;
+
         match client.upsert(&upsert_request) {
             Ok(response) => Ok(BatchResult {
                 success_count: response.data.upsert_count,
@@ -254,13 +256,15 @@ impl VectorsGuest for MilvusComponent {
             vector,
             metadata,
         };
-        
+
         let result = Self::upsert_vectors(collection, vec![record], namespace)?;
-        
+
         if result.success_count > 0 {
             Ok(())
         } else {
-            Err(VectorError::ProviderError("Failed to upsert vector".to_string()))
+            Err(VectorError::ProviderError(
+                "Failed to upsert vector".to_string(),
+            ))
         }
     }
 
@@ -272,7 +276,7 @@ impl VectorsGuest for MilvusComponent {
         _include_metadata: Option<bool>,
     ) -> Result<Vec<VectorRecord>, VectorError> {
         let client = Self::create_client()?;
-        
+
         let mut output_fields = Vec::new();
         if include_vectors.unwrap_or(true) {
             output_fields.push("vector".to_string());
@@ -282,9 +286,13 @@ impl VectorsGuest for MilvusComponent {
             &collection,
             client.database(),
             &ids,
-            if output_fields.is_empty() { None } else { Some(&output_fields) },
+            if output_fields.is_empty() {
+                None
+            } else {
+                Some(&output_fields)
+            },
         );
-        
+
         match client.get(&get_request) {
             Ok(response) => milvus_entities_to_vector_records(&response.data),
             Err(e) => Err(e),
@@ -311,7 +319,9 @@ impl VectorsGuest for MilvusComponent {
         if let Some(vector_data) = vector {
             Self::upsert_vector(collection, id, vector_data, metadata, namespace)
         } else {
-            Err(VectorError::InvalidParams("Vector data is required for update".to_string()))
+            Err(VectorError::InvalidParams(
+                "Vector data is required for update".to_string(),
+            ))
         }
     }
 
@@ -321,7 +331,7 @@ impl VectorsGuest for MilvusComponent {
         namespace: Option<String>,
     ) -> Result<u32, VectorError> {
         let client = Self::create_client()?;
-        
+
         let delete_request = create_delete_request(
             &collection,
             client.database(),
@@ -329,9 +339,9 @@ impl VectorsGuest for MilvusComponent {
             None,
             namespace.as_deref(),
         )?;
-        
+
         match client.delete(&delete_request) {
-            Ok(_response) => Ok(ids.len() as u32), 
+            Ok(_response) => Ok(ids.len() as u32),
             Err(e) => Err(e),
         }
     }
@@ -342,7 +352,7 @@ impl VectorsGuest for MilvusComponent {
         namespace: Option<String>,
     ) -> Result<u32, VectorError> {
         let client = Self::create_client()?;
-        
+
         let delete_request = create_delete_request(
             &collection,
             client.database(),
@@ -350,20 +360,17 @@ impl VectorsGuest for MilvusComponent {
             Some(&filter),
             namespace.as_deref(),
         )?;
-        
+
         match client.delete(&delete_request) {
-            Ok(_response) => {
-                Ok(0)
-            },
+            Ok(_response) => Ok(0),
             Err(e) => Err(e),
         }
     }
 
-    fn delete_namespace(
-        _collection: String,
-        _namespace: String,
-    ) -> Result<u32, VectorError> {
-        Err(VectorError::UnsupportedFeature("Milvus doesn't support namespaces like Pinecone".to_string()))
+    fn delete_namespace(_collection: String, _namespace: String) -> Result<u32, VectorError> {
+        Err(VectorError::UnsupportedFeature(
+            "Milvus doesn't support namespaces like Pinecone".to_string(),
+        ))
     }
 
     fn list_vectors(
@@ -376,30 +383,34 @@ impl VectorsGuest for MilvusComponent {
         _include_metadata: Option<bool>,
     ) -> Result<ListResponse, VectorError> {
         let client = Self::create_client()?;
-        
+
         let mut output_fields = vec!["id".to_string()];
         if include_vectors.unwrap_or(false) {
             output_fields.push("vector".to_string());
         }
-        
-        let query_request = create_query_request(
-            &collection,
-            client.database(),
-            None,
-            filter.as_ref(),
-            if output_fields.len() == 1 { None } else { Some(&output_fields) },
+
+        let query_request = create_query_request(QueryRequestParams {
+            collection_name: &collection,
+            db_name: client.database(),
+            ids: None,
+            filter: filter.as_ref(),
+            output_fields: if output_fields.len() == 1 {
+                None
+            } else {
+                Some(&output_fields)
+            },
             limit,
-            None,
-            namespace.map(|ns| vec![ns]),
-        )?;
-        
+            offset: None,
+            partition_names: namespace.map(|ns| vec![ns]),
+        })?;
+
         match client.query(&query_request) {
             Ok(response) => {
                 let vector_records = milvus_entities_to_vector_records(&response.data)?;
-                
+
                 Ok(ListResponse {
                     vectors: vector_records,
-                    next_cursor: None, 
+                    next_cursor: None,
                     total_count: None,
                 })
             }
@@ -413,19 +424,19 @@ impl VectorsGuest for MilvusComponent {
         namespace: Option<String>,
     ) -> Result<u64, VectorError> {
         let client = Self::create_client()?;
-        
+
         if filter.is_some() {
-            let query_request = create_query_request(
-                &collection,
-                client.database(),
-                None,
-                filter.as_ref(),
-                Some(&vec!["id".to_string()]),
-                None,
-                None,
-                namespace.map(|ns| vec![ns]),
-            )?;
-            
+            let query_request = create_query_request(QueryRequestParams {
+                collection_name: &collection,
+                db_name: client.database(),
+                ids: None,
+                filter: filter.as_ref(),
+                output_fields: Some(&["id".to_string()]),
+                limit: None,
+                offset: None,
+                partition_names: namespace.map(|ns| vec![ns]),
+            })?;
+
             match client.query(&query_request) {
                 Ok(response) => Ok(response.data.len() as u64),
                 Err(e) => Err(e),
@@ -453,36 +464,40 @@ impl SearchGuest for MilvusComponent {
         _search_params: Option<Vec<(String, String)>>,
     ) -> Result<Vec<SearchResult>, VectorError> {
         let client = Self::create_client()?;
-        
+
         let mut output_fields = vec!["id".to_string()];
         if include_vectors.unwrap_or(false) {
             output_fields.push("vector".to_string());
         }
-        
-        let search_request = create_search_request(
-            &collection,
-            client.database(),
-            &query,
+
+        let search_request = create_search_request(SearchRequestParams {
+            collection_name: &collection,
+            db_name: client.database(),
+            query: &query,
             limit,
-            filter.as_ref(),
-            if output_fields.len() == 1 { None } else { Some(&output_fields) },
-            "vector",
-            "COSINE", 
-            namespace.map(|ns| vec![ns]),
-        )?;
-        
+            filter: filter.as_ref(),
+            output_fields: if output_fields.len() == 1 {
+                None
+            } else {
+                Some(&output_fields)
+            },
+            anns_field: "vector",
+            metric_type: "COSINE",
+            partition_names: namespace.map(|ns| vec![ns]),
+        })?;
+
         match client.search(&search_request) {
             Ok(response) => {
                 let mut results = milvus_search_results_to_search_results(&response.data)?;
-                
+
                 if let Some(min_score_val) = min_score {
                     results.retain(|result| result.score >= min_score_val);
                 }
-                
+
                 if let Some(max_distance_val) = max_distance {
                     results.retain(|result| result.distance <= max_distance_val);
                 }
-                
+
                 Ok(results)
             }
             Err(e) => Err(e),
@@ -495,7 +510,6 @@ impl SearchGuest for MilvusComponent {
         limit: u32,
         namespace: Option<String>,
     ) -> Result<Vec<SearchResult>, VectorError> {
-        
         Self::search_vectors(
             collection,
             SearchQuery::Vector(vector),
@@ -521,7 +535,7 @@ impl SearchGuest for MilvusComponent {
         search_params: Option<Vec<(String, String)>>,
     ) -> Result<Vec<Vec<SearchResult>>, VectorError> {
         let mut results = Vec::new();
-        
+
         for query in queries {
             let result = Self::search_vectors(
                 collection.clone(),
@@ -537,7 +551,7 @@ impl SearchGuest for MilvusComponent {
             )?;
             results.push(result);
         }
-        
+
         Ok(results)
     }
 }
@@ -554,7 +568,9 @@ impl SearchExtendedGuest for MilvusComponent {
         _include_vectors: Option<bool>,
         _include_metadata: Option<bool>,
     ) -> Result<Vec<SearchResult>, VectorError> {
-        Err(VectorError::UnsupportedFeature("Recommendation search not supported by Milvus".to_string()))
+        Err(VectorError::UnsupportedFeature(
+            "Recommendation search not supported by Milvus".to_string(),
+        ))
     }
 
     fn discover_vectors(
@@ -567,7 +583,9 @@ impl SearchExtendedGuest for MilvusComponent {
         _include_vectors: Option<bool>,
         _include_metadata: Option<bool>,
     ) -> Result<Vec<SearchResult>, VectorError> {
-        Err(VectorError::UnsupportedFeature("Discovery search not supported by Milvus".to_string()))
+        Err(VectorError::UnsupportedFeature(
+            "Discovery search not supported by Milvus".to_string(),
+        ))
     }
 
     fn search_groups(
@@ -581,7 +599,9 @@ impl SearchExtendedGuest for MilvusComponent {
         _include_vectors: Option<bool>,
         _include_metadata: Option<bool>,
     ) -> Result<Vec<GroupedSearchResult>, VectorError> {
-        Err(VectorError::UnsupportedFeature("Grouped search not supported by Milvus".to_string()))
+        Err(VectorError::UnsupportedFeature(
+            "Grouped search not supported by Milvus".to_string(),
+        ))
     }
 
     fn search_range(
@@ -595,7 +615,9 @@ impl SearchExtendedGuest for MilvusComponent {
         _include_vectors: Option<bool>,
         _include_metadata: Option<bool>,
     ) -> Result<Vec<SearchResult>, VectorError> {
-        Err(VectorError::UnsupportedFeature("Range search not supported by Milvus".to_string()))
+        Err(VectorError::UnsupportedFeature(
+            "Range search not supported by Milvus".to_string(),
+        ))
     }
 
     fn search_text(
@@ -605,7 +627,9 @@ impl SearchExtendedGuest for MilvusComponent {
         _filter: Option<FilterExpression>,
         _namespace: Option<String>,
     ) -> Result<Vec<SearchResult>, VectorError> {
-        Err(VectorError::UnsupportedFeature("Text search not supported by Milvus".to_string()))
+        Err(VectorError::UnsupportedFeature(
+            "Text search not supported by Milvus".to_string(),
+        ))
     }
 }
 
@@ -615,7 +639,7 @@ impl AnalyticsGuest for MilvusComponent {
         _namespace: Option<String>,
     ) -> Result<CollectionStats, VectorError> {
         let client = Self::create_client()?;
-        
+
         match client.get_collection_stats(&collection) {
             Ok(response) => Ok(collection_stats_to_export_stats(&response.data)),
             Err(e) => Err(e),
@@ -627,7 +651,9 @@ impl AnalyticsGuest for MilvusComponent {
         _field: String,
         _namespace: Option<String>,
     ) -> Result<FieldStats, VectorError> {
-        Err(VectorError::UnsupportedFeature("Field stats not supported by Milvus".to_string()))
+        Err(VectorError::UnsupportedFeature(
+            "Field stats not supported by Milvus".to_string(),
+        ))
     }
 
     fn get_field_distribution(
@@ -636,7 +662,9 @@ impl AnalyticsGuest for MilvusComponent {
         _limit: Option<u32>,
         _namespace: Option<String>,
     ) -> Result<Vec<(MetadataValue, u64)>, VectorError> {
-        Err(VectorError::UnsupportedFeature("Field distribution not supported by Milvus".to_string()))
+        Err(VectorError::UnsupportedFeature(
+            "Field distribution not supported by Milvus".to_string(),
+        ))
     }
 }
 
@@ -647,13 +675,13 @@ impl NamespacesGuest for MilvusComponent {
         _metadata: Option<Metadata>,
     ) -> Result<NamespaceInfo, VectorError> {
         let client = Self::create_client()?;
-        
+
         match client.has_partition(&collection, &namespace) {
             Ok(response) => {
                 if response.data.has {
                     Ok(NamespaceInfo {
                         name: namespace,
-                        collection: collection,
+                        collection,
                         created_at: None,
                         vector_count: 0,
                         size_bytes: 0,
@@ -663,32 +691,32 @@ impl NamespacesGuest for MilvusComponent {
                     match client.create_partition(&collection, &namespace) {
                         Ok(_) => {
                             let _ = client.load_partitions(&collection, vec![namespace.clone()]);
-                            
+
                             Ok(NamespaceInfo {
                                 name: namespace,
-                                collection: collection,
+                                collection,
                                 created_at: None,
                                 vector_count: 0,
                                 size_bytes: 0,
                                 metadata: None,
                             })
                         }
-                        Err(e) => Err(e)
+                        Err(e) => Err(e),
                     }
                 }
             }
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
-    fn list_namespaces(
-        collection: String,
-    ) -> Result<Vec<NamespaceInfo>, VectorError> {
+    fn list_namespaces(collection: String) -> Result<Vec<NamespaceInfo>, VectorError> {
         let client = Self::create_client()?;
-        
+
         match client.list_partitions(&collection) {
             Ok(response) => {
-                let namespaces = response.data.into_iter()
+                let namespaces = response
+                    .data
+                    .into_iter()
                     .map(|partition_name| NamespaceInfo {
                         name: partition_name,
                         collection: collection.clone(),
@@ -700,58 +728,52 @@ impl NamespacesGuest for MilvusComponent {
                     .collect();
                 Ok(namespaces)
             }
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
-    fn get_namespace(
-        collection: String,
-        namespace: String,
-    ) -> Result<NamespaceInfo, VectorError> {
+    fn get_namespace(collection: String, namespace: String) -> Result<NamespaceInfo, VectorError> {
         let client = Self::create_client()?;
-        
+
         match client.has_partition(&collection, &namespace) {
             Ok(response) => {
                 if response.code == 0 && response.data.has {
                     Ok(NamespaceInfo {
                         name: namespace,
-                        collection: collection,
+                        collection,
                         created_at: None,
                         vector_count: 0,
                         size_bytes: 0,
                         metadata: None,
                     })
                 } else {
-                    Err(VectorError::NotFound(format!("Partition {} not found in collection {}", namespace, collection)))
+                    Err(VectorError::NotFound(format!(
+                        "Partition {} not found in collection {}",
+                        namespace, collection
+                    )))
                 }
             }
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
-    fn delete_namespace(
-        collection: String,
-        namespace: String,
-    ) -> Result<(), VectorError> {
+    fn delete_namespace(collection: String, namespace: String) -> Result<(), VectorError> {
         let client = Self::create_client()?;
-        
+
         let _ = client.release_partitions(&collection, vec![namespace.clone()]);
-        
+
         match client.drop_partition(&collection, &namespace) {
             Ok(_) => Ok(()),
-            Err(e) => Err(e)
+            Err(e) => Err(e),
         }
     }
 
-    fn namespace_exists(
-        collection: String,
-        namespace: String,
-    ) -> Result<bool, VectorError> {
+    fn namespace_exists(collection: String, namespace: String) -> Result<bool, VectorError> {
         let client = Self::create_client()?;
-        
+
         match client.has_partition(&collection, &namespace) {
             Ok(response) => Ok(response.data.has),
-            Err(_) => Ok(false)
+            Err(_) => Ok(false),
         }
     }
 }

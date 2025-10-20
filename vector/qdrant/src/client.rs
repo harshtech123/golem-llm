@@ -4,8 +4,8 @@ use log::trace;
 use reqwest::{Client, Method, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
-use std::fmt::Debug;
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::time::Duration;
 
 /// Qdrant Vector API client
@@ -20,7 +20,7 @@ pub struct QdrantClient {
 impl QdrantClient {
     pub fn new(url: String, api_key: Option<String>) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(get_timeout_config() as u64))
+            .timeout(Duration::from_secs(get_timeout_config()))
             .build()
             .unwrap();
 
@@ -34,11 +34,11 @@ impl QdrantClient {
     fn create_request(&self, method: Method, endpoint: &str) -> RequestBuilder {
         let url = format!("{}{}", self.base_url, endpoint);
         let mut req = self.client.request(method, &url);
-        
+
         if let Some(api_key) = &self.api_key {
             req = req.header("api-key", api_key);
         }
-        
+
         req.header("Content-Type", "application/json")
     }
 
@@ -61,7 +61,7 @@ impl QdrantClient {
         F: Fn() -> Result<Response, reqwest::Error> + Send + Sync,
     {
         let max_retries = get_max_retries_config();
-        
+
         for attempt in 0..=max_retries {
             match operation() {
                 Ok(response) => {
@@ -77,7 +77,7 @@ impl QdrantClient {
                 }
                 Err(e) => {
                     if attempt < max_retries && self.should_retry_error(&e) {
-                        let is_rate_limited = e.status().map_or(false, |s| s.as_u16() == 429);
+                        let is_rate_limited = e.status().is_some_and(|s| s.as_u16() == 429);
                         let delay = Self::calculate_backoff_delay(attempt, is_rate_limited);
                         std::thread::sleep(delay);
                         continue;
@@ -87,21 +87,23 @@ impl QdrantClient {
                 }
             }
         }
-        
-        Err(VectorError::ProviderError("Max retries exceeded".to_string()))
+
+        Err(VectorError::ProviderError(
+            "Max retries exceeded".to_string(),
+        ))
     }
 
     pub fn list_collections(&self) -> Result<ListCollectionsResponse, VectorError> {
-        let request = || {
-            self.create_request(Method::GET, "/collections")
-                .send()
-        };
+        let request = || self.create_request(Method::GET, "/collections").send();
 
         let response = self.execute_with_retry_sync(request)?;
         parse_response(response, "list_collections")
     }
 
-    pub fn create_collection(&self, request: &CreateCollectionRequest) -> Result<CreateCollectionResponse, VectorError> {
+    pub fn create_collection(
+        &self,
+        request: &CreateCollectionRequest,
+    ) -> Result<CreateCollectionResponse, VectorError> {
         let collection_name = &request.collection_name;
         let request_fn = || {
             self.create_request(Method::PUT, &format!("/collections/{}", collection_name))
@@ -113,7 +115,10 @@ impl QdrantClient {
         parse_response(response, "create_collection")
     }
 
-    pub fn get_collection(&self, collection_name: &str) -> Result<GetCollectionResponse, VectorError> {
+    pub fn get_collection(
+        &self,
+        collection_name: &str,
+    ) -> Result<GetCollectionResponse, VectorError> {
         let request = || {
             self.create_request(Method::GET, &format!("/collections/{}", collection_name))
                 .send()
@@ -123,7 +128,10 @@ impl QdrantClient {
         parse_response(response, "get_collection")
     }
 
-    pub fn delete_collection(&self, collection_name: &str) -> Result<DeleteCollectionResponse, VectorError> {
+    pub fn delete_collection(
+        &self,
+        collection_name: &str,
+    ) -> Result<DeleteCollectionResponse, VectorError> {
         let request = || {
             self.create_request(Method::DELETE, &format!("/collections/{}", collection_name))
                 .send()
@@ -141,107 +149,179 @@ impl QdrantClient {
         }
     }
 
-    pub fn upsert_points(&self, collection_name: &str, request: &UpsertRequest) -> Result<UpsertResponse, VectorError> {
+    pub fn upsert_points(
+        &self,
+        collection_name: &str,
+        request: &UpsertRequest,
+    ) -> Result<UpsertResponse, VectorError> {
         let request_fn = || {
-            self.create_request(Method::PUT, &format!("/collections/{}/points", collection_name))
-                .json(request)
-                .send()
+            self.create_request(
+                Method::PUT,
+                &format!("/collections/{}/points", collection_name),
+            )
+            .json(request)
+            .send()
         };
 
         let response = self.execute_with_retry_sync(request_fn)?;
         parse_response(response, "upsert_points")
     }
 
-    pub fn search_points(&self, collection_name: &str, request: &SearchRequest) -> Result<SearchResponse, VectorError> {
+    pub fn search_points(
+        &self,
+        collection_name: &str,
+        request: &SearchRequest,
+    ) -> Result<SearchResponse, VectorError> {
         let request_fn = || {
-            self.create_request(Method::POST, &format!("/collections/{}/points/search", collection_name))
-                .json(request)
-                .send()
+            self.create_request(
+                Method::POST,
+                &format!("/collections/{}/points/search", collection_name),
+            )
+            .json(request)
+            .send()
         };
 
         let response = self.execute_with_retry_sync(request_fn)?;
         parse_response(response, "search_points")
     }
 
-    pub fn get_points(&self, collection_name: &str, request: &GetPointsRequest) -> Result<GetPointsResponse, VectorError> {
+    pub fn get_points(
+        &self,
+        collection_name: &str,
+        request: &GetPointsRequest,
+    ) -> Result<GetPointsResponse, VectorError> {
         let request_fn = || {
-            self.create_request(Method::POST, &format!("/collections/{}/points", collection_name))
-                .json(request)
-                .send()
+            self.create_request(
+                Method::POST,
+                &format!("/collections/{}/points", collection_name),
+            )
+            .json(request)
+            .send()
         };
 
         let response = self.execute_with_retry_sync(request_fn)?;
         parse_response(response, "get_points")
     }
 
-    pub fn delete_points(&self, collection_name: &str, request: &DeletePointsRequest) -> Result<DeletePointsResponse, VectorError> {
+    pub fn delete_points(
+        &self,
+        collection_name: &str,
+        request: &DeletePointsRequest,
+    ) -> Result<DeletePointsResponse, VectorError> {
         let request_fn = || {
-            self.create_request(Method::POST, &format!("/collections/{}/points/delete", collection_name))
-                .json(request)
-                .send()
+            self.create_request(
+                Method::POST,
+                &format!("/collections/{}/points/delete", collection_name),
+            )
+            .json(request)
+            .send()
         };
 
         let response = self.execute_with_retry_sync(request_fn)?;
         parse_response(response, "delete_points")
     }
 
-    pub fn scroll_points(&self, collection_name: &str, request: &ScrollRequest) -> Result<ScrollResponse, VectorError> {
+    pub fn scroll_points(
+        &self,
+        collection_name: &str,
+        request: &ScrollRequest,
+    ) -> Result<ScrollResponse, VectorError> {
         let request_fn = || {
-            self.create_request(Method::POST, &format!("/collections/{}/points/scroll", collection_name))
-                .json(request)
-                .send()
+            self.create_request(
+                Method::POST,
+                &format!("/collections/{}/points/scroll", collection_name),
+            )
+            .json(request)
+            .send()
         };
 
         let response = self.execute_with_retry_sync(request_fn)?;
         parse_response(response, "scroll_points")
     }
 
-    pub fn count_points(&self, collection_name: &str, request: &CountRequest) -> Result<CountResponse, VectorError> {
+    pub fn count_points(
+        &self,
+        collection_name: &str,
+        request: &CountRequest,
+    ) -> Result<CountResponse, VectorError> {
         let request_fn = || {
-            self.create_request(Method::POST, &format!("/collections/{}/points/count", collection_name))
-                .json(request)
-                .send()
+            self.create_request(
+                Method::POST,
+                &format!("/collections/{}/points/count", collection_name),
+            )
+            .json(request)
+            .send()
         };
 
         let response = self.execute_with_retry_sync(request_fn)?;
         parse_response(response, "count_points")
     }
 
-    pub fn batch_search(&self, collection_name: &str, request: &BatchSearchRequest) -> Result<BatchSearchResponse, VectorError> {
+    pub fn batch_search(
+        &self,
+        collection_name: &str,
+        request: &BatchSearchRequest,
+    ) -> Result<BatchSearchResponse, VectorError> {
         let request_fn = || {
-            self.create_request(Method::POST, &format!("/collections/{}/points/search/batch", collection_name))
-                .json(request)
-                .send()
+            self.create_request(
+                Method::POST,
+                &format!("/collections/{}/points/search/batch", collection_name),
+            )
+            .json(request)
+            .send()
         };
 
         let response = self.execute_with_retry_sync(request_fn)?;
         parse_response(response, "batch_search")
     }
 
-    pub fn recommend_points(&self, collection_name: &str, request: &RecommendRequest) -> Result<RecommendResponse, VectorError> {
+    pub fn recommend_points(
+        &self,
+        collection_name: &str,
+        request: &RecommendRequest,
+    ) -> Result<RecommendResponse, VectorError> {
         let request_fn = || {
-            self.create_request(Method::POST, &format!("/collections/{}/points/recommend", collection_name))
-                .json(request)
-                .send()
+            self.create_request(
+                Method::POST,
+                &format!("/collections/{}/points/recommend", collection_name),
+            )
+            .json(request)
+            .send()
         };
 
         let response = self.execute_with_retry_sync(request_fn)?;
         parse_response(response, "recommend_points")
     }
 
-    pub fn discover_points(&self, collection_name: &str, request: &DiscoverRequest) -> Result<DiscoverResponse, VectorError> {
+    pub fn discover_points(
+        &self,
+        collection_name: &str,
+        request: &DiscoverRequest,
+    ) -> Result<DiscoverResponse, VectorError> {
         let request_fn = || {
-            self.create_request(Method::POST, &format!("/collections/{}/points/discover", collection_name))
-                .json(request)
-                .send()
+            self.create_request(
+                Method::POST,
+                &format!("/collections/{}/points/discover", collection_name),
+            )
+            .json(request)
+            .send()
         };
 
         let response = self.execute_with_retry_sync(request_fn)?;
         parse_response(response, "discover_points")
     }
 
-    pub fn create_field_index(&self, collection_name: &str, field_name: &str, field_type: &str) -> Result<(), VectorError> {
-        trace!("Creating index for field {} in collection: {}", field_name, collection_name);
+    pub fn create_field_index(
+        &self,
+        collection_name: &str,
+        field_name: &str,
+        field_type: &str,
+    ) -> Result<(), VectorError> {
+        trace!(
+            "Creating index for field {} in collection: {}",
+            field_name,
+            collection_name
+        );
 
         let request = serde_json::json!({
             "field_name": field_name,
@@ -249,15 +329,17 @@ impl QdrantClient {
         });
 
         let response = self.execute_with_retry_sync(|| {
-            self.create_request(Method::PUT, &format!("/collections/{}/index", collection_name))
-                .json(&request)
-                .send()
+            self.create_request(
+                Method::PUT,
+                &format!("/collections/{}/index", collection_name),
+            )
+            .json(&request)
+            .send()
         })?;
 
         parse_response::<serde_json::Value>(response, "create_field_index")?;
         Ok(())
     }
-
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -508,7 +590,7 @@ pub enum NamedVectors {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WriteOrdering {
     #[serde(rename = "type")]
-    pub ordering_type: String, 
+    pub ordering_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -972,9 +1054,12 @@ fn handle_qdrant_error(response: Response, operation: &str) -> VectorError {
     from_qdrant_error_code(status, &error_message)
 }
 
-fn parse_response<T: DeserializeOwned + Debug>(response: Response, operation: &str) -> Result<T, VectorError> {
+fn parse_response<T: DeserializeOwned + Debug>(
+    response: Response,
+    operation: &str,
+) -> Result<T, VectorError> {
     let status = response.status();
-    
+
     if !status.is_success() {
         return Err(handle_qdrant_error(response, operation));
     }
@@ -983,9 +1068,15 @@ fn parse_response<T: DeserializeOwned + Debug>(response: Response, operation: &s
         Ok(body) => {
             trace!("Qdrant API response for {}: {}", operation, body);
             serde_json::from_str(&body).map_err(|e| {
-                VectorError::ProviderError(format!("Failed to parse response for {}: {}", operation, e))
+                VectorError::ProviderError(format!(
+                    "Failed to parse response for {}: {}",
+                    operation, e
+                ))
             })
         }
-        Err(e) => Err(VectorError::ProviderError(format!("Failed to read response for {}: {}", operation, e))),
+        Err(e) => Err(VectorError::ProviderError(format!(
+            "Failed to read response for {}: {}",
+            operation, e
+        ))),
     }
 }

@@ -1,23 +1,21 @@
 use crate::client::{
-    CollectionInfo as QdrantCollectionInfo, ScoredPoint, Record,
-    VectorParams, Distance, VectorConfig, CollectionConfig,
-    UpsertRequest, PointStruct, PointId, NamedVectors,
-    SearchRequest, NamedVectorStruct, Filter, WithPayloadSelector, WithVectorSelector,
-    GetPointsRequest, DeletePointsRequest, ScrollRequest, CountRequest,
-    BatchSearchRequest, RecommendRequest, RecommendExample, Condition, FieldCondition, FieldConditionOneOf,
-    MatchCondition, MatchValue, RangeInterface, DiscoverRequest, ContextPair as QdrantContextPair,
-};
-use golem_vector::golem::vector::types::{
-    VectorRecord, VectorData, MetadataValue, DistanceMetric,
-    FilterExpression, FilterCondition, FilterOperator, SearchResult,
-    VectorError,GeoCoordinates, Id
+    BatchSearchRequest, CollectionConfig, CollectionInfo as QdrantCollectionInfo, Condition,
+    ContextPair as QdrantContextPair, CountRequest, DeletePointsRequest, DiscoverRequest, Distance,
+    FieldCondition, FieldConditionOneOf, Filter, GetPointsRequest, MatchCondition, MatchValue,
+    NamedVectorStruct, NamedVectors, PointId, PointStruct, RangeInterface, RecommendExample,
+    RecommendRequest, Record, ScoredPoint, ScrollRequest, SearchRequest, UpsertRequest,
+    VectorConfig, VectorParams, WithPayloadSelector, WithVectorSelector,
 };
 use golem_vector::golem::vector::search::SearchQuery;
+use golem_vector::golem::vector::types::{
+    DistanceMetric, FilterCondition, FilterExpression, FilterOperator, GeoCoordinates, Id,
+    MetadataValue, SearchResult, VectorData, VectorError, VectorRecord,
+};
 use golem_vector::golem::vector::{
     collections::CollectionInfo as ExportCollectionInfo,
-    search_extended::{RecommendationExample, ContextPair},
+    search_extended::{ContextPair, RecommendationExample},
 };
-use serde_json::{Value, Map};
+use serde_json::{Map, Value};
 
 pub fn distance_metric_to_qdrant_distance(metric: &DistanceMetric) -> Distance {
     match metric {
@@ -45,31 +43,51 @@ pub fn collection_info_to_export_collection_info(
     let (dimension, metric) = if let Some(params) = &info.config.params {
         if let Some(vectors) = &params.vectors {
             match vectors {
-                VectorConfig::Single(params) => (params.size, qdrant_distance_to_distance_metric(&params.distance)),
+                VectorConfig::Single(params) => (
+                    params.size,
+                    qdrant_distance_to_distance_metric(&params.distance),
+                ),
                 VectorConfig::Multiple(vectors) => {
                     if let Some((_, params)) = vectors.iter().next() {
-                        (params.size, qdrant_distance_to_distance_metric(&params.distance))
+                        (
+                            params.size,
+                            qdrant_distance_to_distance_metric(&params.distance),
+                        )
                     } else {
-                        return Err(VectorError::ProviderError("No vector configurations found".to_string()));
+                        return Err(VectorError::ProviderError(
+                            "No vector configurations found".to_string(),
+                        ));
                     }
                 }
             }
         } else {
-            return Err(VectorError::ProviderError("No vectors configuration found in params".to_string()));
+            return Err(VectorError::ProviderError(
+                "No vectors configuration found in params".to_string(),
+            ));
         }
     } else if let Some(vectors) = &info.config.vectors {
         match vectors {
-            VectorConfig::Single(params) => (params.size, qdrant_distance_to_distance_metric(&params.distance)),
+            VectorConfig::Single(params) => (
+                params.size,
+                qdrant_distance_to_distance_metric(&params.distance),
+            ),
             VectorConfig::Multiple(vectors) => {
                 if let Some((_, params)) = vectors.iter().next() {
-                    (params.size, qdrant_distance_to_distance_metric(&params.distance))
+                    (
+                        params.size,
+                        qdrant_distance_to_distance_metric(&params.distance),
+                    )
                 } else {
-                    return Err(VectorError::ProviderError("No vector configurations found".to_string()));
+                    return Err(VectorError::ProviderError(
+                        "No vector configurations found".to_string(),
+                    ));
                 }
             }
         }
     } else {
-        return Err(VectorError::ProviderError("No vector configuration found".to_string()));
+        return Err(VectorError::ProviderError(
+            "No vector configuration found".to_string(),
+        ));
     };
 
     let vector_count = info.points_count.unwrap_or(0);
@@ -89,10 +107,7 @@ pub fn collection_info_to_export_collection_info(
     })
 }
 
-pub fn create_collection_config(
-    dimension: u32,
-    metric: DistanceMetric,
-) -> CollectionConfig {
+pub fn create_collection_config(dimension: u32, metric: DistanceMetric) -> CollectionConfig {
     let vector_params = VectorParams {
         size: dimension,
         distance: distance_metric_to_qdrant_distance(&metric),
@@ -120,32 +135,32 @@ pub fn vector_records_to_upsert_request(
 
     for record in vectors {
         let id = id_to_point_id(&record.id)?;
-        
+
         let vector = match &record.vector {
             VectorData::Dense(values) => NamedVectors::Single(values.clone()),
             VectorData::Sparse(_) => {
                 return Err(VectorError::ProviderError(
-                    "Sparse vectors not yet supported for Qdrant".to_string()
+                    "Sparse vectors not yet supported for Qdrant".to_string(),
                 ));
             }
             VectorData::Binary(_) => {
                 return Err(VectorError::ProviderError(
-                    "Binary vectors not yet supported for Qdrant".to_string()
+                    "Binary vectors not yet supported for Qdrant".to_string(),
                 ));
             }
             VectorData::Half(_) => {
                 return Err(VectorError::ProviderError(
-                    "Half vectors not yet supported for Qdrant".to_string()
+                    "Half vectors not yet supported for Qdrant".to_string(),
                 ));
             }
             VectorData::Named(_) => {
                 return Err(VectorError::ProviderError(
-                    "Named vectors not yet supported for Qdrant".to_string()
+                    "Named vectors not yet supported for Qdrant".to_string(),
                 ));
             }
             VectorData::Hybrid(_) => {
                 return Err(VectorError::ProviderError(
-                    "Hybrid vectors not yet supported for Qdrant".to_string()
+                    "Hybrid vectors not yet supported for Qdrant".to_string(),
                 ));
             }
         };
@@ -183,38 +198,38 @@ pub fn create_search_request(
             VectorData::Dense(values) => NamedVectorStruct::Default(values.clone()),
             VectorData::Sparse(_) => {
                 return Err(VectorError::ProviderError(
-                    "Sparse vector search not yet supported for Qdrant".to_string()
+                    "Sparse vector search not yet supported for Qdrant".to_string(),
                 ));
             }
             VectorData::Binary(_) => {
                 return Err(VectorError::ProviderError(
-                    "Binary vector search not yet supported for Qdrant".to_string()
+                    "Binary vector search not yet supported for Qdrant".to_string(),
                 ));
             }
             VectorData::Half(_) => {
                 return Err(VectorError::ProviderError(
-                    "Half vector search not yet supported for Qdrant".to_string()
+                    "Half vector search not yet supported for Qdrant".to_string(),
                 ));
             }
             VectorData::Named(_) => {
                 return Err(VectorError::ProviderError(
-                    "Named vector search not yet supported for Qdrant".to_string()
+                    "Named vector search not yet supported for Qdrant".to_string(),
                 ));
             }
             VectorData::Hybrid(_) => {
                 return Err(VectorError::ProviderError(
-                    "Hybrid vector search not yet supported for Qdrant".to_string()
+                    "Hybrid vector search not yet supported for Qdrant".to_string(),
                 ));
             }
         },
         SearchQuery::ById(_) => {
             return Err(VectorError::ProviderError(
-                "Search by ID not supported in this context".to_string()
+                "Search by ID not supported in this context".to_string(),
             ));
         }
         SearchQuery::MultiVector(_) => {
             return Err(VectorError::ProviderError(
-                "Multi-vector search not yet supported for Qdrant".to_string()
+                "Multi-vector search not yet supported for Qdrant".to_string(),
             ));
         }
     };
@@ -254,9 +269,7 @@ pub fn create_get_points_request(
     with_payload: bool,
     with_vector: bool,
 ) -> Result<GetPointsRequest, VectorError> {
-    let point_ids: Result<Vec<PointId>, VectorError> = ids.iter()
-        .map(|id| id_to_point_id(id))
-        .collect();
+    let point_ids: Result<Vec<PointId>, VectorError> = ids.iter().map(id_to_point_id).collect();
 
     let with_payload_selector = if with_payload {
         Some(WithPayloadSelector::Bool(true))
@@ -282,9 +295,8 @@ pub fn create_delete_points_request(
     filter: Option<&FilterExpression>,
 ) -> Result<DeletePointsRequest, VectorError> {
     let point_ids = if let Some(ids) = ids {
-        let converted_ids: Result<Vec<PointId>, VectorError> = ids.iter()
-            .map(|id| id_to_point_id(id))
-            .collect();
+        let converted_ids: Result<Vec<PointId>, VectorError> =
+            ids.iter().map(id_to_point_id).collect();
         Some(converted_ids?)
     } else {
         None
@@ -369,15 +381,8 @@ pub fn create_batch_search_request(
     let mut searches = Vec::new();
 
     for query in queries {
-        let search_request = create_search_request(
-            query,
-            limit,
-            None,
-            filter,
-            with_payload,
-            with_vector,
-            None,
-        )?;
+        let search_request =
+            create_search_request(query, limit, None, filter, with_payload, with_vector, None)?;
         searches.push(search_request);
     }
 
@@ -392,12 +397,14 @@ pub fn create_recommend_request(
     with_payload: bool,
     with_vector: bool,
 ) -> Result<RecommendRequest, VectorError> {
-    let positive_examples: Result<Vec<RecommendExample>, VectorError> = positive.iter()
+    let positive_examples: Result<Vec<RecommendExample>, VectorError> = positive
+        .iter()
         .map(recommendation_example_to_qdrant)
         .collect();
 
     let negative_examples = if let Some(negative) = negative {
-        let neg_examples: Result<Vec<RecommendExample>, VectorError> = negative.iter()
+        let neg_examples: Result<Vec<RecommendExample>, VectorError> = negative
+            .iter()
             .map(recommendation_example_to_qdrant)
             .collect();
         Some(neg_examples?)
@@ -451,7 +458,8 @@ pub fn create_discover_request(
             RecommendationExample::VectorId(id) => id_to_point_id(id)?,
             RecommendationExample::VectorData(_) => {
                 return Err(VectorError::InvalidParams(
-                    "Cannot use vector data as discovery target, only vector IDs are supported".to_string()
+                    "Cannot use vector data as discovery target, only vector IDs are supported"
+                        .to_string(),
                 ));
             }
         }
@@ -460,23 +468,25 @@ pub fn create_discover_request(
             RecommendationExample::VectorId(id) => id_to_point_id(id)?,
             RecommendationExample::VectorData(_) => {
                 return Err(VectorError::InvalidParams(
-                    "Cannot use vector data as discovery target, only vector IDs are supported".to_string()
+                    "Cannot use vector data as discovery target, only vector IDs are supported"
+                        .to_string(),
                 ));
             }
         }
     } else {
         return Err(VectorError::InvalidParams(
-            "Discovery requires either a target ID or at least one context pair".to_string()
+            "Discovery requires either a target ID or at least one context pair".to_string(),
         ));
     };
 
-    let context_pairs: Result<Vec<QdrantContextPair>, VectorError> = context.iter()
+    let context_pairs: Result<Vec<QdrantContextPair>, VectorError> = context
+        .iter()
         .map(|pair| {
             let positive_id = match &pair.positive {
                 RecommendationExample::VectorId(id) => id_to_point_id(id)?,
                 RecommendationExample::VectorData(_) => {
                     return Err(VectorError::InvalidParams(
-                        "Context pairs must use vector IDs, not vector data".to_string()
+                        "Context pairs must use vector IDs, not vector data".to_string(),
                     ));
                 }
             };
@@ -484,7 +494,7 @@ pub fn create_discover_request(
                 RecommendationExample::VectorId(id) => id_to_point_id(id)?,
                 RecommendationExample::VectorData(_) => {
                     return Err(VectorError::InvalidParams(
-                        "Context pairs must use vector IDs, not vector data".to_string()
+                        "Context pairs must use vector IDs, not vector data".to_string(),
                     ));
                 }
             };
@@ -534,7 +544,7 @@ pub fn scored_points_to_search_results(
 
     for point in scored_points {
         let id = point_id_to_id(&point.id)?;
-        
+
         let vector = if let Some(vectors) = &point.vector {
             Some(named_vectors_to_vector_data(vectors)?)
         } else {
@@ -559,18 +569,16 @@ pub fn scored_points_to_search_results(
     Ok(results)
 }
 
-pub fn records_to_vector_records(
-    records: &[Record],
-) -> Result<Vec<VectorRecord>, VectorError> {
+pub fn records_to_vector_records(records: &[Record]) -> Result<Vec<VectorRecord>, VectorError> {
     let mut vector_records = Vec::new();
 
     for record in records {
         let id = point_id_to_id(&record.id)?;
-        
+
         let vector = if let Some(vectors) = &record.vector {
             named_vectors_to_vector_data(vectors)?
         } else {
-            VectorData::Dense(Vec::new()) 
+            VectorData::Dense(Vec::new())
         };
 
         let metadata = if let Some(payload) = &record.payload {
@@ -621,25 +629,25 @@ fn named_vectors_to_vector_data(vectors: &NamedVectors) -> Result<VectorData, Ve
 
 fn metadata_to_json_value(metadata: &[(String, MetadataValue)]) -> Result<Value, VectorError> {
     let mut map = Map::new();
-    
+
     for (key, value) in metadata {
         let json_value = metadata_value_to_json_value(value)?;
         map.insert(key.clone(), json_value);
     }
-    
+
     Ok(Value::Object(map))
 }
 
 fn json_value_to_metadata(value: &Value) -> Result<Vec<(String, MetadataValue)>, VectorError> {
     let mut metadata = Vec::new();
-    
+
     if let Value::Object(map) = value {
         for (key, val) in map {
             let metadata_value = json_value_to_metadata_value(val)?;
             metadata.push((key.clone(), metadata_value));
         }
     }
-    
+
     Ok(metadata)
 }
 
@@ -647,36 +655,43 @@ fn metadata_value_to_json_value(value: &MetadataValue) -> Result<Value, VectorEr
     match value {
         MetadataValue::StringVal(s) => Ok(Value::String(s.clone())),
         MetadataValue::IntegerVal(i) => Ok(Value::Number(serde_json::Number::from(*i))),
-        MetadataValue::NumberVal(f) => {
-            serde_json::Number::from_f64(*f)
-                .map(Value::Number)
-                .ok_or_else(|| VectorError::InvalidParams("Invalid float value".to_string()))
-        }
+        MetadataValue::NumberVal(f) => serde_json::Number::from_f64(*f)
+            .map(Value::Number)
+            .ok_or_else(|| VectorError::InvalidParams("Invalid float value".to_string())),
         MetadataValue::BooleanVal(b) => Ok(Value::Bool(*b)),
         MetadataValue::ArrayVal(arr) => {
-            let json_arr: Result<Vec<Value>, VectorError> = arr.iter()
-                .map(|func| metadata_value_to_json_value(&func.get()))
+            let json_arr: Result<Vec<Value>, VectorError> = arr
+                .iter()
+                .map(|func| metadata_value_to_json_value(func.get()))
                 .collect();
             Ok(Value::Array(json_arr?))
         }
         MetadataValue::ObjectVal(obj) => {
             let mut map = Map::new();
             for (key, func) in obj {
-                map.insert(key.clone(), metadata_value_to_json_value(&func.get())?);
+                map.insert(key.clone(), metadata_value_to_json_value(func.get())?);
             }
             Ok(Value::Object(map))
         }
         MetadataValue::NullVal => Ok(Value::Null),
         MetadataValue::GeoVal(geo) => {
             let mut geo_obj = Map::new();
-            geo_obj.insert("lat".to_string(), Value::Number(serde_json::Number::from_f64(geo.latitude).unwrap()));
-            geo_obj.insert("lon".to_string(), Value::Number(serde_json::Number::from_f64(geo.longitude).unwrap()));
+            geo_obj.insert(
+                "lat".to_string(),
+                Value::Number(serde_json::Number::from_f64(geo.latitude).unwrap()),
+            );
+            geo_obj.insert(
+                "lon".to_string(),
+                Value::Number(serde_json::Number::from_f64(geo.longitude).unwrap()),
+            );
             Ok(Value::Object(geo_obj))
         }
         MetadataValue::DatetimeVal(dt) => Ok(Value::String(dt.clone())),
         MetadataValue::BlobVal(blob) => {
             use base64::Engine;
-            Ok(Value::String(base64::engine::general_purpose::STANDARD.encode(blob)))
+            Ok(Value::String(
+                base64::engine::general_purpose::STANDARD.encode(blob),
+            ))
         }
     }
 }
@@ -690,13 +705,16 @@ fn json_value_to_metadata_value(value: &Value) -> Result<MetadataValue, VectorEr
             } else if let Some(f) = n.as_f64() {
                 Ok(MetadataValue::NumberVal(f))
             } else {
-                Err(VectorError::InvalidParams("Invalid number value".to_string()))
+                Err(VectorError::InvalidParams(
+                    "Invalid number value".to_string(),
+                ))
             }
         }
         Value::Bool(b) => Ok(MetadataValue::BooleanVal(*b)),
         Value::Array(arr) => {
             use golem_vector::golem::vector::types::MetadataFunc;
-            let metadata_arr: Result<Vec<MetadataFunc>, VectorError> = arr.iter()
+            let metadata_arr: Result<Vec<MetadataFunc>, VectorError> = arr
+                .iter()
                 .map(|v| {
                     let metadata_val = json_value_to_metadata_value(v)?;
                     Ok(MetadataFunc::new(metadata_val))
@@ -706,14 +724,19 @@ fn json_value_to_metadata_value(value: &Value) -> Result<MetadataValue, VectorEr
         }
         Value::Object(obj) => {
             if obj.contains_key("lat") && obj.contains_key("lon") {
-                let lat = obj.get("lat")
+                let lat = obj
+                    .get("lat")
                     .and_then(|v| v.as_f64())
                     .ok_or_else(|| VectorError::InvalidParams("Invalid latitude".to_string()))?;
-                let lon = obj.get("lon")
+                let lon = obj
+                    .get("lon")
                     .and_then(|v| v.as_f64())
                     .ok_or_else(|| VectorError::InvalidParams("Invalid longitude".to_string()))?;
-                
-                return Ok(MetadataValue::GeoVal(GeoCoordinates { latitude: lat, longitude: lon }));
+
+                return Ok(MetadataValue::GeoVal(GeoCoordinates {
+                    latitude: lat,
+                    longitude: lon,
+                }));
             }
 
             use golem_vector::golem::vector::types::MetadataFunc;
@@ -731,8 +754,9 @@ fn json_value_to_metadata_value(value: &Value) -> Result<MetadataValue, VectorEr
 fn filter_expression_to_qdrant_filter(filter: &FilterExpression) -> Result<Filter, VectorError> {
     match filter {
         FilterExpression::And(filters) => {
-            let conditions: Result<Vec<Condition>, VectorError> = filters.iter()
-                .map(|f| filter_expression_to_qdrant_condition(&f.get()))
+            let conditions: Result<Vec<Condition>, VectorError> = filters
+                .iter()
+                .map(|f| filter_expression_to_qdrant_condition(f.get()))
                 .collect();
             Ok(Filter {
                 must: Some(conditions?),
@@ -741,8 +765,9 @@ fn filter_expression_to_qdrant_filter(filter: &FilterExpression) -> Result<Filte
             })
         }
         FilterExpression::Or(filters) => {
-            let conditions: Result<Vec<Condition>, VectorError> = filters.iter()
-                .map(|f| filter_expression_to_qdrant_condition(&f.get()))
+            let conditions: Result<Vec<Condition>, VectorError> = filters
+                .iter()
+                .map(|f| filter_expression_to_qdrant_condition(f.get()))
                 .collect();
             Ok(Filter {
                 should: Some(conditions?),
@@ -751,7 +776,7 @@ fn filter_expression_to_qdrant_filter(filter: &FilterExpression) -> Result<Filte
             })
         }
         FilterExpression::Not(filter) => {
-            let condition = filter_expression_to_qdrant_condition(&filter.get())?;
+            let condition = filter_expression_to_qdrant_condition(filter.get())?;
             Ok(Filter {
                 must_not: Some(vec![condition]),
                 must: None,
@@ -769,7 +794,9 @@ fn filter_expression_to_qdrant_filter(filter: &FilterExpression) -> Result<Filte
     }
 }
 
-fn filter_expression_to_qdrant_condition(filter: &FilterExpression) -> Result<Condition, VectorError> {
+fn filter_expression_to_qdrant_condition(
+    filter: &FilterExpression,
+) -> Result<Condition, VectorError> {
     match filter {
         FilterExpression::Condition(condition) => filter_condition_to_qdrant_condition(condition),
         other => {
@@ -779,22 +806,22 @@ fn filter_expression_to_qdrant_condition(filter: &FilterExpression) -> Result<Co
     }
 }
 
-fn filter_condition_to_qdrant_condition(condition: &FilterCondition) -> Result<Condition, VectorError> {
+fn filter_condition_to_qdrant_condition(
+    condition: &FilterCondition,
+) -> Result<Condition, VectorError> {
     let field_condition = match condition.operator {
         FilterOperator::Eq => {
             let match_value = metadata_value_to_match_value(&condition.value)?;
             FieldCondition {
                 key: condition.field.clone(),
-                 condition: FieldConditionOneOf::Match { 
-                    r#match: MatchCondition { 
-                        value: match_value 
-                    } 
+                condition: FieldConditionOneOf::Match {
+                    r#match: MatchCondition { value: match_value },
                 },
             }
         }
         FilterOperator::Ne => {
             return Err(VectorError::ProviderError(
-                "NotEqual operator not directly supported, use Not(Equal) instead".to_string()
+                "NotEqual operator not directly supported, use Not(Equal) instead".to_string(),
             ));
         }
         FilterOperator::Gt => {
@@ -807,7 +834,7 @@ fn filter_condition_to_qdrant_condition(condition: &FilterCondition) -> Result<C
                             gte: None,
                             lt: None,
                             lte: None,
-                        }
+                        },
                     },
                 }
             } else if let MetadataValue::IntegerVal(i) = &condition.value {
@@ -819,12 +846,12 @@ fn filter_condition_to_qdrant_condition(condition: &FilterCondition) -> Result<C
                             gte: None,
                             lt: None,
                             lte: None,
-                        }
+                        },
                     },
                 }
             } else {
                 return Err(VectorError::InvalidParams(
-                    "GreaterThan operator requires numeric value".to_string()
+                    "GreaterThan operator requires numeric value".to_string(),
                 ));
             }
         }
@@ -838,7 +865,7 @@ fn filter_condition_to_qdrant_condition(condition: &FilterCondition) -> Result<C
                             gt: None,
                             lt: None,
                             lte: None,
-                        }
+                        },
                     },
                 }
             } else if let MetadataValue::IntegerVal(i) = &condition.value {
@@ -850,12 +877,12 @@ fn filter_condition_to_qdrant_condition(condition: &FilterCondition) -> Result<C
                             gt: None,
                             lt: None,
                             lte: None,
-                        }
+                        },
                     },
                 }
             } else {
                 return Err(VectorError::InvalidParams(
-                    "GreaterThanOrEqual operator requires numeric value".to_string()
+                    "GreaterThanOrEqual operator requires numeric value".to_string(),
                 ));
             }
         }
@@ -869,7 +896,7 @@ fn filter_condition_to_qdrant_condition(condition: &FilterCondition) -> Result<C
                             lte: None,
                             gt: None,
                             gte: None,
-                        }
+                        },
                     },
                 }
             } else if let MetadataValue::IntegerVal(i) = &condition.value {
@@ -881,12 +908,12 @@ fn filter_condition_to_qdrant_condition(condition: &FilterCondition) -> Result<C
                             lte: None,
                             gt: None,
                             gte: None,
-                        }
+                        },
                     },
                 }
             } else {
                 return Err(VectorError::InvalidParams(
-                    "LessThan operator requires numeric value".to_string()
+                    "LessThan operator requires numeric value".to_string(),
                 ));
             }
         }
@@ -900,7 +927,7 @@ fn filter_condition_to_qdrant_condition(condition: &FilterCondition) -> Result<C
                             lt: None,
                             gt: None,
                             gte: None,
-                        }
+                        },
                     },
                 }
             } else if let MetadataValue::IntegerVal(i) = &condition.value {
@@ -912,71 +939,74 @@ fn filter_condition_to_qdrant_condition(condition: &FilterCondition) -> Result<C
                             lt: None,
                             gt: None,
                             gte: None,
-                        }
+                        },
                     },
                 }
             } else {
                 return Err(VectorError::InvalidParams(
-                    "LessThanOrEqual operator requires numeric value".to_string()
+                    "LessThanOrEqual operator requires numeric value".to_string(),
                 ));
             }
         }
         FilterOperator::In => {
             if let MetadataValue::ArrayVal(arr) = &condition.value {
-                let match_values: Result<Vec<String>, VectorError> = arr.iter()
+                let match_values: Result<Vec<String>, VectorError> = arr
+                    .iter()
                     .map(|func| {
                         let val = func.get();
                         match val {
                             MetadataValue::StringVal(s) => Ok(s.clone()),
                             MetadataValue::IntegerVal(i) => Ok(i.to_string()),
                             MetadataValue::NumberVal(f) => Ok(f.to_string()),
-                            _ => Err(VectorError::InvalidParams("In operator array must contain strings or numbers".to_string()))
+                            _ => Err(VectorError::InvalidParams(
+                                "In operator array must contain strings or numbers".to_string(),
+                            )),
                         }
                     })
                     .collect();
-                
+
                 FieldCondition {
                     key: condition.field.clone(),
-                    condition: FieldConditionOneOf::Match { 
-                        r#match: MatchCondition { 
-                            value: MatchValue::Strings(match_values?) 
-                        } 
+                    condition: FieldConditionOneOf::Match {
+                        r#match: MatchCondition {
+                            value: MatchValue::Strings(match_values?),
+                        },
                     },
                 }
             } else {
                 return Err(VectorError::InvalidParams(
-                    "In operator requires array value".to_string()
+                    "In operator requires array value".to_string(),
                 ));
             }
         }
         FilterOperator::Nin => {
             return Err(VectorError::ProviderError(
-                "NotIn operator not directly supported, use Not(In) instead".to_string()
+                "NotIn operator not directly supported, use Not(In) instead".to_string(),
             ));
         }
         FilterOperator::Contains => {
             return Err(VectorError::UnsupportedFeature(
-                "Contains operator not supported in Qdrant".to_string()
+                "Contains operator not supported in Qdrant".to_string(),
             ));
         }
         FilterOperator::NotContains => {
             return Err(VectorError::UnsupportedFeature(
-                "NotContains operator not supported in Qdrant".to_string()
+                "NotContains operator not supported in Qdrant".to_string(),
             ));
         }
         FilterOperator::Regex => {
             return Err(VectorError::UnsupportedFeature(
-                "Regex operator not supported in Qdrant".to_string()
+                "Regex operator not supported in Qdrant".to_string(),
             ));
         }
         FilterOperator::GeoWithin => {
             return Err(VectorError::UnsupportedFeature(
-                "GeoWithin operator not yet implemented for Qdrant".to_string()
+                "GeoWithin operator not yet implemented for Qdrant".to_string(),
             ));
         }
         FilterOperator::GeoBbox => {
             return Err(VectorError::UnsupportedFeature(
-                "GeoBbox operator not yet implemented for Qdrant".to_string()
+                "GeoBbox operator not yet implemented for Qdrant".to_string(),
             ));
         }
     };
@@ -989,45 +1019,37 @@ fn metadata_value_to_match_value(value: &MetadataValue) -> Result<MatchValue, Ve
         MetadataValue::StringVal(s) => Ok(MatchValue::String(s.clone())),
         MetadataValue::IntegerVal(i) => Ok(MatchValue::Integer(*i)),
         MetadataValue::BooleanVal(b) => Ok(MatchValue::Boolean(*b)),
-        _ => Err(VectorError::InvalidParams("Unsupported metadata value type for match".to_string())),
+        _ => Err(VectorError::InvalidParams(
+            "Unsupported metadata value type for match".to_string(),
+        )),
     }
 }
 
-fn recommendation_example_to_qdrant(example: &RecommendationExample) -> Result<RecommendExample, VectorError> {
+fn recommendation_example_to_qdrant(
+    example: &RecommendationExample,
+) -> Result<RecommendExample, VectorError> {
     match example {
         RecommendationExample::VectorId(id) => {
             let point_id = id_to_point_id(id)?;
             Ok(RecommendExample::PointId(point_id))
         }
-        RecommendationExample::VectorData(vector_data) => {
-            match vector_data {
-                VectorData::Dense(values) => Ok(RecommendExample::Vector(values.clone())),
-                VectorData::Sparse(_) => {
-                    Err(VectorError::ProviderError(
-                        "Sparse vectors not supported in recommendations".to_string()
-                    ))
-                }
-                VectorData::Binary(_) => {
-                    Err(VectorError::ProviderError(
-                        "Binary vectors not supported in recommendations".to_string()
-                    ))
-                }
-                VectorData::Half(_) => {
-                    Err(VectorError::ProviderError(
-                        "Half vectors not supported in recommendations".to_string()
-                    ))
-                }
-                VectorData::Named(_) => {
-                    Err(VectorError::ProviderError(
-                        "Named vectors not supported in recommendations".to_string()
-                    ))
-                }
-                VectorData::Hybrid(_) => {
-                    Err(VectorError::ProviderError(
-                        "Hybrid vectors not supported in recommendations".to_string()
-                    ))
-                }
-            }
-        }
+        RecommendationExample::VectorData(vector_data) => match vector_data {
+            VectorData::Dense(values) => Ok(RecommendExample::Vector(values.clone())),
+            VectorData::Sparse(_) => Err(VectorError::ProviderError(
+                "Sparse vectors not supported in recommendations".to_string(),
+            )),
+            VectorData::Binary(_) => Err(VectorError::ProviderError(
+                "Binary vectors not supported in recommendations".to_string(),
+            )),
+            VectorData::Half(_) => Err(VectorError::ProviderError(
+                "Half vectors not supported in recommendations".to_string(),
+            )),
+            VectorData::Named(_) => Err(VectorError::ProviderError(
+                "Named vectors not supported in recommendations".to_string(),
+            )),
+            VectorData::Hybrid(_) => Err(VectorError::ProviderError(
+                "Hybrid vectors not supported in recommendations".to_string(),
+            )),
+        },
     }
 }

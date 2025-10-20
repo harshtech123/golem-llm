@@ -1,12 +1,8 @@
 use crate::golem::vector::{
-    analytics::Guest as AnalyticsGuest,
-    collections::Guest as CollectionsGuest,
-    connection::Guest as ConnectionGuest,
-    namespaces::Guest as NamespacesGuest,
-    search::Guest as SearchGuest,
-    search_extended::Guest as SearchExtendedGuest,
-    types::VectorError,
-    vectors::Guest as VectorsGuest,
+    analytics::Guest as AnalyticsGuest, collections::Guest as CollectionsGuest,
+    connection::Guest as ConnectionGuest, namespaces::Guest as NamespacesGuest,
+    search::Guest as SearchGuest, search_extended::Guest as SearchExtendedGuest,
+    types::VectorError, vectors::Guest as VectorsGuest,
 };
 use std::marker::PhantomData;
 
@@ -50,7 +46,8 @@ mod passthrough_impl {
             Impl::disconnect()
         }
 
-        fn get_connection_status() -> Result<crate::golem::vector::connection::ConnectionStatus, VectorError> {
+        fn get_connection_status(
+        ) -> Result<crate::golem::vector::connection::ConnectionStatus, VectorError> {
             init_logging();
             Impl::get_connection_status()
         }
@@ -84,7 +81,9 @@ mod passthrough_impl {
             Impl::list_collections()
         }
 
-        fn get_collection(name: String) -> Result<crate::golem::vector::collections::CollectionInfo, VectorError> {
+        fn get_collection(
+            name: String,
+        ) -> Result<crate::golem::vector::collections::CollectionInfo, VectorError> {
             init_logging();
             Impl::get_collection(name)
         }
@@ -138,7 +137,13 @@ mod passthrough_impl {
             include_metadata: Option<bool>,
         ) -> Result<Vec<crate::golem::vector::types::VectorRecord>, VectorError> {
             init_logging();
-            Impl::get_vectors(collection, ids, namespace, include_vectors, include_metadata)
+            Impl::get_vectors(
+                collection,
+                ids,
+                namespace,
+                include_vectors,
+                include_metadata,
+            )
         }
 
         fn get_vector(
@@ -180,10 +185,7 @@ mod passthrough_impl {
             Impl::delete_by_filter(collection, filter, namespace)
         }
 
-        fn delete_namespace(
-            collection: String,
-            namespace: String,
-        ) -> Result<u32, VectorError> {
+        fn delete_namespace(collection: String, namespace: String) -> Result<u32, VectorError> {
             init_logging();
             Impl::delete_namespace(collection, namespace)
         }
@@ -198,7 +200,15 @@ mod passthrough_impl {
             include_metadata: Option<bool>,
         ) -> Result<crate::golem::vector::vectors::ListResponse, VectorError> {
             init_logging();
-            Impl::list_vectors(collection, namespace, filter, limit, cursor, include_vectors, include_metadata)
+            Impl::list_vectors(
+                collection,
+                namespace,
+                filter,
+                limit,
+                cursor,
+                include_vectors,
+                include_metadata,
+            )
         }
 
         fn count_vectors(
@@ -225,7 +235,18 @@ mod passthrough_impl {
             search_params: Option<Vec<(String, String)>>,
         ) -> Result<Vec<crate::golem::vector::types::SearchResult>, VectorError> {
             init_logging();
-            Impl::search_vectors(collection, query, limit, filter, namespace, include_vectors, include_metadata, min_score, max_distance, search_params)
+            Impl::search_vectors(
+                collection,
+                query,
+                limit,
+                filter,
+                namespace,
+                include_vectors,
+                include_metadata,
+                min_score,
+                max_distance,
+                search_params,
+            )
         }
 
         fn find_similar(
@@ -249,7 +270,16 @@ mod passthrough_impl {
             search_params: Option<Vec<(String, String)>>,
         ) -> Result<Vec<Vec<crate::golem::vector::types::SearchResult>>, VectorError> {
             init_logging();
-            Impl::batch_search(collection, queries, limit, filter, namespace, include_vectors, include_metadata, search_params)
+            Impl::batch_search(
+                collection,
+                queries,
+                limit,
+                filter,
+                namespace,
+                include_vectors,
+                include_metadata,
+                search_params,
+            )
         }
     }
 
@@ -266,7 +296,17 @@ mod passthrough_impl {
             include_metadata: Option<bool>,
         ) -> Result<Vec<crate::golem::vector::types::SearchResult>, VectorError> {
             init_logging();
-            Impl::recommend_vectors(collection, positive, negative, limit, filter, namespace, strategy, include_vectors, include_metadata)
+            Impl::recommend_vectors(
+                collection,
+                positive,
+                negative,
+                limit,
+                filter,
+                namespace,
+                strategy,
+                include_vectors,
+                include_metadata,
+            )
         }
 
         fn discover_vectors(
@@ -279,7 +319,15 @@ mod passthrough_impl {
             include_metadata: Option<bool>,
         ) -> Result<Vec<crate::golem::vector::types::SearchResult>, VectorError> {
             init_logging();
-            Impl::discover_vectors(collection, context_pairs, limit, filter, namespace, include_vectors, include_metadata)
+            Impl::discover_vectors(
+                collection,
+                context_pairs,
+                limit,
+                filter,
+                namespace,
+                include_vectors,
+                include_metadata,
+            )
         }
 
         fn search_groups(
@@ -292,9 +340,20 @@ mod passthrough_impl {
             namespace: Option<String>,
             include_vectors: Option<bool>,
             include_metadata: Option<bool>,
-        ) -> Result<Vec<crate::golem::vector::search_extended::GroupedSearchResult>, VectorError> {
+        ) -> Result<Vec<crate::golem::vector::search_extended::GroupedSearchResult>, VectorError>
+        {
             init_logging();
-            Impl::search_groups(collection, query, group_by, group_size, max_groups, filter, namespace, include_vectors, include_metadata)
+            Impl::search_groups(
+                collection,
+                query,
+                group_by,
+                group_size,
+                max_groups,
+                filter,
+                namespace,
+                include_vectors,
+                include_metadata,
+            )
         }
 
         fn search_range(
@@ -309,7 +368,17 @@ mod passthrough_impl {
             include_metadata: Option<bool>,
         ) -> Result<Vec<crate::golem::vector::types::SearchResult>, VectorError> {
             init_logging();
-            Impl::search_range(collection, vector, min_distance, max_distance, filter, namespace, limit, include_vectors, include_metadata)
+            Impl::search_range(
+                collection,
+                vector,
+                min_distance,
+                max_distance,
+                filter,
+                namespace,
+                limit,
+                include_vectors,
+                include_metadata,
+            )
         }
 
         fn search_text(
@@ -378,18 +447,12 @@ mod passthrough_impl {
             Impl::get_namespace(collection, namespace)
         }
 
-        fn delete_namespace(
-            collection: String,
-            namespace: String,
-        ) -> Result<(), VectorError> {
+        fn delete_namespace(collection: String, namespace: String) -> Result<(), VectorError> {
             init_logging();
             Impl::delete_namespace(collection, namespace)
         }
 
-        fn namespace_exists(
-            collection: String,
-            namespace: String,
-        ) -> Result<bool, VectorError> {
+        fn namespace_exists(collection: String, namespace: String) -> Result<bool, VectorError> {
             init_logging();
             Impl::namespace_exists(collection, namespace)
         }
@@ -428,7 +491,15 @@ mod durable_impl {
             if durability.is_live() {
                 let result = Impl::connect_internal(&endpoint, &credentials, &timeout_ms, &options);
                 let persist_result = result.as_ref().map(|_| Unit).map_err(|e| e.clone());
-                durability.persist(ConnectParams { endpoint, credentials, timeout_ms, options }, persist_result)?;
+                durability.persist(
+                    ConnectParams {
+                        endpoint,
+                        credentials,
+                        timeout_ms,
+                        options,
+                    },
+                    persist_result,
+                )?;
                 result
             } else {
                 let _unit: Unit = durability.replay::<Unit, VectorError>()?;
@@ -444,9 +515,8 @@ mod durable_impl {
                 WrappedFunctionType::WriteRemote,
             );
             if durability.is_live() {
-                let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    Impl::disconnect()
-                });
+                let result =
+                    with_persistence_level(PersistenceLevel::PersistNothing, || Impl::disconnect());
                 durability.persist(Unit, result.map(|_| Unit))?;
                 Ok(())
             } else {
@@ -455,7 +525,8 @@ mod durable_impl {
             }
         }
 
-        fn get_connection_status() -> Result<crate::golem::vector::connection::ConnectionStatus, VectorError> {
+        fn get_connection_status(
+        ) -> Result<crate::golem::vector::connection::ConnectionStatus, VectorError> {
             init_logging();
             Impl::get_connection_status()
         }
@@ -481,16 +552,36 @@ mod durable_impl {
             metadata: Option<crate::golem::vector::types::Metadata>,
         ) -> Result<crate::golem::vector::collections::CollectionInfo, VectorError> {
             init_logging();
-            let durability: Durability<crate::golem::vector::collections::CollectionInfo, VectorError> = Durability::new(
+            let durability: Durability<
+                crate::golem::vector::collections::CollectionInfo,
+                VectorError,
+            > = Durability::new(
                 "golem_vector_collections",
                 "upsert_collection",
                 WrappedFunctionType::WriteRemote,
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    Impl::upsert_collection(name.clone(), description.clone(), dimension, metric, index_config.clone(), metadata.clone())
+                    Impl::upsert_collection(
+                        name.clone(),
+                        description.clone(),
+                        dimension,
+                        metric,
+                        index_config.clone(),
+                        metadata.clone(),
+                    )
                 });
-                durability.persist(UpsertCollectionParams { name, description, dimension, metric, index_config, metadata }, result)
+                durability.persist(
+                    UpsertCollectionParams {
+                        name,
+                        description,
+                        dimension,
+                        metric,
+                        index_config,
+                        metadata,
+                    },
+                    result,
+                )
             } else {
                 durability.replay()
             }
@@ -513,7 +604,9 @@ mod durable_impl {
             }
         }
 
-        fn get_collection(name: String) -> Result<crate::golem::vector::collections::CollectionInfo, VectorError> {
+        fn get_collection(
+            name: String,
+        ) -> Result<crate::golem::vector::collections::CollectionInfo, VectorError> {
             init_logging();
             Impl::get_collection(name)
         }
@@ -524,7 +617,10 @@ mod durable_impl {
             metadata: Option<crate::golem::vector::types::Metadata>,
         ) -> Result<crate::golem::vector::collections::CollectionInfo, VectorError> {
             init_logging();
-            let durability: Durability<crate::golem::vector::collections::CollectionInfo, VectorError> = Durability::new(
+            let durability: Durability<
+                crate::golem::vector::collections::CollectionInfo,
+                VectorError,
+            > = Durability::new(
                 "golem_vector_collections",
                 "update_collection",
                 WrappedFunctionType::WriteRemote,
@@ -533,7 +629,14 @@ mod durable_impl {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
                     Impl::update_collection(name.clone(), description.clone(), metadata.clone())
                 });
-                durability.persist(UpdateCollectionParams { name, description, metadata }, result)
+                durability.persist(
+                    UpdateCollectionParams {
+                        name,
+                        description,
+                        metadata,
+                    },
+                    result,
+                )
             } else {
                 durability.replay()
             }
@@ -571,16 +674,24 @@ mod durable_impl {
             namespace: Option<String>,
         ) -> Result<crate::golem::vector::vectors::BatchResult, VectorError> {
             init_logging();
-            let durability: Durability<crate::golem::vector::vectors::BatchResult, VectorError> = Durability::new(
-                "golem_vector_vectors",
-                "upsert_vectors",
-                WrappedFunctionType::WriteRemote,
-            );
+            let durability: Durability<crate::golem::vector::vectors::BatchResult, VectorError> =
+                Durability::new(
+                    "golem_vector_vectors",
+                    "upsert_vectors",
+                    WrappedFunctionType::WriteRemote,
+                );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
                     Impl::upsert_vectors(collection.clone(), vectors.clone(), namespace.clone())
                 });
-                durability.persist(UpsertVectorsParams { collection, vectors, namespace }, result)
+                durability.persist(
+                    UpsertVectorsParams {
+                        collection,
+                        vectors,
+                        namespace,
+                    },
+                    result,
+                )
             } else {
                 durability.replay()
             }
@@ -601,9 +712,24 @@ mod durable_impl {
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    Impl::upsert_vector(collection.clone(), id.clone(), vector.clone(), metadata.clone(), namespace.clone())
+                    Impl::upsert_vector(
+                        collection.clone(),
+                        id.clone(),
+                        vector.clone(),
+                        metadata.clone(),
+                        namespace.clone(),
+                    )
                 });
-                durability.persist(UpsertVectorParams { collection, id, vector, metadata, namespace }, result.map(|_| Unit))?;
+                durability.persist(
+                    UpsertVectorParams {
+                        collection,
+                        id,
+                        vector,
+                        metadata,
+                        namespace,
+                    },
+                    result.map(|_| Unit),
+                )?;
                 Ok(())
             } else {
                 durability.replay::<Unit, VectorError>()?;
@@ -619,7 +745,13 @@ mod durable_impl {
             include_metadata: Option<bool>,
         ) -> Result<Vec<crate::golem::vector::types::VectorRecord>, VectorError> {
             init_logging();
-            Impl::get_vectors(collection, ids, namespace, include_vectors, include_metadata)
+            Impl::get_vectors(
+                collection,
+                ids,
+                namespace,
+                include_vectors,
+                include_metadata,
+            )
         }
 
         fn get_vector(
@@ -647,9 +779,26 @@ mod durable_impl {
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    Impl::update_vector(collection.clone(), id.clone(), vector.clone(), metadata.clone(), namespace.clone(), merge_metadata)
+                    Impl::update_vector(
+                        collection.clone(),
+                        id.clone(),
+                        vector.clone(),
+                        metadata.clone(),
+                        namespace.clone(),
+                        merge_metadata,
+                    )
                 });
-                durability.persist(UpdateVectorParams { collection, id, vector, metadata, namespace, merge_metadata }, result.map(|_| Unit))?;
+                durability.persist(
+                    UpdateVectorParams {
+                        collection,
+                        id,
+                        vector,
+                        metadata,
+                        namespace,
+                        merge_metadata,
+                    },
+                    result.map(|_| Unit),
+                )?;
                 Ok(())
             } else {
                 durability.replay::<Unit, VectorError>()?;
@@ -672,7 +821,14 @@ mod durable_impl {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
                     Impl::delete_vectors(collection.clone(), ids.clone(), namespace.clone())
                 });
-                durability.persist(DeleteVectorsParams { collection, ids, namespace }, result)
+                durability.persist(
+                    DeleteVectorsParams {
+                        collection,
+                        ids,
+                        namespace,
+                    },
+                    result,
+                )
             } else {
                 durability.replay()
             }
@@ -693,16 +849,20 @@ mod durable_impl {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
                     Impl::delete_by_filter(collection.clone(), filter.clone(), namespace.clone())
                 });
-                durability.persist(DeleteByFilterParams { collection, filter, namespace }, result)
+                durability.persist(
+                    DeleteByFilterParams {
+                        collection,
+                        filter,
+                        namespace,
+                    },
+                    result,
+                )
             } else {
                 durability.replay()
             }
         }
 
-        fn delete_namespace(
-            collection: String,
-            namespace: String,
-        ) -> Result<u32, VectorError> {
+        fn delete_namespace(collection: String, namespace: String) -> Result<u32, VectorError> {
             init_logging();
             let durability: Durability<u32, VectorError> = Durability::new(
                 "golem_vector_vectors",
@@ -729,7 +889,15 @@ mod durable_impl {
             include_metadata: Option<bool>,
         ) -> Result<crate::golem::vector::vectors::ListResponse, VectorError> {
             init_logging();
-            Impl::list_vectors(collection, namespace, filter, limit, cursor, include_vectors, include_metadata)
+            Impl::list_vectors(
+                collection,
+                namespace,
+                filter,
+                limit,
+                cursor,
+                include_vectors,
+                include_metadata,
+            )
         }
 
         fn count_vectors(
@@ -756,16 +924,44 @@ mod durable_impl {
             search_params: Option<Vec<(String, String)>>,
         ) -> Result<Vec<crate::golem::vector::types::SearchResult>, VectorError> {
             init_logging();
-            let durability: Durability<Vec<crate::golem::vector::types::SearchResult>, VectorError> = Durability::new(
+            let durability: Durability<
+                Vec<crate::golem::vector::types::SearchResult>,
+                VectorError,
+            > = Durability::new(
                 "golem_vector_search",
                 "search_vectors",
                 WrappedFunctionType::ReadRemote,
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    Impl::search_vectors(collection.clone(), query.clone(), limit, filter.clone(), namespace.clone(), include_vectors, include_metadata, min_score, max_distance, search_params.clone())
+                    Impl::search_vectors(
+                        collection.clone(),
+                        query.clone(),
+                        limit,
+                        filter.clone(),
+                        namespace.clone(),
+                        include_vectors,
+                        include_metadata,
+                        min_score,
+                        max_distance,
+                        search_params.clone(),
+                    )
                 });
-                durability.persist(SearchVectorsParams { collection, query, limit, filter, namespace, include_vectors, include_metadata, min_score, max_distance, search_params }, result)
+                durability.persist(
+                    SearchVectorsParams {
+                        collection,
+                        query,
+                        limit,
+                        filter,
+                        namespace,
+                        include_vectors,
+                        include_metadata,
+                        min_score,
+                        max_distance,
+                        search_params,
+                    },
+                    result,
+                )
             } else {
                 durability.replay()
             }
@@ -792,16 +988,40 @@ mod durable_impl {
             search_params: Option<Vec<(String, String)>>,
         ) -> Result<Vec<Vec<crate::golem::vector::types::SearchResult>>, VectorError> {
             init_logging();
-            let durability: Durability<Vec<Vec<crate::golem::vector::types::SearchResult>>, VectorError> = Durability::new(
+            let durability: Durability<
+                Vec<Vec<crate::golem::vector::types::SearchResult>>,
+                VectorError,
+            > = Durability::new(
                 "golem_vector_search",
                 "batch_search",
                 WrappedFunctionType::ReadRemote,
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    Impl::batch_search(collection.clone(), queries.clone(), limit, filter.clone(), namespace.clone(), include_vectors, include_metadata, search_params.clone())
+                    Impl::batch_search(
+                        collection.clone(),
+                        queries.clone(),
+                        limit,
+                        filter.clone(),
+                        namespace.clone(),
+                        include_vectors,
+                        include_metadata,
+                        search_params.clone(),
+                    )
                 });
-                durability.persist(BatchSearchParams { collection, queries, limit, filter, namespace, include_vectors, include_metadata, search_params }, result)
+                durability.persist(
+                    BatchSearchParams {
+                        collection,
+                        queries,
+                        limit,
+                        filter,
+                        namespace,
+                        include_vectors,
+                        include_metadata,
+                        search_params,
+                    },
+                    result,
+                )
             } else {
                 durability.replay()
             }
@@ -821,7 +1041,17 @@ mod durable_impl {
             include_metadata: Option<bool>,
         ) -> Result<Vec<crate::golem::vector::types::SearchResult>, VectorError> {
             init_logging();
-            Impl::recommend_vectors(collection, positive, negative, limit, filter, namespace, strategy, include_vectors, include_metadata)
+            Impl::recommend_vectors(
+                collection,
+                positive,
+                negative,
+                limit,
+                filter,
+                namespace,
+                strategy,
+                include_vectors,
+                include_metadata,
+            )
         }
 
         fn discover_vectors(
@@ -835,7 +1065,16 @@ mod durable_impl {
             include_metadata: Option<bool>,
         ) -> Result<Vec<crate::golem::vector::types::SearchResult>, VectorError> {
             init_logging();
-            Impl::discover_vectors(collection, target, context_pairs, limit, filter, namespace, include_vectors, include_metadata)
+            Impl::discover_vectors(
+                collection,
+                target,
+                context_pairs,
+                limit,
+                filter,
+                namespace,
+                include_vectors,
+                include_metadata,
+            )
         }
 
         fn search_groups(
@@ -848,9 +1087,20 @@ mod durable_impl {
             namespace: Option<String>,
             include_vectors: Option<bool>,
             include_metadata: Option<bool>,
-        ) -> Result<Vec<crate::golem::vector::search_extended::GroupedSearchResult>, VectorError> {
+        ) -> Result<Vec<crate::golem::vector::search_extended::GroupedSearchResult>, VectorError>
+        {
             init_logging();
-            Impl::search_groups(collection, query, group_by, group_size, max_groups, filter, namespace, include_vectors, include_metadata)
+            Impl::search_groups(
+                collection,
+                query,
+                group_by,
+                group_size,
+                max_groups,
+                filter,
+                namespace,
+                include_vectors,
+                include_metadata,
+            )
         }
 
         fn search_range(
@@ -865,7 +1115,17 @@ mod durable_impl {
             include_metadata: Option<bool>,
         ) -> Result<Vec<crate::golem::vector::types::SearchResult>, VectorError> {
             init_logging();
-            Impl::search_range(collection, vector, min_distance, max_distance, filter, namespace, limit, include_vectors, include_metadata)
+            Impl::search_range(
+                collection,
+                vector,
+                min_distance,
+                max_distance,
+                filter,
+                namespace,
+                limit,
+                include_vectors,
+                include_metadata,
+            )
         }
 
         fn search_text(
@@ -916,7 +1176,10 @@ mod durable_impl {
             metadata: Option<crate::golem::vector::types::Metadata>,
         ) -> Result<crate::golem::vector::namespaces::NamespaceInfo, VectorError> {
             init_logging();
-            let durability: Durability<crate::golem::vector::namespaces::NamespaceInfo, VectorError> = Durability::new(
+            let durability: Durability<
+                crate::golem::vector::namespaces::NamespaceInfo,
+                VectorError,
+            > = Durability::new(
                 "golem_vector_namespaces",
                 "upsert_namespace",
                 WrappedFunctionType::WriteRemote,
@@ -946,10 +1209,7 @@ mod durable_impl {
             Impl::get_namespace(collection, namespace)
         }
 
-        fn delete_namespace(
-            collection: String,
-            namespace: String,
-        ) -> Result<(), VectorError> {
+        fn delete_namespace(collection: String, namespace: String) -> Result<(), VectorError> {
             init_logging();
             let durability: Durability<Unit, VectorError> = Durability::new(
                 "golem_vector_namespaces",
@@ -968,10 +1228,7 @@ mod durable_impl {
             }
         }
 
-        fn namespace_exists(
-            collection: String,
-            namespace: String,
-        ) -> Result<bool, VectorError> {
+        fn namespace_exists(collection: String, namespace: String) -> Result<bool, VectorError> {
             init_logging();
             Impl::namespace_exists(collection, namespace)
         }
@@ -1097,13 +1354,21 @@ mod tests {
         roundtrip_test(VectorError::NotFound("vector not found".to_string()));
         roundtrip_test(VectorError::AlreadyExists("collection exists".to_string()));
         roundtrip_test(VectorError::InvalidParams("invalid dimension".to_string()));
-        roundtrip_test(VectorError::UnsupportedFeature("feature not supported".to_string()));
-        roundtrip_test(VectorError::DimensionMismatch("dimension mismatch".to_string()));
-        roundtrip_test(VectorError::InvalidVector("invalid vector data".to_string()));
+        roundtrip_test(VectorError::UnsupportedFeature(
+            "feature not supported".to_string(),
+        ));
+        roundtrip_test(VectorError::DimensionMismatch(
+            "dimension mismatch".to_string(),
+        ));
+        roundtrip_test(VectorError::InvalidVector(
+            "invalid vector data".to_string(),
+        ));
         roundtrip_test(VectorError::Unauthorized("access denied".to_string()));
         roundtrip_test(VectorError::RateLimited("too many requests".to_string()));
         roundtrip_test(VectorError::ProviderError("provider error".to_string()));
-        roundtrip_test(VectorError::ConnectionError("connection failed".to_string()));
+        roundtrip_test(VectorError::ConnectionError(
+            "connection failed".to_string(),
+        ));
     }
 
     #[test]
@@ -1144,7 +1409,10 @@ mod tests {
             id: "vec-123".to_string(),
             vector: VectorData::Dense(vec![1.0, 2.0, 3.0]),
             metadata: Some(vec![
-                ("category".to_string(), MetadataValue::StringVal("test".to_string())),
+                (
+                    "category".to_string(),
+                    MetadataValue::StringVal("test".to_string()),
+                ),
                 ("price".to_string(), MetadataValue::NumberVal(99.99)),
             ]),
         };
@@ -1158,9 +1426,10 @@ mod tests {
             score: 0.95,
             distance: 0.05,
             vector: Some(VectorData::Dense(vec![0.1, 0.2, 0.3])),
-            metadata: Some(vec![
-                ("title".to_string(), MetadataValue::StringVal("Test Document".to_string())),
-            ]),
+            metadata: Some(vec![(
+                "title".to_string(),
+                MetadataValue::StringVal("Test Document".to_string()),
+            )]),
         };
         roundtrip_test(result);
     }

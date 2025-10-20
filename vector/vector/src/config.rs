@@ -26,7 +26,8 @@ pub fn get_config_with_default(key: impl AsRef<OsStr>, default: impl Into<String
 
 pub fn validate_config_key(key: impl AsRef<OsStr>) -> Result<String, VectorError> {
     let key_str = key.as_ref().to_string_lossy().to_string();
-    std::env::var(key).map_err(|_| VectorError::ProviderError(format!("Missing config key: {key_str}")))
+    std::env::var(key)
+        .map_err(|_| VectorError::ProviderError(format!("Missing config key: {key_str}")))
 }
 
 pub fn with_config_keys<R>(keys: &[&str], callback: impl FnOnce(Vec<String>) -> R) -> R {
@@ -52,14 +53,18 @@ pub fn with_connection_config_key(
                 return match v {
                     crate::golem::vector::types::MetadataValue::StringVal(s) => Some(s.clone()),
                     crate::golem::vector::types::MetadataValue::NumberVal(n) => Some(n.to_string()),
-                    crate::golem::vector::types::MetadataValue::IntegerVal(i) => Some(i.to_string()),
-                    crate::golem::vector::types::MetadataValue::BooleanVal(b) => Some(b.to_string()),
+                    crate::golem::vector::types::MetadataValue::IntegerVal(i) => {
+                        Some(i.to_string())
+                    }
+                    crate::golem::vector::types::MetadataValue::BooleanVal(b) => {
+                        Some(b.to_string())
+                    }
                     _ => None,
                 };
             }
         }
     }
-    
+
     std::env::var(key).ok()
 }
 
@@ -82,25 +87,24 @@ pub fn get_batch_size_config() -> u32 {
 }
 
 pub fn get_vector_dimension_config() -> Option<u32> {
-    get_optional_config("VECTOR_DIMENSION")
-        .and_then(|s| s.parse().ok())
+    get_optional_config("VECTOR_DIMENSION").and_then(|s| s.parse().ok())
 }
 
 pub fn get_provider_config(provider: &str) -> std::collections::HashMap<String, String> {
     let mut config = std::collections::HashMap::new();
-    
+
     if let Some(api_key) = get_optional_config(format!("{}_API_KEY", provider.to_uppercase())) {
         config.insert("api_key".to_string(), api_key);
     }
-    
+
     if let Some(endpoint) = get_optional_config(format!("{}_ENDPOINT", provider.to_uppercase())) {
         config.insert("endpoint".to_string(), endpoint);
     }
-    
+
     if let Some(region) = get_optional_config(format!("{}_REGION", provider.to_uppercase())) {
         config.insert("region".to_string(), region);
     }
-    
+
     config
 }
 
@@ -133,11 +137,11 @@ mod tests {
     fn test_get_provider_config() {
         env::set_var("PINECONE_API_KEY", "test_key");
         env::set_var("PINECONE_ENDPOINT", "test_endpoint");
-        
+
         let config = get_provider_config("pinecone");
         assert_eq!(config.get("api_key"), Some(&"test_key".to_string()));
         assert_eq!(config.get("endpoint"), Some(&"test_endpoint".to_string()));
-        
+
         env::remove_var("PINECONE_API_KEY");
         env::remove_var("PINECONE_ENDPOINT");
     }

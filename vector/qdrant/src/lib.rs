@@ -1,25 +1,28 @@
 use crate::client::QdrantClient;
 use crate::conversions::{
-    collection_info_to_export_collection_info, create_collection_config,
-    vector_records_to_upsert_request, create_search_request, create_get_points_request,
-    create_delete_points_request, create_scroll_request, create_count_request,
-    create_batch_search_request, create_recommend_request, create_discover_request,
-    scored_points_to_search_results, records_to_vector_records,
+    collection_info_to_export_collection_info, create_batch_search_request,
+    create_collection_config, create_count_request, create_delete_points_request,
+    create_discover_request, create_get_points_request, create_recommend_request,
+    create_scroll_request, create_search_request, records_to_vector_records,
+    scored_points_to_search_results, vector_records_to_upsert_request,
 };
-use golem_vector::config::{with_config_key, get_optional_config, with_connection_config_key};
-use golem_vector::durability::{ExtendedGuest, DurableVector};
+use golem_vector::config::{get_optional_config, with_config_key, with_connection_config_key};
+use golem_vector::durability::{DurableVector, ExtendedGuest};
 use golem_vector::golem::vector::{
-    analytics::{Guest as AnalyticsGuest, FieldStats, CollectionStats},
-    collections::{Guest as CollectionsGuest, CollectionInfo, IndexConfig},
-    connection::{Credentials, Guest as ConnectionGuest, ConnectionStatus},
+    analytics::{CollectionStats, FieldStats, Guest as AnalyticsGuest},
+    collections::{CollectionInfo, Guest as CollectionsGuest, IndexConfig},
+    connection::{ConnectionStatus, Credentials, Guest as ConnectionGuest},
     namespaces::{Guest as NamespacesGuest, NamespaceInfo},
     search::{Guest as SearchGuest, SearchQuery},
-    search_extended::{Guest as SearchExtendedGuest, GroupedSearchResult, RecommendationExample, RecommendationStrategy, ContextPair},
-    types::{
-        DistanceMetric, FilterExpression, Id, Metadata, SearchResult, VectorData,
-        VectorError, VectorRecord, MetadataValue,
+    search_extended::{
+        ContextPair, GroupedSearchResult, Guest as SearchExtendedGuest, RecommendationExample,
+        RecommendationStrategy,
     },
-    vectors::{Guest as VectorsGuest, ListResponse, BatchResult},
+    types::{
+        DistanceMetric, FilterExpression, Id, Metadata, MetadataValue, SearchResult, VectorData,
+        VectorError, VectorRecord,
+    },
+    vectors::{BatchResult, Guest as VectorsGuest, ListResponse},
 };
 
 mod client;
@@ -35,8 +38,9 @@ impl QdrantComponent {
         let url = with_config_key(
             Self::URL_ENV_VAR,
             |e| Err(VectorError::ConnectionError(format!("Missing URL: {e}"))),
-            |value| Ok(value),
-        ).unwrap_or_else(|_| "http://localhost:6333".to_string());
+            Ok,
+        )
+        .unwrap_or_else(|_| "http://localhost:6333".to_string());
 
         let api_key = get_optional_config(Self::API_KEY_ENV_VAR);
 
@@ -51,44 +55,46 @@ impl QdrantComponent {
 
         Ok(QdrantClient::new(url, api_key))
     }
-    
+
     fn metadata_indexes(
         client: &QdrantClient,
         collection_name: &str,
         vectors: &[VectorRecord],
     ) -> Result<(), VectorError> {
         use std::collections::HashSet;
-        
+
         let mut attempted_fields: HashSet<(String, String)> = HashSet::new();
-        
+
         for vector in vectors {
             if let Some(metadata) = &vector.metadata {
                 for (field_name, field_value) in metadata {
                     let field_type = match field_value {
                         MetadataValue::StringVal(_) => "keyword",
-                        MetadataValue::IntegerVal(_) => "integer", 
+                        MetadataValue::IntegerVal(_) => "integer",
                         MetadataValue::NumberVal(_) => "float",
                         MetadataValue::BooleanVal(_) => "bool",
                         MetadataValue::GeoVal(_) => "geo",
-                        MetadataValue::ArrayVal(_) | 
-                        MetadataValue::ObjectVal(_) |
-                        MetadataValue::DatetimeVal(_) |
-                        MetadataValue::BlobVal(_) |
-                        MetadataValue::NullVal => continue,
+                        MetadataValue::ArrayVal(_)
+                        | MetadataValue::ObjectVal(_)
+                        | MetadataValue::DatetimeVal(_)
+                        | MetadataValue::BlobVal(_)
+                        | MetadataValue::NullVal => continue,
                     };
-                    
+
                     let field_key = (field_name.clone(), field_type.to_string());
-                    
+
                     if !attempted_fields.contains(&field_key) {
                         attempted_fields.insert(field_key);
-                        
-                        if let Err(_) = client.create_field_index(collection_name, field_name, field_type) {
-                        }
+
+                        if client
+                            .create_field_index(collection_name, field_name, field_type)
+                            .is_err()
+                        {}
                     }
                 }
             }
         }
-        
+
         Ok(())
     }
 }
@@ -122,25 +128,23 @@ impl ConnectionGuest for QdrantComponent {
 
     fn get_connection_status() -> Result<ConnectionStatus, VectorError> {
         match Self::create_client() {
-            Ok(client) => {
-                match client.list_collections() {
-                    Ok(_) => Ok(ConnectionStatus { 
-                        connected: true,
-                        provider: Some("Qdrant".to_string()),
-                        endpoint: None,
-                        last_activity: None,
-                        connection_id: None,
-                    }),
-                    Err(_) => Ok(ConnectionStatus { 
-                        connected: false,
-                        provider: Some("Qdrant".to_string()),
-                        endpoint: None,
-                        last_activity: None,
-                        connection_id: None,
-                    }),
-                }
-            }
-            Err(_) => Ok(ConnectionStatus { 
+            Ok(client) => match client.list_collections() {
+                Ok(_) => Ok(ConnectionStatus {
+                    connected: true,
+                    provider: Some("Qdrant".to_string()),
+                    endpoint: None,
+                    last_activity: None,
+                    connection_id: None,
+                }),
+                Err(_) => Ok(ConnectionStatus {
+                    connected: false,
+                    provider: Some("Qdrant".to_string()),
+                    endpoint: None,
+                    last_activity: None,
+                    connection_id: None,
+                }),
+            },
+            Err(_) => Ok(ConnectionStatus {
                 connected: false,
                 provider: Some("Qdrant".to_string()),
                 endpoint: None,
@@ -157,12 +161,10 @@ impl ConnectionGuest for QdrantComponent {
         options: Option<Metadata>,
     ) -> Result<bool, VectorError> {
         match Self::create_client_with_options(&options) {
-            Ok(client) => {
-                match client.list_collections() {
-                    Ok(_) => Ok(true),
-                    Err(_) => Ok(false),
-                }
-            }
+            Ok(client) => match client.list_collections() {
+                Ok(_) => Ok(true),
+                Err(_) => Ok(false),
+            },
             Err(_) => Ok(false),
         }
     }
@@ -178,9 +180,9 @@ impl CollectionsGuest for QdrantComponent {
         _metadata: Option<Metadata>,
     ) -> Result<CollectionInfo, VectorError> {
         let client = Self::create_client()?;
-        
+
         let config = create_collection_config(dimension, metric);
-        
+
         let create_request = client::CreateCollectionRequest {
             collection_name: name.clone(),
             config,
@@ -191,7 +193,9 @@ impl CollectionsGuest for QdrantComponent {
                 if response.result {
                     Self::get_collection(name)
                 } else {
-                    Err(VectorError::ProviderError("Failed to create collection".to_string()))
+                    Err(VectorError::ProviderError(
+                        "Failed to create collection".to_string(),
+                    ))
                 }
             }
             Err(e) => Err(e),
@@ -200,22 +204,23 @@ impl CollectionsGuest for QdrantComponent {
 
     fn list_collections() -> Result<Vec<String>, VectorError> {
         let client = Self::create_client()?;
-        
+
         match client.list_collections() {
-            Ok(response) => {
-                Ok(response.result.collections.into_iter().map(|c| c.name).collect())
-            }
+            Ok(response) => Ok(response
+                .result
+                .collections
+                .into_iter()
+                .map(|c| c.name)
+                .collect()),
             Err(e) => Err(e),
         }
     }
 
     fn get_collection(name: String) -> Result<CollectionInfo, VectorError> {
         let client = Self::create_client()?;
-        
+
         match client.get_collection(&name) {
-            Ok(response) => {
-                collection_info_to_export_collection_info(&name, &response.result)
-            }
+            Ok(response) => collection_info_to_export_collection_info(&name, &response.result),
             Err(e) => Err(e),
         }
     }
@@ -230,13 +235,15 @@ impl CollectionsGuest for QdrantComponent {
 
     fn delete_collection(name: String) -> Result<(), VectorError> {
         let client = Self::create_client()?;
-        
+
         match client.delete_collection(&name) {
             Ok(response) => {
                 if response.result {
                     Ok(())
                 } else {
-                    Err(VectorError::ProviderError("Failed to delete collection".to_string()))
+                    Err(VectorError::ProviderError(
+                        "Failed to delete collection".to_string(),
+                    ))
                 }
             }
             Err(e) => Err(e),
@@ -256,16 +263,17 @@ impl VectorsGuest for QdrantComponent {
         _namespace: Option<String>,
     ) -> Result<BatchResult, VectorError> {
         let client = Self::create_client()?;
-        
+
         if !vectors.is_empty() {
             Self::metadata_indexes(&client, &collection, &vectors)?;
         }
-        
+
         let upsert_request = vector_records_to_upsert_request(&vectors)?;
-        
+
         match client.upsert_points(&collection, &upsert_request) {
             Ok(response) => {
-                if response.result.status == "acknowledged" || response.result.status == "completed" {
+                if response.result.status == "acknowledged" || response.result.status == "completed"
+                {
                     Ok(BatchResult {
                         success_count: vectors.len() as u32,
                         failure_count: 0,
@@ -275,7 +283,16 @@ impl VectorsGuest for QdrantComponent {
                     Ok(BatchResult {
                         success_count: 0,
                         failure_count: vectors.len() as u32,
-                        errors: vectors.into_iter().enumerate().map(|(i, _)| (i as u32, VectorError::ProviderError("Insert failed".to_string()))).collect(),
+                        errors: vectors
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, _)| {
+                                (
+                                    i as u32,
+                                    VectorError::ProviderError("Insert failed".to_string()),
+                                )
+                            })
+                            .collect(),
                     })
                 }
             }
@@ -295,13 +312,15 @@ impl VectorsGuest for QdrantComponent {
             vector,
             metadata,
         };
-        
+
         let result = Self::upsert_vectors(collection, vec![record], namespace)?;
-        
+
         if result.success_count > 0 {
             Ok(())
         } else {
-            Err(VectorError::ProviderError("Failed to upsert vector".to_string()))
+            Err(VectorError::ProviderError(
+                "Failed to upsert vector".to_string(),
+            ))
         }
     }
 
@@ -313,12 +332,12 @@ impl VectorsGuest for QdrantComponent {
         include_metadata: Option<bool>,
     ) -> Result<Vec<VectorRecord>, VectorError> {
         let client = Self::create_client()?;
-        
+
         let with_vector = include_vectors.unwrap_or(true);
         let with_payload = include_metadata.unwrap_or(true);
-        
+
         let get_request = create_get_points_request(&ids, with_payload, with_vector)?;
-        
+
         match client.get_points(&collection, &get_request) {
             Ok(response) => records_to_vector_records(&response.result),
             Err(e) => Err(e),
@@ -330,14 +349,8 @@ impl VectorsGuest for QdrantComponent {
         id: Id,
         namespace: Option<String>,
     ) -> Result<Option<VectorRecord>, VectorError> {
-        let vectors = Self::get_vectors(
-            collection,
-            vec![id],
-            namespace,
-            Some(true),
-            Some(true),
-        )?;
-        
+        let vectors = Self::get_vectors(collection, vec![id], namespace, Some(true), Some(true))?;
+
         Ok(vectors.into_iter().next())
     }
 
@@ -355,7 +368,9 @@ impl VectorsGuest for QdrantComponent {
             let current = Self::get_vector(collection.clone(), id.clone(), namespace.clone())?;
             if let Some(current_record) = current {
                 let new_metadata = if merge_metadata.unwrap_or(false) {
-                    if let (Some(current_meta), Some(new_meta)) = (&current_record.metadata, &metadata) {
+                    if let (Some(current_meta), Some(new_meta)) =
+                        (&current_record.metadata, &metadata)
+                    {
                         let mut merged = current_meta.clone();
                         merged.extend(new_meta.clone());
                         Some(merged)
@@ -365,8 +380,14 @@ impl VectorsGuest for QdrantComponent {
                 } else {
                     metadata.or(current_record.metadata)
                 };
-                
-                Self::upsert_vector(collection, id, current_record.vector, new_metadata, namespace)
+
+                Self::upsert_vector(
+                    collection,
+                    id,
+                    current_record.vector,
+                    new_metadata,
+                    namespace,
+                )
             } else {
                 Err(VectorError::NotFound("Vector not found".to_string()))
             }
@@ -379,12 +400,13 @@ impl VectorsGuest for QdrantComponent {
         _namespace: Option<String>,
     ) -> Result<u32, VectorError> {
         let client = Self::create_client()?;
-        
+
         let delete_request = create_delete_points_request(Some(&ids), None)?;
-        
+
         match client.delete_points(&collection, &delete_request) {
             Ok(response) => {
-                if response.result.status == "acknowledged" || response.result.status == "completed" {
+                if response.result.status == "acknowledged" || response.result.status == "completed"
+                {
                     Ok(ids.len() as u32)
                 } else {
                     Ok(0)
@@ -400,14 +422,15 @@ impl VectorsGuest for QdrantComponent {
         _namespace: Option<String>,
     ) -> Result<u32, VectorError> {
         let client = Self::create_client()?;
-        
+
         let count = Self::count_vectors(collection.clone(), Some(filter.clone()), None)?;
-        
+
         let delete_request = create_delete_points_request(None, Some(&filter))?;
-        
+
         match client.delete_points(&collection, &delete_request) {
             Ok(response) => {
-                if response.result.status == "acknowledged" || response.result.status == "completed" {
+                if response.result.status == "acknowledged" || response.result.status == "completed"
+                {
                     Ok(count as u32)
                 } else {
                     Ok(0)
@@ -417,11 +440,10 @@ impl VectorsGuest for QdrantComponent {
         }
     }
 
-    fn delete_namespace(
-        _collection: String,
-        _namespace: String,
-    ) -> Result<u32, VectorError> {
-        Err(VectorError::ProviderError("Namespaces not supported in Qdrant".to_string()))
+    fn delete_namespace(_collection: String, _namespace: String) -> Result<u32, VectorError> {
+        Err(VectorError::ProviderError(
+            "Namespaces not supported in Qdrant".to_string(),
+        ))
     }
 
     fn list_vectors(
@@ -434,10 +456,10 @@ impl VectorsGuest for QdrantComponent {
         include_metadata: Option<bool>,
     ) -> Result<ListResponse, VectorError> {
         let client = Self::create_client()?;
-        
+
         let with_vector = include_vectors.unwrap_or(true);
         let with_payload = include_metadata.unwrap_or(true);
-        
+
         let scroll_request = create_scroll_request(
             filter.as_ref(),
             limit,
@@ -445,16 +467,15 @@ impl VectorsGuest for QdrantComponent {
             with_payload,
             with_vector,
         )?;
-        
+
         match client.scroll_points(&collection, &scroll_request) {
             Ok(response) => {
                 let records = records_to_vector_records(&response.result.points)?;
-                let next_offset = response.result.next_page_offset
-                    .map(|pid| match pid {
-                        client::PointId::Integer(i) => (i as i64).to_string(),
-                        client::PointId::Uuid(s) => s,
-                    });
-                
+                let next_offset = response.result.next_page_offset.map(|pid| match pid {
+                    client::PointId::Integer(i) => (i as i64).to_string(),
+                    client::PointId::Uuid(s) => s,
+                });
+
                 Ok(ListResponse {
                     vectors: records,
                     next_cursor: next_offset.map(|o| o.to_string()),
@@ -471,9 +492,9 @@ impl VectorsGuest for QdrantComponent {
         _namespace: Option<String>,
     ) -> Result<u64, VectorError> {
         let client = Self::create_client()?;
-        
+
         let count_request = create_count_request(filter.as_ref())?;
-        
+
         match client.count_points(&collection, &count_request) {
             Ok(response) => Ok(response.result.count),
             Err(e) => Err(e),
@@ -495,20 +516,20 @@ impl SearchGuest for QdrantComponent {
         _search_params: Option<Vec<(String, String)>>,
     ) -> Result<Vec<SearchResult>, VectorError> {
         let client = Self::create_client()?;
-        
+
         let with_vector = include_vectors.unwrap_or(false);
         let with_payload = include_metadata.unwrap_or(true);
-        
+
         let search_request = create_search_request(
             &query,
             limit,
-            None, 
+            None,
             filter.as_ref(),
             with_payload,
             with_vector,
             min_score.map(|s| s as f64),
         )?;
-        
+
         match client.search_points(&collection, &search_request) {
             Ok(response) => scored_points_to_search_results(&response.result),
             Err(e) => Err(e),
@@ -528,11 +549,11 @@ impl SearchGuest for QdrantComponent {
             limit,
             None,
             namespace,
-            Some(false), 
+            Some(false),
             Some(false),
             None,
-            None, 
-            None, 
+            None,
+            None,
         )
     }
 
@@ -547,10 +568,10 @@ impl SearchGuest for QdrantComponent {
         _search_params: Option<Vec<(String, String)>>,
     ) -> Result<Vec<Vec<SearchResult>>, VectorError> {
         let client = Self::create_client()?;
-        
+
         let with_vector = include_vectors.unwrap_or(false);
         let with_payload = include_metadata.unwrap_or(true);
-        
+
         let batch_request = create_batch_search_request(
             &queries,
             limit,
@@ -558,7 +579,7 @@ impl SearchGuest for QdrantComponent {
             with_payload,
             with_vector,
         )?;
-        
+
         match client.batch_search(&collection, &batch_request) {
             Ok(response) => {
                 let mut results = Vec::new();
@@ -586,10 +607,10 @@ impl SearchExtendedGuest for QdrantComponent {
         include_metadata: Option<bool>,
     ) -> Result<Vec<SearchResult>, VectorError> {
         let client = Self::create_client()?;
-        
+
         let with_vector = include_vectors.unwrap_or(false);
         let with_payload = include_metadata.unwrap_or(true);
-        
+
         let recommend_request = create_recommend_request(
             &positive,
             negative.as_deref(),
@@ -598,7 +619,7 @@ impl SearchExtendedGuest for QdrantComponent {
             with_payload,
             with_vector,
         )?;
-        
+
         match client.recommend_points(&collection, &recommend_request) {
             Ok(response) => scored_points_to_search_results(&response.result),
             Err(e) => Err(e),
@@ -616,10 +637,10 @@ impl SearchExtendedGuest for QdrantComponent {
         include_metadata: Option<bool>,
     ) -> Result<Vec<SearchResult>, VectorError> {
         let client = Self::create_client()?;
-        
+
         let with_vector = include_vectors.unwrap_or(false);
         let with_payload = include_metadata.unwrap_or(true);
-        
+
         let discover_request = create_discover_request(
             target.as_ref(),
             &context_pairs,
@@ -628,7 +649,7 @@ impl SearchExtendedGuest for QdrantComponent {
             with_payload,
             with_vector,
         )?;
-        
+
         match client.discover_points(&collection, &discover_request) {
             Ok(response) => scored_points_to_search_results(&response.result),
             Err(e) => Err(e),
@@ -646,9 +667,8 @@ impl SearchExtendedGuest for QdrantComponent {
         include_vectors: Option<bool>,
         include_metadata: Option<bool>,
     ) -> Result<Vec<GroupedSearchResult>, VectorError> {
-        
-        let search_limit = (max_groups * group_size).max(1000); 
-        
+        let search_limit = (max_groups * group_size).max(1000);
+
         let search_results = Self::search_vectors(
             collection,
             query,
@@ -661,13 +681,14 @@ impl SearchExtendedGuest for QdrantComponent {
             None,
             None,
         )?;
-        
+
         use std::collections::HashMap;
         let mut groups: HashMap<String, Vec<SearchResult>> = HashMap::new();
-        
+
         for result in search_results {
             let group_key = if let Some(ref metadata) = result.metadata {
-                metadata.iter()
+                metadata
+                    .iter()
                     .find(|(key, _)| key == &group_by)
                     .map(|(_, value)| match value {
                         MetadataValue::StringVal(s) => s.clone(),
@@ -680,14 +701,15 @@ impl SearchExtendedGuest for QdrantComponent {
             } else {
                 "null".to_string()
             };
-            
-            let group = groups.entry(group_key).or_insert_with(Vec::new);
+
+            let group = groups.entry(group_key).or_default();
             if group.len() < group_size as usize {
                 group.push(result);
             }
         }
-        
-        let mut grouped_results: Vec<GroupedSearchResult> = groups.into_iter()
+
+        let mut grouped_results: Vec<GroupedSearchResult> = groups
+            .into_iter()
             .take(max_groups as usize)
             .map(|(group_value, results)| {
                 let count = results.len() as u32;
@@ -698,13 +720,15 @@ impl SearchExtendedGuest for QdrantComponent {
                 }
             })
             .collect();
-        
+
         grouped_results.sort_by(|a, b| {
             let a_best_score = a.results.iter().map(|r| r.score).fold(0.0f32, f32::max);
             let b_best_score = b.results.iter().map(|r| r.score).fold(0.0f32, f32::max);
-            b_best_score.partial_cmp(&a_best_score).unwrap_or(std::cmp::Ordering::Equal)
+            b_best_score
+                .partial_cmp(&a_best_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
-        
+
         Ok(grouped_results)
     }
 
@@ -741,7 +765,9 @@ impl SearchExtendedGuest for QdrantComponent {
         _filter: Option<FilterExpression>,
         _namespace: Option<String>,
     ) -> Result<Vec<SearchResult>, VectorError> {
-        Err(VectorError::ProviderError("Text search not directly supported in Qdrant".to_string()))
+        Err(VectorError::ProviderError(
+            "Text search not directly supported in Qdrant".to_string(),
+        ))
     }
 }
 
@@ -751,20 +777,18 @@ impl AnalyticsGuest for QdrantComponent {
         _namespace: Option<String>,
     ) -> Result<CollectionStats, VectorError> {
         let client = Self::create_client()?;
-        
+
         match client.get_collection(&collection) {
             Ok(response) => {
                 let info = response.result;
-                
+
                 Ok(CollectionStats {
                     vector_count: info.points_count.unwrap_or(0),
                     dimension: if let Some(vectors) = &info.config.vectors {
                         match vectors {
                             client::VectorConfig::Single(params) => params.size,
                             client::VectorConfig::Multiple(map) => {
-                                map.values().next()
-                                    .map(|params| params.size)
-                                    .unwrap_or(0)
+                                map.values().next().map(|params| params.size).unwrap_or(0)
                             }
                         }
                     } else if let Some(params) = &info.config.params {
@@ -772,9 +796,7 @@ impl AnalyticsGuest for QdrantComponent {
                             match vectors {
                                 client::VectorConfig::Single(params) => params.size,
                                 client::VectorConfig::Multiple(map) => {
-                                    map.values().next()
-                                        .map(|params| params.size)
-                                        .unwrap_or(0)
+                                    map.values().next().map(|params| params.size).unwrap_or(0)
                                 }
                             }
                         } else {
@@ -783,7 +805,7 @@ impl AnalyticsGuest for QdrantComponent {
                     } else {
                         0
                     },
-                    size_bytes: 0, 
+                    size_bytes: 0,
                     index_size_bytes: None,
                     namespace_stats: vec![],
                     distance_distribution: None,
@@ -798,7 +820,9 @@ impl AnalyticsGuest for QdrantComponent {
         _field_name: String,
         _namespace: Option<String>,
     ) -> Result<FieldStats, VectorError> {
-        Err(VectorError::ProviderError("Field stats not directly available in Qdrant".to_string()))
+        Err(VectorError::ProviderError(
+            "Field stats not directly available in Qdrant".to_string(),
+        ))
     }
 
     fn get_field_distribution(
@@ -807,7 +831,9 @@ impl AnalyticsGuest for QdrantComponent {
         _limit: Option<u32>,
         _namespace: Option<String>,
     ) -> Result<Vec<(MetadataValue, u64)>, VectorError> {
-        Err(VectorError::ProviderError("Field distribution not directly available in Qdrant".to_string()))
+        Err(VectorError::ProviderError(
+            "Field distribution not directly available in Qdrant".to_string(),
+        ))
     }
 }
 
@@ -817,33 +843,33 @@ impl NamespacesGuest for QdrantComponent {
         _name: String,
         _metadata: Option<Metadata>,
     ) -> Result<NamespaceInfo, VectorError> {
-        Err(VectorError::ProviderError("Namespaces not supported in Qdrant".to_string()))
+        Err(VectorError::ProviderError(
+            "Namespaces not supported in Qdrant".to_string(),
+        ))
     }
 
-    fn list_namespaces(
-        _collection: String,
-    ) -> Result<Vec<NamespaceInfo>, VectorError> {
-        Err(VectorError::ProviderError("Namespaces not supported in Qdrant".to_string()))
+    fn list_namespaces(_collection: String) -> Result<Vec<NamespaceInfo>, VectorError> {
+        Err(VectorError::ProviderError(
+            "Namespaces not supported in Qdrant".to_string(),
+        ))
     }
 
     fn get_namespace(
         _collection: String,
         _namespace: String,
     ) -> Result<NamespaceInfo, VectorError> {
-        Err(VectorError::ProviderError("Namespaces not supported in Qdrant".to_string()))
+        Err(VectorError::ProviderError(
+            "Namespaces not supported in Qdrant".to_string(),
+        ))
     }
 
-    fn delete_namespace(
-        _collection: String,
-        _namespace: String,
-    ) -> Result<(), VectorError> {
-        Err(VectorError::ProviderError("Namespaces not supported in Qdrant".to_string()))
+    fn delete_namespace(_collection: String, _namespace: String) -> Result<(), VectorError> {
+        Err(VectorError::ProviderError(
+            "Namespaces not supported in Qdrant".to_string(),
+        ))
     }
 
-    fn namespace_exists(
-        _collection: String,
-        _namespace: String,
-    ) -> Result<bool, VectorError> {
+    fn namespace_exists(_collection: String, _namespace: String) -> Result<bool, VectorError> {
         Ok(false)
     }
 }

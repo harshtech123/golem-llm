@@ -20,9 +20,7 @@ pub use crate::exports::golem;
 
 pub use __export_vector_library_impl as export_vector;
 
-use crate::exports::golem::vector::types::{
-    self, GuestFilterFunc, GuestMetadataFunc,
-};
+use crate::exports::golem::vector::types::{self, GuestFilterFunc, GuestMetadataFunc};
 use golem_rust::value_and_type::{FromValueAndType, IntoValue, TypeNodeBuilder};
 use golem_rust::wasm_rpc::{NodeBuilder, ResourceMode, Uri, WitValueExtractor};
 
@@ -57,7 +55,7 @@ macro_rules! impl_resource_traits {
             }
 
             fn add_to_type_builder<B: TypeNodeBuilder>(builder: B) -> B::Result {
-                builder.handle($TypeIdConstant, ResourceMode::Owned)
+                builder.handle(None, None, $TypeIdConstant, ResourceMode::Owned)
             }
         }
 
@@ -83,7 +81,6 @@ impl_resource_traits!(
     "golem:vector/types/filter-func",
     FILTER_FUNC_ID
 );
-
 
 impl GuestMetadataFunc for types::MetadataValue {
     fn get(&self) -> types::MetadataValue {
