@@ -2081,80 +2081,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "golem-vector"
-version = "0.0.0"
-dependencies = [
- "golem-rust",
- "log 0.4.27",
- "regex",
- "reqwest",
- "serde_json",
- "thiserror 2.0.12",
- "wasi-logger",
- "wit-bindgen 0.40.0",
-]
-
-[[package]]
-name = "golem-vector-milvus"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "golem-rust",
- "golem-vector",
- "log 0.4.27",
- "reqwest",
- "serde",
- "serde_json",
- "wit-bindgen-rt 0.40.0",
-]
-
-[[package]]
-name = "golem-vector-pgvector"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "golem-rust",
- "golem-vector",
- "log 0.4.27",
- "serde",
- "serde_json",
- "wit-bindgen-rt 0.40.0",
-]
-
-[[package]]
-name = "golem-vector-pinecone"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "golem-rust",
- "golem-vector",
- "log 0.4.27",
- "reqwest",
- "serde",
- "serde_json",
- "urlencoding",
- "wit-bindgen-rt 0.40.0",
-]
-
-[[package]]
-name = "golem-vector-qdrant"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "golem-rust",
- "golem-vector",
- "log 0.4.27",
- "reqwest",
- "serde",
- "serde_json",
- "wit-bindgen-rt 0.40.0",
-]
-
-[[package]]
 name = "golem-video"
 version = "0.0.0"
 dependencies = [
@@ -2591,7 +2517,7 @@ dependencies = [
  "libc",
  "percent-encoding 2.3.1",
  "pin-project-lite",
- "socket2 0.6.0",
+ "socket2",
  "tokio",
  "tower-service",
  "tracing",
@@ -4674,7 +4600,7 @@ dependencies = [
  "sha-1",
  "sha2",
  "sha3",
- "socket2 0.5.10",
+ "socket2",
  "system-configuration",
  "termios",
  "ucd",
@@ -4885,19 +4811,9 @@ dependencies = [
 
 [[package]]
 name = "serde"
-version = "1.0.228"
+version = "1.0.219"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
-dependencies = [
- "serde_core",
- "serde_derive",
-]
-
-[[package]]
-name = "serde_core"
-version = "1.0.228"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41d385c7d4ca58e59fc732af25c3983b67ac852c1a25000afe1175de458b67ad"
+checksum = "5f0e2c6ed6606019b4e29e69dbaba95b11854410e5347d525002456dbbb786b6"
 dependencies = [
  "serde_derive",
 ]
@@ -4925,9 +4841,9 @@ dependencies = [
 
 [[package]]
 name = "serde_derive"
-version = "1.0.228"
+version = "1.0.219"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d540f220d3187173da220f885ab66608367b6574e925011a9353e4badda91d79"
+checksum = "5b0276cf7f2c73365f7157c8123c21cd9a50fbbd844757af28ca1f5925fc2a00"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4944,7 +4860,6 @@ dependencies = [
  "memchr",
  "ryu",
  "serde",
- "serde_core",
 ]
 
 [[package]]
@@ -5069,16 +4984,6 @@ name = "smallvec"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
-
-[[package]]
-name = "socket2"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "233504af464074f9d066d7b5416c5f9b894a5862a6506e306f7b816cdd6f1807"
-dependencies = [
- "libc",
- "windows-sys 0.59.0",
-]
 
 [[package]]
 name = "socket2"
