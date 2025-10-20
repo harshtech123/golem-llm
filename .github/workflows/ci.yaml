@@ -435,6 +435,7 @@ jobs:
           cargo make --cwd vector release-build-milvus
           cargo make --cwd vector release-build-pgvector
           cargo make --cwd vector release-build-qdrant
+          (
           cd test/vector
 
           echo "Testing milvus integration..."
@@ -479,6 +480,7 @@ jobs:
           golem app clean -b qdrant-release
 
           echo "All vector integration tests completed successfully!"
+          )
 
   publish-all:
     needs:
