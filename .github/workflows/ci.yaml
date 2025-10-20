@@ -359,7 +359,8 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-vector-integration
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-is
+
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
