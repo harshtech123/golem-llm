@@ -410,11 +410,19 @@ jobs:
           # Qdrant
           echo "Starting Qdrant..."
           docker pull qdrant/qdrant
-          sleep 30
 
-          docker run -p 6333:6333 -p 6334:6334 \
+          docker run -d \  
+           --name qdrant-db \
+           -p 6333:6333 -p 6334:6334 \
            -v "$(pwd)/qdrant_storage:/qdrant/storage:z" \
             qdrant/qdrant
+
+          echo "Waiting for Qdrant to be ready..."
+          
+          until curl -sf http://localhost:6333/readyz | grep -q "ok"; do
+            echo "Waiting for Qdrant to be ready..."
+            sleep 2
+          done
 
           echo "Qdrant is ready"
 
