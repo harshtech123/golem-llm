@@ -24,21 +24,18 @@ pub struct EmptySnapshot {}
 #[cfg(not(feature = "durability"))]
 mod passthrough_impl {
     use crate::durability::DurableExec;
-    use crate::golem::exec::executor::{Error, ExecResult, File, Guest, Language, Limits};
+    use crate::golem::exec::executor::{Error, ExecResult, File, Guest, Language, RunOptions};
 
     impl<Impl: Guest> Guest for DurableExec<Impl> {
         type Session = Impl::Session;
 
         fn run(
             lang: Language,
-            snippet: String,
             modules: Vec<File>,
-            stdin: Option<String>,
-            args: Vec<String>,
-            env: Vec<(String, String)>,
-            constraints: Option<Limits>,
+            snippet: String,
+            options: RunOptions,
         ) -> Result<ExecResult, Error> {
-            Impl::run(lang, snippet, modules, stdin, args, env, constraints)
+            Impl::run(lang, modules, snippet, options)
         }
     }
 }
@@ -47,7 +44,7 @@ mod passthrough_impl {
 mod durable_impl {
     use crate::durability::{DurableExec, SessionSnapshot};
     use crate::golem::exec::executor::{
-        Error, ExecResult, File, Guest, GuestSession, Language, Limits,
+        Error, ExecResult, File, Guest, GuestSession, Language, RunOptions,
     };
     use golem_rust::bindings::golem::durability::durability::DurableFunctionType;
     use golem_rust::durability::Durability;
@@ -62,12 +59,9 @@ mod durable_impl {
 
         fn run(
             lang: Language,
-            snippet: String,
             modules: Vec<File>,
-            stdin: Option<String>,
-            args: Vec<String>,
-            env: Vec<(String, String)>,
-            constraints: Option<Limits>,
+            snippet: String,
+            options: RunOptions,
         ) -> Result<ExecResult, Error> {
             let durability = Durability::<ExecResult, Error>::new(
                 "golem_exec",
@@ -78,12 +72,9 @@ mod durable_impl {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
                     Impl::run(
                         lang.clone(),
-                        snippet.clone(),
                         modules.clone(),
-                        stdin.clone(),
-                        args.clone(),
-                        env.clone(),
-                        constraints,
+                        snippet.clone(),
+                        options.clone(),
                     )
                 });
                 durability.persist_serializable(
@@ -91,10 +82,7 @@ mod durable_impl {
                         language: lang,
                         modules: modules.iter().map(|f| f.name.clone()).collect(),
                         snippet,
-                        args,
-                        stdin,
-                        env,
-                        constraints,
+                        options,
                     },
                     result.clone(),
                 );
@@ -124,14 +112,7 @@ mod durable_impl {
             self.inner.upload(file)
         }
 
-        fn run(
-            &self,
-            snippet: String,
-            args: Vec<String>,
-            stdin: Option<String>,
-            env: Vec<(String, String)>,
-            constraints: Option<Limits>,
-        ) -> Result<ExecResult, Error> {
+        fn run(&self, snippet: String, options: RunOptions) -> Result<ExecResult, Error> {
             let durability = Durability::<SessionRunResult<Impl::Snapshot>, UnusedError>::new(
                 "golem_exec",
                 "session_run",
@@ -141,17 +122,14 @@ mod durable_impl {
                 language: self.lang.clone(),
                 modules: self.module_names.clone(),
                 snippet: snippet.clone(),
-                args: args.clone(),
-                stdin: stdin.clone(),
-                env: env.clone(),
-                constraints,
+                options: options.clone(),
             };
             if Impl::supports_snapshot(&self.inner) {
                 // We can take a snapshot of the session and restore it during replay without
                 // actually running the snippet.
                 if durability.is_live() {
                     let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                        self.inner.run(snippet, args, stdin, env, constraints)
+                        self.inner.run(snippet, options)
                     });
                     let snapshot = Impl::take_snapshot(&self.inner);
                     let result = SessionRunResult {
@@ -172,7 +150,7 @@ mod durable_impl {
                 // in both live and replay modes.
                 //
                 // We still persist a custom oplog entry to increase oplog readability
-                let result = self.inner.run(snippet, args, stdin, env, constraints);
+                let result = self.inner.run(snippet, options);
                 let result = SessionRunResult {
                     result,
                     snapshot: None,
@@ -205,10 +183,7 @@ mod durable_impl {
         language: Language,
         modules: Vec<String>,
         snippet: String,
-        args: Vec<String>,
-        stdin: Option<String>,
-        env: Vec<(String, String)>,
-        constraints: Option<Limits>,
+        options: RunOptions,
     }
 
     #[derive(Debug, Clone)]
@@ -226,7 +201,7 @@ mod durable_impl {
         }
 
         fn add_to_type_builder<T: TypeNodeBuilder>(builder: T) -> T::Result {
-            let builder = builder.record();
+            let builder = builder.record(Some("SessionRunResult".to_string()), None);
             let builder = Result::<ExecResult, Error>::add_to_type_builder(builder.field("result"));
             let builder = Option::<Snapshot>::add_to_type_builder(builder.field("snapshot"));
             builder.finish()

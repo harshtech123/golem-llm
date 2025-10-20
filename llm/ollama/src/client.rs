@@ -4,7 +4,7 @@ use base64::{engine::general_purpose, Engine};
 use golem_llm::{
     error::{error_code_from_status, from_event_source_error},
     event_source::EventSource,
-    golem::llm::llm::{Error, ErrorCode},
+    golem::llm::llm::ErrorCode,
 };
 use log::trace;
 use reqwest::{
@@ -12,6 +12,7 @@ use reqwest::{
     Client, Method, Response, StatusCode,
 };
 
+use golem_llm::golem::llm::llm::Error;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
 
@@ -175,13 +176,6 @@ pub struct CompletionsRequest {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub keep_alive: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Format {
-    #[serde(rename = "type")]
-    pub format_type: String,
-    pub properties: serde_json::Value,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

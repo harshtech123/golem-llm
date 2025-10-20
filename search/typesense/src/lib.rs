@@ -3,7 +3,9 @@ use crate::conversions::*;
 use golem_rust::wasm_rpc::Pollable;
 use golem_search::config::with_config_keys;
 use golem_search::durability::{DurableSearch, ExtendedGuest};
-use golem_search::golem::search::core::{Guest, GuestSearchStream, SearchStream};
+use golem_search::golem::search::core::{
+    CreateIndexOptions, Guest, GuestSearchStream, SearchStream,
+};
 use golem_search::golem::search::types::{
     Doc, DocumentId, IndexName, Schema, SearchError, SearchHit, SearchQuery, SearchResults,
 };
@@ -114,13 +116,14 @@ impl GuestSearchStream for TypesenseSearchStream {
 impl Guest for TypesenseComponent {
     type SearchStream = TypesenseSearchStream;
 
-    fn create_index(name: IndexName, schema: Option<Schema>) -> Result<(), SearchError> {
+    fn create_index(options: CreateIndexOptions) -> Result<(), SearchError> {
         let client = Self::create_client()?;
 
-        let typesense_schema = schema
-            .map(|s| schema_to_typesense_schema(s, &name))
+        let typesense_schema = options
+            .schema
+            .map(|s| schema_to_typesense_schema(s, &options.index_name))
             .unwrap_or_else(|| CollectionSchema {
-                name: name.clone(),
+                name: options.index_name.clone(),
                 fields: vec![CollectionField {
                     name: "id".to_string(),
                     field_type: "string".to_string(),
@@ -135,7 +138,7 @@ impl Guest for TypesenseComponent {
                 symbols_to_index: None,
             });
 
-        client.create_collection(&name, &typesense_schema)?;
+        client.create_collection(&options.index_name, &typesense_schema)?;
         Ok(())
     }
 

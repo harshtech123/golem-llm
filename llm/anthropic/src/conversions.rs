@@ -4,58 +4,40 @@ use crate::client::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use golem_llm::golem::llm::llm::{
-    ChatEvent, CompleteResponse, Config, ContentPart, Error, ErrorCode, FinishReason,
-    ImageReference, ImageSource, ImageUrl, Message, ResponseMetadata, Role, ToolCall,
-    ToolDefinition, ToolResult, Usage,
+    Config, ContentPart, Error, ErrorCode, Event, FinishReason, ImageReference, ImageSource,
+    ImageUrl, Response, ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
 };
 use std::collections::HashMap;
 
-pub fn messages_to_request(
-    messages: Vec<Message>,
-    config: Config,
-) -> Result<MessagesRequest, Error> {
+pub fn events_to_request(events: Vec<Event>, config: Config) -> Result<MessagesRequest, Error> {
     let options = config
         .provider_options
-        .into_iter()
-        .map(|kv| (kv.key, kv.value))
-        .collect::<HashMap<_, _>>();
+        .map(|options| {
+            options
+                .into_iter()
+                .map(|kv| (kv.key, kv.value))
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_default();
 
-    let mut anthropic_messages = Vec::new();
-    for message in &messages {
-        if message.role != Role::System {
-            anthropic_messages.push(crate::client::Message {
-                role: match &message.role {
-                    Role::User => crate::client::Role::User,
-                    Role::Assistant => crate::client::Role::Assistant,
-                    Role::Tool => crate::client::Role::User,
-                    Role::System => unreachable!(),
-                },
-                content: message_to_content(message),
-            })
-        }
-    }
-
-    let mut system_messages = Vec::new();
-    for message in &messages {
-        if message.role == Role::System {
-            system_messages.extend(message_to_content(message))
-        }
-    }
+    let (user_messages, system_messages) = events_to_messages_and_system_messages(events);
 
     let tool_choice = config.tool_choice.map(convert_tool_choice);
-    let tools = if config.tools.is_empty() {
-        None
-    } else {
-        let mut tools = Vec::new();
-        for tool in &config.tools {
-            tools.push(tool_definition_to_tool(tool)?)
-        }
-        Some(tools)
-    };
+    let tools = config
+        .tools
+        .and_then(|tools| {
+            (!tools.is_empty()).then(|| {
+                tools
+                    .into_iter()
+                    .map(tool_definition_to_tool)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+        })
+        .transpose()?;
 
     Ok(MessagesRequest {
         max_tokens: config.max_tokens.unwrap_or(4096),
-        messages: anthropic_messages,
+        messages: user_messages,
         model: config.model,
         metadata: options
             .get("user_id")
@@ -77,6 +59,53 @@ pub fn messages_to_request(
     })
 }
 
+fn events_to_messages_and_system_messages(
+    events: Vec<Event>,
+) -> (Vec<crate::client::Message>, Vec<Content>) {
+    let mut messages: Vec<crate::client::Message> = vec![];
+    let mut system_messages: Vec<Content> = vec![];
+
+    for event in events {
+        match event {
+            Event::Message(message) if message.role == Role::System => {
+                system_messages.extend(content_parts_to_content(message.content));
+            }
+            Event::Message(message) => messages.push(crate::client::Message {
+                role: match &message.role {
+                    Role::User => crate::client::Role::User,
+                    Role::Assistant => crate::client::Role::Assistant,
+                    Role::Tool => crate::client::Role::User,
+                    Role::System => unreachable!(),
+                },
+                content: content_parts_to_content(message.content),
+            }),
+            Event::Response(response) => {
+                if !response.content.is_empty() {
+                    messages.push(crate::client::Message {
+                        role: crate::client::Role::Assistant,
+                        content: content_parts_to_content(response.content),
+                    })
+                }
+                if !response.tool_calls.is_empty() {
+                    messages.push(crate::client::Message {
+                        role: crate::client::Role::Assistant,
+                        content: response
+                            .tool_calls
+                            .into_iter()
+                            .map(tool_call_to_conent)
+                            .collect(),
+                    })
+                }
+            }
+            Event::ToolResults(tool_results) => {
+                messages.extend(tool_results.into_iter().map(tool_result_to_message))
+            }
+        }
+    }
+
+    (messages, system_messages)
+}
+
 fn convert_tool_choice(tool_name: String) -> ToolChoice {
     if &tool_name == "auto" {
         ToolChoice::Auto {
@@ -96,7 +125,7 @@ fn convert_tool_choice(tool_name: String) -> ToolChoice {
     }
 }
 
-pub fn process_response(response: MessagesResponse) -> ChatEvent {
+pub fn process_response(response: MessagesResponse) -> Result<Response, Error> {
     let mut contents = Vec::new();
     let mut tool_calls = Vec::new();
 
@@ -114,10 +143,10 @@ pub fn process_response(response: MessagesResponse) -> ChatEvent {
                     match general_purpose::STANDARD.decode(data) {
                         Ok(decoded_data) => {
                             let mime_type_str = match media_type {
-                                crate::client::MediaType::Jpeg => "image/jpeg".to_string(),
-                                crate::client::MediaType::Png => "image/png".to_string(),
-                                crate::client::MediaType::Gif => "image/gif".to_string(),
-                                crate::client::MediaType::Webp => "image/webp".to_string(),
+                                MediaType::Jpeg => "image/jpeg".to_string(),
+                                MediaType::Png => "image/png".to_string(),
+                                MediaType::Gif => "image/gif".to_string(),
+                                MediaType::Webp => "image/webp".to_string(),
                             };
                             contents.push(ContentPart::Image(ImageReference::Inline(
                                 ImageSource {
@@ -128,7 +157,7 @@ pub fn process_response(response: MessagesResponse) -> ChatEvent {
                             )));
                         }
                         Err(e) => {
-                            return ChatEvent::Error(Error {
+                            return Err(Error {
                                 code: ErrorCode::InvalidRequest,
                                 message: format!("Failed to decode base64 image data: {e}"),
                                 provider_error_json: None,
@@ -148,44 +177,36 @@ pub fn process_response(response: MessagesResponse) -> ChatEvent {
         }
     }
 
-    if contents.is_empty() {
-        ChatEvent::ToolRequest(tool_calls)
-    } else {
-        let metadata = ResponseMetadata {
-            finish_reason: response.stop_reason.map(stop_reason_to_finish_reason),
-            usage: Some(convert_usage(response.usage)),
-            provider_id: None,
-            timestamp: None,
-            provider_metadata_json: None,
-        };
+    let metadata = ResponseMetadata {
+        finish_reason: response.stop_reason.map(stop_reason_to_finish_reason),
+        usage: Some(convert_usage(response.usage)),
+        provider_id: None,
+        timestamp: None,
+        provider_metadata_json: None,
+    };
 
-        ChatEvent::Message(CompleteResponse {
-            id: response.id,
-            content: contents,
-            tool_calls,
-            metadata,
-        })
+    Ok(Response {
+        id: response.id,
+        content: contents,
+        tool_calls,
+        metadata,
+    })
+}
+
+pub fn tool_call_to_conent(tool_call: ToolCall) -> Content {
+    Content::ToolUse {
+        id: tool_call.id.clone(),
+        input: serde_json::from_str(&tool_call.arguments_json).unwrap(),
+        name: tool_call.name,
+        cache_control: None,
     }
 }
 
-pub fn tool_results_to_messages(
-    tool_results: Vec<(ToolCall, ToolResult)>,
-) -> Vec<crate::client::Message> {
-    let mut messages = Vec::new();
-
-    for (tool_call, tool_result) in tool_results {
-        messages.push(crate::client::Message {
-            content: vec![Content::ToolUse {
-                id: tool_call.id.clone(),
-                input: serde_json::from_str(&tool_call.arguments_json).unwrap(),
-                name: tool_call.name,
-                cache_control: None,
-            }],
-            role: crate::client::Role::Assistant,
-        });
-        let content = match tool_result {
+pub fn tool_result_to_message(tool_result: ToolResult) -> crate::client::Message {
+    crate::client::Message {
+        content: vec![match tool_result {
             ToolResult::Success(success) => Content::ToolResult {
-                tool_use_id: tool_call.id,
+                tool_use_id: success.id,
                 cache_control: None,
                 content: vec![Content::Text {
                     text: success.result_json,
@@ -194,7 +215,7 @@ pub fn tool_results_to_messages(
                 is_error: false,
             },
             ToolResult::Error(error) => Content::ToolResult {
-                tool_use_id: tool_call.id,
+                tool_use_id: error.id,
                 cache_control: None,
                 content: vec![Content::Text {
                     text: error.error_message,
@@ -202,14 +223,9 @@ pub fn tool_results_to_messages(
                 }],
                 is_error: true,
             },
-        };
-        messages.push(crate::client::Message {
-            content: vec![content],
-            role: crate::client::Role::User,
-        });
+        }],
+        role: crate::client::Role::User,
     }
-
-    messages
 }
 
 pub fn stop_reason_to_finish_reason(stop_reason: StopReason) -> FinishReason {
@@ -229,10 +245,10 @@ pub fn convert_usage(usage: crate::client::Usage) -> Usage {
     }
 }
 
-fn message_to_content(message: &Message) -> Vec<Content> {
+fn content_parts_to_content(content_parts: Vec<ContentPart>) -> Vec<Content> {
     let mut result = Vec::new();
 
-    for content_part in &message.content {
+    for content_part in content_parts {
         match content_part {
             ContentPart::Text(text) => result.push(Content::Text {
                 text: text.clone(),
@@ -270,13 +286,13 @@ fn message_to_content(message: &Message) -> Vec<Content> {
     result
 }
 
-fn tool_definition_to_tool(tool: &ToolDefinition) -> Result<Tool, Error> {
+fn tool_definition_to_tool(tool: ToolDefinition) -> Result<Tool, Error> {
     match serde_json::from_str(&tool.parameters_schema) {
         Ok(value) => Ok(Tool::CustomTool {
             input_schema: value,
-            name: tool.name.clone(),
+            name: tool.name,
             cache_control: None,
-            description: tool.description.clone(),
+            description: tool.description,
         }),
         Err(error) => Err(Error {
             code: ErrorCode::InternalError,

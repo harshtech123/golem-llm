@@ -6,6 +6,12 @@ skip_core_tasks = true
 command = "cargo"
 args = ["clean"]
 
+[tasks.clean-all]
+script_runner = "@duckscript"
+script = '''
+exec find . -type d \( -name "target" -o -name "wit-generated" -o -name "golem-temp" \) -exec rm -rf {} +
+'''
+
 [tasks.unit-tests]
 command = "cargo"
 args = ["test"]
@@ -14,7 +20,7 @@ args = ["test"]
 script_runner = "@duckscript"
 script = '''
 
-domains = array llm websearch search video exec graph stt vector
+domains = array llm embed websearch search video exec graph stt vector
 
 # if there is no domain passed run for every domain
 if is_empty ${1}
@@ -30,7 +36,7 @@ end
 script_runner = "@duckscript"
 script = '''
 
-domains = array llm websearch search video exec graph stt vector
+domains = array llm embed websearch search video exec graph stt vector
 
 # if there is no domain passed run for every domain
 if is_empty ${1}
@@ -46,7 +52,7 @@ end
 script_runner = "@duckscript"
 script = '''
 #!/bin/bash
-domains = array llm websearch search video exec graph stt vector
+domains = array llm embed websearch search video exec graph stt vector
 
 # if there is no domain passed run for every domain
 if is_empty ${1}
@@ -62,7 +68,7 @@ end
 script_runner = "@duckscript"
 script = '''
 #!/bin/bash
-domains = array llm websearch search exec graph stt vector
+domains = array llm embed websearch search video exec graph stt vector
 
 # if there is no domain passed run for every domain
 if is_empty ${1}
@@ -77,7 +83,7 @@ end
 [tasks.wit]
 script_runner = "@duckscript"
 script = '''
-domains = array llm websearch search video exec graph stt vector
+domains = array llm embed websearch search video exec graph stt vector
 
 # if there is no domain passed run for every domain
 if is_empty ${1}
@@ -93,7 +99,7 @@ end
 description = "Builds all test components with golem-cli"
 script_runner = "@duckscript"
 script = '''
-domains = array llm websearch search video exec graph stt vector
+domains = array llm embed websearch search video exec graph stt vector
 
 # if there is no domain passed run for every domain
 if is_empty ${1}
@@ -102,6 +108,22 @@ if is_empty ${1}
     end
 else
     exec --fail-on-error cargo make --cwd ${1} build-test-components
+end
+'''
+
+[tasks.release-build-test-components]
+description = "Builds all test components with golem-cli"
+script_runner = "@duckscript"
+script = '''
+domains = array llm websearch search video exec graph stt
+
+# if there is no domain passed run for every domain
+if is_empty ${1}
+    for domain in ${domains}
+        exec --fail-on-error cargo make --cwd ${domain} release-build-test-components
+    end
+else
+    exec --fail-on-error cargo make --cwd ${1} release-build-test-components
 end
 '''
 
@@ -188,6 +210,26 @@ else
         cp target/debug/golem_exec_javascript.wasm components/debug/golem_exec_javascript.wasm
     end
 end
+
+
+
+embed_targets = array  embed_openai embed_cohere embed_hugging_face embed_voyageai
+
+for target in ${embed_targets}
+    if ${is_portable}
+        if ${is_dev}
+            cp target/wasm32-wasip1/debug/golem_${target}.wasm components/debug/golem_${target}-portable-dev.wasm
+        else
+            cp target/wasm32-wasip1/debug/golem_${target}.wasm components/debug/golem_${target}-portable.wasm
+        end
+    else
+        if ${is_dev}
+            cp target/wasm32-wasip1/debug/golem_${target}.wasm components/debug/golem_${target}-dev.wasm
+        else
+            cp target/wasm32-wasip1/debug/golem_${target}.wasm components/debug/golem_${target}.wasm
+        end
+    end
+end
 '''
 
 [tasks.copy-release-artifacts]
@@ -200,7 +242,7 @@ environment = get_env "ENVIRONMENT"
 is_dev = eq ${environment} "dev"
 
 
-targets = array llm_openai llm_anthropic llm_grok llm_openrouter llm_ollama web_search_brave web_search_google web_search_serper web_search_tavily search_algolia search_elasticsearch search_meilisearch search_opensearch search_typesense video_kling video_runway video_veo video_stability graph_arangodb graph_janusgraph graph_neo4j stt_aws stt_azure stt_deepgram stt_google stt_whisper vector_milvus vector_pgvector vector_pinecone vector_qdrant
+targets = array llm_openai llm_anthropic llm_grok llm_openrouter llm_ollama  web_search_brave web_search_google web_search_serper web_search_tavily search_algolia search_elasticsearch search_meilisearch search_opensearch search_typesense video_kling video_runway video_veo video_stability graph_arangodb graph_janusgraph graph_neo4j stt_aws stt_azure stt_deepgram stt_google stt_whisper vector_milvus vector_pgvector vector_pinecone vector_qdrant
 
 for target in ${targets}
     echo "Copying artifacts for ${target}..."
@@ -239,6 +281,25 @@ else
         cp target/release/golem_exec.wasm components/release/golem_exec.wasm
         cp target/release/golem_exec_python.wasm components/release/golem_exec_python.wasm
         cp target/release/golem_exec_javascript.wasm components/release/golem_exec_javascript.wasm
+    end
+end
+
+
+embed_targets = array  embed_openai embed_cohere embed_hugging_face embed_voyageai
+
+for target in ${embed_targets}
+    if ${is_portable}
+        if ${is_dev}
+            cp target/wasm32-wasip1/release/golem_${target}.wasm components/release/golem_${target}-portable-dev.wasm
+        else
+            cp target/wasm32-wasip1/release/golem_${target}.wasm components/release/golem_${target}-portable.wasm
+        end
+    else
+        if ${is_dev}
+            cp target/wasm32-wasip1/release/golem_${target}.wasm components/release/golem_${target}-dev.wasm
+        else
+            cp target/wasm32-wasip1/release/golem_${target}.wasm components/release/golem_${target}.wasm
+        end
     end
 end
 '''

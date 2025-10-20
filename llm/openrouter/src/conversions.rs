@@ -3,47 +3,69 @@ use crate::client::{
 };
 use base64::{engine::general_purpose, Engine as _};
 use golem_llm::golem::llm::llm::{
-    ChatEvent, CompleteResponse, Config, ContentPart, Error, ErrorCode, FinishReason, ImageDetail,
-    ImageReference, Message, ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
+    Config, ContentPart, Error, ErrorCode, Event, FinishReason, ImageDetail, ImageReference,
+    Response, ResponseMetadata, Role, ToolCall, ToolDefinition, ToolResult, Usage,
 };
 use std::collections::HashMap;
 
-pub fn messages_to_request(
-    messages: Vec<Message>,
-    config: Config,
-) -> Result<CompletionsRequest, Error> {
+pub fn events_to_request(events: Vec<Event>, config: Config) -> Result<CompletionsRequest, Error> {
     let options = config
         .provider_options
-        .into_iter()
-        .map(|kv| (kv.key, kv.value))
-        .collect::<HashMap<_, _>>();
+        .map(|options| {
+            options
+                .into_iter()
+                .map(|kv| (kv.key, kv.value))
+                .collect::<HashMap<_, _>>()
+        })
+        .unwrap_or_default();
 
     let mut completion_messages = Vec::new();
-    for message in messages {
-        match message.role {
-            Role::User => completion_messages.push(crate::client::Message::User {
-                name: message.name,
-                content: convert_content_parts(message.content),
-            }),
-            Role::Assistant => completion_messages.push(crate::client::Message::Assistant {
-                name: message.name,
-                content: Some(convert_content_parts(message.content)),
-                tool_calls: None,
-            }),
-            Role::System => completion_messages.push(crate::client::Message::System {
-                name: message.name,
-                content: convert_content_parts(message.content),
-            }),
-            Role::Tool => completion_messages.push(crate::client::Message::Tool {
-                name: message.name,
-                content: convert_content_parts_to_string(message.content),
-                tool_call_id: "unknown".to_string(),
-            }),
+    for event in events {
+        match event {
+            Event::Message(message) => match message.role {
+                Role::User => completion_messages.push(crate::client::Message::User {
+                    name: message.name,
+                    content: convert_content_parts(message.content),
+                }),
+                Role::Assistant => completion_messages.push(crate::client::Message::Assistant {
+                    name: message.name,
+                    content: Some(convert_content_parts(message.content)),
+                    tool_calls: None,
+                }),
+                Role::System => completion_messages.push(crate::client::Message::System {
+                    name: message.name,
+                    content: convert_content_parts(message.content),
+                }),
+                Role::Tool => completion_messages.push(crate::client::Message::Tool {
+                    name: message.name,
+                    content: convert_content_parts_to_string(message.content),
+                    tool_call_id: "unknown".to_string(),
+                }),
+            },
+            Event::Response(response) => {
+                completion_messages.push(crate::client::Message::Assistant {
+                    name: None,
+                    content: {
+                        (!response.content.is_empty())
+                            .then(|| convert_content_parts(response.content))
+                    },
+                    tool_calls: (!response.tool_calls.is_empty()).then(|| {
+                        response
+                            .tool_calls
+                            .into_iter()
+                            .map(tool_call_to_client_tool_call)
+                            .collect()
+                    }),
+                });
+            }
+            Event::ToolResults(tool_results) => {
+                completion_messages.extend(tool_results.into_iter().map(tool_result_to_message))
+            }
         }
     }
 
     let mut tools = Vec::new();
-    for tool in config.tools {
+    for tool in config.tools.unwrap_or_default() {
         tools.push(tool_definition_to_tool(tool)?)
     }
 
@@ -83,7 +105,7 @@ pub fn messages_to_request(
     })
 }
 
-pub fn process_response(response: CompletionsResponse) -> ChatEvent {
+pub fn process_response(response: CompletionsResponse) -> Result<Response, Error> {
     let choice = response.choices.first();
     if let Some(choice) = choice {
         let mut contents = Vec::new();
@@ -98,26 +120,22 @@ pub fn process_response(response: CompletionsResponse) -> ChatEvent {
             tool_calls.push(convert_tool_call(tool_call));
         }
 
-        if contents.is_empty() {
-            ChatEvent::ToolRequest(tool_calls)
-        } else {
-            let metadata = ResponseMetadata {
-                finish_reason: choice.finish_reason.as_ref().map(convert_finish_reason),
-                usage: response.usage.as_ref().map(convert_usage),
-                provider_id: None,
-                timestamp: Some(response.created.to_string()),
-                provider_metadata_json: None,
-            };
+        let metadata = ResponseMetadata {
+            finish_reason: choice.finish_reason.as_ref().map(convert_finish_reason),
+            usage: response.usage.as_ref().map(convert_usage),
+            provider_id: None,
+            timestamp: Some(response.created.to_string()),
+            provider_metadata_json: None,
+        };
 
-            ChatEvent::Message(CompleteResponse {
-                id: response.id,
-                content: contents,
-                tool_calls,
-                metadata,
-            })
-        }
+        Ok(Response {
+            id: response.id,
+            content: contents,
+            tool_calls,
+            metadata,
+        })
     } else {
-        ChatEvent::Error(Error {
+        Err(Error {
             code: ErrorCode::InternalError,
             message: "No choices in response".to_string(),
             provider_error_json: None,
@@ -125,34 +143,30 @@ pub fn process_response(response: CompletionsResponse) -> ChatEvent {
     }
 }
 
-pub fn tool_results_to_messages(
-    tool_results: Vec<(ToolCall, ToolResult)>,
-) -> Vec<crate::client::Message> {
-    let mut messages = Vec::new();
-    for (tool_call, tool_result) in tool_results {
-        messages.push(crate::client::Message::Assistant {
-            content: None,
-            name: None,
-            tool_calls: Some(vec![crate::client::ToolCall::Function {
-                function: crate::client::FunctionCall {
-                    arguments: tool_call.arguments_json,
-                    name: Some(tool_call.name),
-                },
-                id: Some(tool_call.id.clone()),
-                index: None,
-            }]),
-        });
-        let content = match tool_result {
-            ToolResult::Success(success) => success.result_json,
-            ToolResult::Error(failure) => failure.error_message,
-        };
-        messages.push(crate::client::Message::Tool {
-            name: None,
-            content,
-            tool_call_id: tool_call.id,
-        });
+pub fn tool_call_to_client_tool_call(tool_call: ToolCall) -> crate::client::ToolCall {
+    crate::client::ToolCall::Function {
+        function: crate::client::FunctionCall {
+            arguments: tool_call.arguments_json,
+            name: Some(tool_call.name),
+        },
+        id: Some(tool_call.id.clone()),
+        index: None,
     }
-    messages
+}
+
+pub fn tool_result_to_message(tool_result: ToolResult) -> crate::client::Message {
+    match tool_result {
+        ToolResult::Success(success) => crate::client::Message::Tool {
+            name: None,
+            content: success.result_json,
+            tool_call_id: success.id,
+        },
+        ToolResult::Error(error) => crate::client::Message::Tool {
+            name: None,
+            content: error.error_message,
+            tool_call_id: error.id,
+        },
+    }
 }
 
 pub fn convert_tool_call(tool_call: &crate::client::ToolCall) -> ToolCall {

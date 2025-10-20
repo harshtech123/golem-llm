@@ -83,7 +83,8 @@ impl TypesenseSearchApi {
         parse_response(response)
     }
 
-    pub fn _index_document(
+    #[allow(unused)]
+    pub fn index_document(
         &self,
         collection_name: &str,
         document: &TypesenseDocument,
@@ -250,7 +251,8 @@ impl TypesenseSearchApi {
         Ok(params.join("&"))
     }
 
-    pub fn _multi_search(
+    #[allow(unused)]
+    pub fn multi_search(
         &self,
         searches: &MultiSearchQuery,
     ) -> Result<MultiSearchResponse, SearchError> {

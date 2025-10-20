@@ -106,7 +106,10 @@ impl Guest for Component {
         {
             // Elasticsearch/typesense/opensearch requires a different setup for the index
             println!("Setting   index: {}", index_name);
-            match core::create_index(&index_name, Some(&create_test_schema())) {
+            match core::create_index(&CreateIndexOptions {
+                index_name: index_name.clone(),
+                schema: Some(create_test_schema()),
+            }) {
                 Ok(_) => results.push("✓ Index created successfully".to_string()),
                 Err(e) => return format!("✗ Index creation failed: {:?}", e),
             }
@@ -385,7 +388,10 @@ impl Guest for Component {
             || TEST_INDEX == "test-opensearch-index"
         {
             println!("Setting   index: {}", index_name);
-            match core::create_index(&index_name, Some(&create_test_schema())) {
+            match core::create_index(&CreateIndexOptions {
+                index_name: index_name.clone(),
+                schema: Some(create_test_schema()),
+            }) {
                 Ok(_) => results.push("✓ Index created successfully".to_string()),
                 Err(e) => return format!("✗ Index creation failed: {:?}", e),
             }
@@ -481,7 +487,10 @@ impl Guest for Component {
             || TEST_INDEX == "test-opensearch-index"
         {
             println!("Setting   index: {}", index_name);
-            match core::create_index(&index_name, Some(&create_test_schema())) {
+            match core::create_index(&CreateIndexOptions {
+                index_name: index_name.clone(),
+                schema: Some(create_test_schema()),
+            }) {
                 Ok(_) => results.push("✓ Index created successfully".to_string()),
                 Err(e) => return format!("✗ Index creation failed: {:?}", e),
             }
@@ -568,7 +577,10 @@ impl Guest for Component {
             || TEST_INDEX == "test-opensearch-index"
         {
             println!("Setting   index: {}", index_name);
-            match core::create_index(&index_name, Some(&create_test_schema())) {
+            match core::create_index(&CreateIndexOptions {
+                index_name: index_name.clone(),
+                schema: Some(create_test_schema()),
+            }) {
                 Ok(_) => results.push("✓ Index created successfully".to_string()),
                 Err(e) => return format!("✗ Index creation failed: {:?}", e),
             }
@@ -664,7 +676,10 @@ impl Guest for Component {
             || TEST_INDEX == "test-opensearch-index"
         {
             println!("Setting   index: {}", index_name);
-            match core::create_index(&index_name, Some(&create_test_schema())) {
+            match core::create_index(&CreateIndexOptions {
+                index_name: index_name.clone(),
+                schema: Some(create_test_schema()),
+            }) {
                 Ok(_) => results.push("✓ Index created successfully".to_string()),
                 Err(e) => return format!("✗ Index creation failed: {:?}", e),
             }
@@ -736,7 +751,10 @@ impl Guest for Component {
                 if TEST_INDEX == "test-elasticsearch-index" {
                     // Elasticsearch requires a different setup for the index
                     println!("Setting  Elasticsearch index: {}", index_name);
-                    match core::create_index(&index_name, Some(&create_test_schema())) {
+                    match core::create_index(&CreateIndexOptions {
+                        index_name: index_name.clone(),
+                        schema: Some(create_test_schema()),
+                    }) {
                         Ok(_) => results.push("✓ Index created successfully".to_string()),
                         Err(e) => return format!("✗ Index creation failed: {:?}", e),
                     }
@@ -779,7 +797,10 @@ impl Guest for Component {
             || TEST_INDEX == "test-opensearch-index"
         {
             println!("Setting   index: {}", test_index);
-            match core::create_index(&test_index, Some(&schema)) {
+            match core::create_index(&CreateIndexOptions {
+                index_name: test_index.clone(),
+                schema: Some(create_test_schema()),
+            }) {
                 Ok(_) => results.push("✓ Index created successfully".to_string()),
                 Err(e) => return format!("✗ Index creation failed: {:?}", e),
             }
@@ -979,7 +1000,11 @@ impl Guest for Component {
             ("list_indexes", core::list_indexes().is_ok()),
             (
                 "create_index",
-                core::create_index(&IndexName::from("test-create"), Some(&schema.clone())).is_ok(),
+                core::create_index(&CreateIndexOptions {
+                    index_name: IndexName::from("test-create"),
+                    schema: Some(schema.clone()),
+                })
+                .is_ok(),
             ),
             (
                 "delete_index",
