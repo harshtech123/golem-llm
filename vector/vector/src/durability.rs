@@ -311,6 +311,7 @@ mod passthrough_impl {
 
         fn discover_vectors(
             collection: String,
+            target: Option<crate::golem::vector::search_extended::RecommendationExample>,
             context_pairs: Vec<crate::golem::vector::search_extended::ContextPair>,
             limit: u32,
             filter: Option<crate::golem::vector::types::FilterExpression>,
@@ -321,6 +322,7 @@ mod passthrough_impl {
             init_logging();
             Impl::discover_vectors(
                 collection,
+                target,
                 context_pairs,
                 limit,
                 filter,

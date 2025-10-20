@@ -35,66 +35,66 @@ run_task = { name = [
 ] }
 
 [tasks.build-milvus]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-milvus"]
 
 [tasks.build-milvus-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-milvus", "--no-default-features"]
 
 
 [tasks.build-pgvector]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-pgvector"]
 
 [tasks.build-pgvector-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-pgvector", "--no-default-features"]
 
 
 [tasks.build-pinecone]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-pinecone"]
 
 [tasks.build-pinecone-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-pinecone", "--no-default-features"]
 
 [tasks.build-qdrant]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-qdrant"]
 
 [tasks.build-qdrant-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-qdrant", "--no-default-features"]
 
 
 [tasks.release-build-milvus]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-milvus", "--release"]
 
 [tasks.release-build-milvus-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-milvus", "--release", "--no-default-features"]
 
 
 [tasks.release-build-pgvector]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-pgvector", "--release"]
 
 [tasks.release-build-pgvector-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = [
     "build",
@@ -106,22 +106,22 @@ args = [
 
 
 [tasks.release-build-pinecone]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-pinecone", "--release"]
 
 [tasks.release-build-pinecone-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-pinecone", "--release", "--no-default-features"]
 
 [tasks.release-build-qdrant]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-qdrant", "--release"]
 
 [tasks.release-build-qdrant-portable]
-install_crate = { crate_name = "cargo-component", version = "0.20.0" }
+install_crate = { crate_name = "cargo-component", version = "0.21.1" }
 command = "cargo-component"
 args = ["build", "-p", "golem-vector-qdrant", "--release", "--no-default-features"]
 
@@ -161,20 +161,34 @@ echo "Copied WIT for module test/vector"
 
 [tasks.build-test-components]
 dependencies = ["build"]
-install_crate = "cargo-binstall"
 description = "Builds vector test components with golem-cli"
 script = '''
-cargo-binstall golem-cli@1.2.5 --locked --no-confirm
-cargo-binstall wac-cli --locked --no-confirm
 cd ../test/vector
 
 golem-cli --version
-golem-cli app clean
-golem-cli app build -b milvus-debug
-golem-cli app clean
-golem-cli app build -b pgvector-debug
-golem-cli app clean
-golem-cli app build -b pinecone-debug
-golem-cli app clean
-golem-cli app build -b qdrant-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b milvus-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b pgvector-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b pinecone-debug
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b qdrant-debug
+'''
+
+[tasks.release-build-test-components]
+dependencies = ["release-build"]
+description = "Builds vector test components with golem-cli"
+script = '''
+cd ../test/vector
+
+golem-cli --version
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b milvus-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b pgvector-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b pinecone-release
+golem-cli --dev-mode app clean
+golem-cli --dev-mode app build -b qdrant-release
 '''
