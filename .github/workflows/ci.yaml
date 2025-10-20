@@ -380,14 +380,14 @@ jobs:
           # Milvus
           echo "Starting Milvus..."
           curl -sfL https://raw.githubusercontent.com/milvus-io/milvus/master/scripts/standalone_embed.sh -o standalone_embed.sh
-          timeout 60
+          sleep 30
           bash standalone_embed.sh start
           echo "Milvus is ready"
 
           # PGVECTOR
           echo "Starting PGVECTOR..."
           docker pull pgvector/pgvector:0.8.1-pg18-trixie
-          timeout 60
+          sleep 30
           docker run -d \
             --name pgvector-db \
             -p 3000:5432 \
@@ -404,7 +404,7 @@ jobs:
           # Qdrant
           echo "Starting Qdrant..."
           docker pull qdrant/qdrant
-          timeout 60
+          sleep 30
 
           docker run -p 6333:6333 -p 6334:6334 \
            -v "$(pwd)/qdrant_storage:/qdrant/storage:z" \
