@@ -414,12 +414,7 @@ jobs:
           docker run -d --name qdrant-db -p 6333:6333 -p 6334:6334 qdrant/qdrant
 
           echo "Waiting for Qdrant to be ready..."
-          
-          until curl -sf http://localhost:6333/readyz | grep -q "ok"; do
-            echo "Waiting for Qdrant to be ready..."
-            sleep 2
-          done
-
+          sleep 10
           echo "Qdrant is ready"
 
           echo "All Vector database providers are ready!"
