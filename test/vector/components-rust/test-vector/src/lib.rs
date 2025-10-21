@@ -150,7 +150,7 @@ impl Guest for Component {
             Err(error) => return format!("✗ Failed to get connection status: {:?}", error),
         };
         
-        let collection_name = "test-collection-12".to_string();
+        let collection_name = "testcollection1".to_string();
         let index_config = IndexConfig {
             index_type: None,
             parameters: vec![],
@@ -228,7 +228,7 @@ impl Guest for Component {
             Err(error) => return format!("✗ Connection failed: {:?}", error),
         }
         
-        let collection_name = "test-collection-22".to_string();
+        let collection_name = "testcollection2".to_string();
         let dimensions = 64;
         
         let index_config = IndexConfig {
@@ -348,7 +348,7 @@ impl Guest for Component {
             Err(error) => return format!("✗ Connection failed: {:?}", error),
         }
         
-        let collection_name = "test-collection-33".to_string();
+        let collection_name = "testcollection3".to_string();
         let dimensions = 32;
         
         let index_config = IndexConfig {
@@ -450,7 +450,7 @@ impl Guest for Component {
             Err(error) => return format!("✗ Connection failed: {:?}", error),
         }
         
-        let collection_name = "test-collection-43".to_string();
+        let collection_name = "testcollection4".to_string();
         let dimensions = 64;
         
         let index_config = IndexConfig {
@@ -590,7 +590,7 @@ impl Guest for Component {
             Err(error) => return format!("✗ Connection failed: {:?}", error),
         }
         
-        let collection_name = "test-collection-52".to_string();
+        let collection_name = "testcollection5".to_string();
         let dimensions = 128;
         
         let index_config = IndexConfig {
@@ -726,7 +726,7 @@ impl Guest for Component {
             Err(error) => return format!("✗ Connection failed: {:?}", error),
         }
         
-        let collection_name = "test-collection-62".to_string();
+        let collection_name = "testcollection6".to_string();
         let dimensions = 64;
         
         let index_config = IndexConfig {
@@ -836,7 +836,7 @@ impl Guest for Component {
             Err(error) => return format!("✗ Connection failed: {:?}", error),
         }
         
-        let collection_name = "test-collection-72".to_string();
+        let collection_name = "testcollection7".to_string();
         let dimensions = 64;
         
         let index_config = IndexConfig {
