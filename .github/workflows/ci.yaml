@@ -409,17 +409,17 @@ jobs:
           docker exec pgvector-db psql -U postgres -d mydatabase -c "CREATE EXTENSION IF NOT EXISTS vector;"
           echo "PGVECTOR is ready"
 
-      #     # Qdrant
-      #     echo "Starting Qdrant..."
-      #     docker pull qdrant/qdrant
+          # Qdrant
+          echo "Starting Qdrant..."
+          docker pull qdrant/qdrant
 
-      #     docker run -d --name qdrant-db -p 6333:6333 -p 6334:6334 qdrant/qdrant
+          docker run -d --name qdrant-db -p 6333:6333 -p 6334:6334 qdrant/qdrant
 
-      #     echo "Waiting for Qdrant to be ready..."
-      #     sleep 10
-      #     echo "Qdrant is ready"
+          echo "Waiting for Qdrant to be ready..."
+          sleep 10
+          echo "Qdrant is ready"
 
-      #     echo "All Vector database providers are ready!"
+          echo "All Vector database providers are ready!"
       - name: Install and Run latest Golem Server
         run: |
           set -e
@@ -436,7 +436,7 @@ jobs:
           set -eo pipefail
           # cargo make --cwd vector release-build-milvus
           cargo make --cwd vector release-build-pgvector
-          # cargo make --cwd vector release-build-qdrant
+          cargo make --cwd vector release-build-qdrant
           cd test/vector
 
           # echo "Testing milvus integration..."
@@ -466,21 +466,21 @@ jobs:
           echo "pgvector tests completed successfully"
           golem app clean -b pgvector-release
 
-      #     echo "Testing qdrant integration..."
-      #     golem app deploy -b qdrant-release test:vector test:helper
-      #     sleep 10
-      #     golem agent new test:vector/qdrant-1
-      #     golem agent invoke test:vector/qdrant-1 test1 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/qdrant-1 test2 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/qdrant-1 test3 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/qdrant-1 test4 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/qdrant-1 test5 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/qdrant-1 test6 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/qdrant-1 test7 | grep -v "ERROR: "
-      #     echo "Qdrant tests completed successfully"
-      #     golem app clean -b qdrant-release
+          echo "Testing qdrant integration..."
+          golem app deploy -b qdrant-release test:vector test:helper
+          sleep 10
+          golem agent new test:vector/qdrant-1
+          golem agent invoke test:vector/qdrant-1 test1 | grep -v "ERROR: "
+          golem agent invoke test:vector/qdrant-1 test2 | grep -v "ERROR: "
+          golem agent invoke test:vector/qdrant-1 test3 | grep -v "ERROR: "
+          golem agent invoke test:vector/qdrant-1 test4 | grep -v "ERROR: "
+          golem agent invoke test:vector/qdrant-1 test5 | grep -v "ERROR: "
+          golem agent invoke test:vector/qdrant-1 test6 | grep -v "ERROR: "
+          golem agent invoke test:vector/qdrant-1 test7 | grep -v "ERROR: "
+          echo "Qdrant tests completed successfully"
+          golem app clean -b qdrant-release
 
-      #     echo "All vector integration tests completed successfully!"
+          echo "All vector integration tests completed successfully!"
 
   publish-all:
     needs:
