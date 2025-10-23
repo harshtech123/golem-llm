@@ -378,13 +378,14 @@ jobs:
           echo "Setting up vector database providers..."
 
           # Milvus
-          # echo "Starting Milvus..."
-          # mkdir milvus-setup && cd milvus-setup
-          # curl -sfL https://raw.githubusercontent.com/milvus-io/milvus/master/scripts/standalone_embed.sh -o standalone_embed.sh
-          # sleep 30
-          # bash standalone_embed.sh start
-          # cd ..
-          # echo "Milvus is ready"
+          echo "Starting Milvus..."
+          cd /home/runner
+          mkdir milvus-setup && cd milvus-setup
+          curl -sfL https://raw.githubusercontent.com/milvus-io/milvus/master/scripts/standalone_embed.sh -o standalone_embed.sh
+          sleep 30
+          bash standalone_embed.sh start
+          cd $GITHUB_WORKSPACE
+          echo "Milvus is ready"
 
           # PGVECTOR
           echo "Starting PGVECTOR..."
@@ -434,23 +435,23 @@ jobs:
       - name: Build and test vector integration
         run: |
           set -eo pipefail
-          # cargo make --cwd vector release-build-milvus
+          cargo make --cwd vector release-build-milvus
           cargo make --cwd vector release-build-pgvector
           cargo make --cwd vector release-build-qdrant
           cd test/vector
 
-          # echo "Testing milvus integration..."
-          # golem app deploy -b milvus-release test:vector test:helper
-          # golem agent new -e MILVUS_DATABASE=default test:vector/milvus-1
-          # golem agent invoke test:vector/milvus-1 test1 | grep -v "ERROR: "
-          # golem agent invoke test:vector/milvus-1 test2 | grep -v "ERROR: "
-          # golem agent invoke test:vector/milvus-1 test3 | grep -v "ERROR: "
-          # golem agent invoke test:vector/milvus-1 test4 | grep -v "ERROR: "
-          # golem agent invoke test:vector/milvus-1 test5 | grep -v "ERROR: "
-          # golem agent invoke test:vector/milvus-1 test6 | grep -v "ERROR: "
-          # golem agent invoke test:vector/milvus-1 test7 | grep -v "ERROR: "
-          # echo "Milvus tests completed successfully"
-          # golem app clean -b milvus-release
+          echo "Testing milvus integration..."
+          golem app deploy -b milvus-release test:vector test:helper
+          golem agent new -e MILVUS_DATABASE=default test:vector/milvus-1
+          golem agent invoke test:vector/milvus-1 test1 | grep -v "ERROR: "
+          golem agent invoke test:vector/milvus-1 test2 | grep -v "ERROR: "
+          golem agent invoke test:vector/milvus-1 test3 | grep -v "ERROR: "
+          golem agent invoke test:vector/milvus-1 test4 | grep -v "ERROR: "
+          golem agent invoke test:vector/milvus-1 test5 | grep -v "ERROR: "
+          golem agent invoke test:vector/milvus-1 test6 | grep -v "ERROR: "
+          golem agent invoke test:vector/milvus-1 test7 | grep -v "ERROR: "
+          echo "Milvus tests completed successfully"
+          golem app clean -b milvus-release
 
           echo "Testing pgvector integration..."
           golem app deploy -b pgvector-release test:vector test:helper
