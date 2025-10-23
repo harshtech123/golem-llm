@@ -379,9 +379,11 @@ jobs:
 
           # Milvus
           echo "Starting Milvus..."
+          mkdir milvus-setup && cd milvus-setup
           curl -sfL https://raw.githubusercontent.com/milvus-io/milvus/master/scripts/standalone_embed.sh -o standalone_embed.sh
           sleep 30
           bash standalone_embed.sh start
+          cd ..
           echo "Milvus is ready"
 
       #     # PGVECTOR
