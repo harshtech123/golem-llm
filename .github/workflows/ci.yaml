@@ -378,36 +378,36 @@ jobs:
           echo "Setting up vector database providers..."
 
           # Milvus
-          echo "Starting Milvus..."
-          mkdir milvus-setup && cd milvus-setup
-          curl -sfL https://raw.githubusercontent.com/milvus-io/milvus/master/scripts/standalone_embed.sh -o standalone_embed.sh
+          # echo "Starting Milvus..."
+          # mkdir milvus-setup && cd milvus-setup
+          # curl -sfL https://raw.githubusercontent.com/milvus-io/milvus/master/scripts/standalone_embed.sh -o standalone_embed.sh
+          # sleep 30
+          # bash standalone_embed.sh start
+          # cd ..
+          # echo "Milvus is ready"
+
+          # PGVECTOR
+          echo "Starting PGVECTOR..."
+          docker pull pgvector/pgvector:0.8.1-pg18-trixie
           sleep 30
-          bash standalone_embed.sh start
-          cd ..
-          echo "Milvus is ready"
+          docker run -d \
+            --name pgvector-db \
+            -p 3000:5432 \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=mysecretpassword \
+            -e POSTGRES_DB=mydatabase \
+            pgvector/pgvector:0.8.1-pg18-trixie
 
-      #     # PGVECTOR
-      #     echo "Starting PGVECTOR..."
-      #     docker pull pgvector/pgvector:0.8.1-pg18-trixie
-      #     sleep 30
-      #     docker run -d \
-      #       --name pgvector-db \
-      #       -p 3000:5432 \
-      #       -e POSTGRES_USER=postgres \
-      #       -e POSTGRES_PASSWORD=mysecretpassword \
-      #       -e POSTGRES_DB=mydatabase \
-      #       pgvector/pgvector:0.8.1-pg18-trixie
+          echo "Waiting for pgvector to be ready..."
 
-      #     echo "Waiting for pgvector to be ready..."
+          until docker exec pgvector-db pg_isready -U postgres -d mydatabase -q; do
+            echo "Waiting for pgvector database to be ready..."
+            sleep 2
+          done
 
-      #     until docker exec pgvector-db pg_isready -U postgres -d mydatabase -q; do
-      #       echo "Waiting for pgvector database to be ready..."
-      #       sleep 2
-      #     done
-
-      #     echo "Database is ready. Creating extension..."
-      #     docker exec pgvector-db psql -U postgres -d mydatabase -c "CREATE EXTENSION IF NOT EXISTS vector;"
-      #     echo "PGVECTOR is ready"
+          echo "Database is ready. Creating extension..."
+          docker exec pgvector-db psql -U postgres -d mydatabase -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          echo "PGVECTOR is ready"
 
       #     # Qdrant
       #     echo "Starting Qdrant..."
@@ -434,37 +434,37 @@ jobs:
       - name: Build and test vector integration
         run: |
           set -eo pipefail
-          cargo make --cwd vector release-build-milvus
+          # cargo make --cwd vector release-build-milvus
           cargo make --cwd vector release-build-pgvector
-          cargo make --cwd vector release-build-qdrant
+          # cargo make --cwd vector release-build-qdrant
           cd test/vector
 
-          echo "Testing milvus integration..."
-          golem app deploy -b milvus-release test:vector test:helper
-          golem agent new -e MILVUS_DATABASE=default test:vector/milvus-1
-          golem agent invoke test:vector/milvus-1 test1 | grep -v "ERROR: "
-          golem agent invoke test:vector/milvus-1 test2 | grep -v "ERROR: "
-          golem agent invoke test:vector/milvus-1 test3 | grep -v "ERROR: "
-          golem agent invoke test:vector/milvus-1 test4 | grep -v "ERROR: "
-          golem agent invoke test:vector/milvus-1 test5 | grep -v "ERROR: "
-          golem agent invoke test:vector/milvus-1 test6 | grep -v "ERROR: "
-          golem agent invoke test:vector/milvus-1 test7 | grep -v "ERROR: "
-          echo "Milvus tests completed successfully"
-          golem app clean -b milvus-release
+          # echo "Testing milvus integration..."
+          # golem app deploy -b milvus-release test:vector test:helper
+          # golem agent new -e MILVUS_DATABASE=default test:vector/milvus-1
+          # golem agent invoke test:vector/milvus-1 test1 | grep -v "ERROR: "
+          # golem agent invoke test:vector/milvus-1 test2 | grep -v "ERROR: "
+          # golem agent invoke test:vector/milvus-1 test3 | grep -v "ERROR: "
+          # golem agent invoke test:vector/milvus-1 test4 | grep -v "ERROR: "
+          # golem agent invoke test:vector/milvus-1 test5 | grep -v "ERROR: "
+          # golem agent invoke test:vector/milvus-1 test6 | grep -v "ERROR: "
+          # golem agent invoke test:vector/milvus-1 test7 | grep -v "ERROR: "
+          # echo "Milvus tests completed successfully"
+          # golem app clean -b milvus-release
 
-      #     echo "Testing pgvector integration..."
-      #     golem app deploy -b pgvector-release test:vector test:helper
-      #     sleep 10
-      #     golem agent new -e PGVECTOR_CONNECTION_STRING=postgresql://postgres:mysecretpassword@localhost:3000/mydatabase test:vector/pgvector-1
-      #     golem agent invoke test:vector/pgvector-1 test1 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/pgvector-1 test2 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/pgvector-1 test3 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/pgvector-1 test4 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/pgvector-1 test5 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/pgvector-1 test6 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/pgvector-1 test7 | grep -v "ERROR: "
-      #     echo "pgvector tests completed successfully"
-      #     golem app clean -b pgvector-release
+          echo "Testing pgvector integration..."
+          golem app deploy -b pgvector-release test:vector test:helper
+          sleep 10
+          golem agent new -e PGVECTOR_CONNECTION_STRING=postgresql://postgres:mysecretpassword@localhost:3000/mydatabase test:vector/pgvector-1
+          golem agent invoke test:vector/pgvector-1 test1 | grep -v "ERROR: "
+          golem agent invoke test:vector/pgvector-1 test2 | grep -v "ERROR: "
+          golem agent invoke test:vector/pgvector-1 test3 | grep -v "ERROR: "
+          golem agent invoke test:vector/pgvector-1 test4 | grep -v "ERROR: "
+          golem agent invoke test:vector/pgvector-1 test5 | grep -v "ERROR: "
+          golem agent invoke test:vector/pgvector-1 test6 | grep -v "ERROR: "
+          golem agent invoke test:vector/pgvector-1 test7 | grep -v "ERROR: "
+          echo "pgvector tests completed successfully"
+          golem app clean -b pgvector-release
 
       #     echo "Testing qdrant integration..."
       #     golem app deploy -b qdrant-release test:vector test:helper
