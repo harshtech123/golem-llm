@@ -372,17 +372,17 @@ jobs:
           set -e
           cargo binstall --force cargo-component@0.21.1
           cargo binstall wac-cli --locked --force --no-confirm
-      # - name: Start vector-providers in Docker
-      #   run: |
-      #     set -e
-      #     echo "Setting up vector database providers..."
+      - name: Start vector-providers in Docker
+        run: |
+          set -e
+          echo "Setting up vector database providers..."
 
-      #     # Milvus
-      #     echo "Starting Milvus..."
-      #     curl -sfL https://raw.githubusercontent.com/milvus-io/milvus/master/scripts/standalone_embed.sh -o standalone_embed.sh
-      #     sleep 30
-      #     bash standalone_embed.sh start
-      #     echo "Milvus is ready"
+          # Milvus
+          echo "Starting Milvus..."
+          curl -sfL https://raw.githubusercontent.com/milvus-io/milvus/master/scripts/standalone_embed.sh -o standalone_embed.sh
+          sleep 30
+          bash standalone_embed.sh start
+          echo "Milvus is ready"
 
       #     # PGVECTOR
       #     echo "Starting PGVECTOR..."
@@ -418,37 +418,37 @@ jobs:
       #     echo "Qdrant is ready"
 
       #     echo "All Vector database providers are ready!"
-      # - name: Install and Run latest Golem Server
-      #   run: |
-      #     set -e
-      #     echo "Installing Golem server"
-      #     sudo curl -L https://github.com/golemcloud/golem/releases/download/v1.3.0-rc9/golem-x86_64-unknown-linux-gnu -o ./golem
-      #     sudo chmod +x ./golem
-      #     sudo mv ./golem /usr/local/bin/golem
-      #     golem --version
-      #     golem profile switch local
-      #     nohup golem server run >golem-server.log 2>&1 &
-      #     echo "Golem server started."
-      # - name: Build and test vector integration
-      #   run: |
-      #     set -eo pipefail
-      #     cargo make --cwd vector release-build-milvus
-      #     cargo make --cwd vector release-build-pgvector
-      #     cargo make --cwd vector release-build-qdrant
-      #     cd test/vector
+      - name: Install and Run latest Golem Server
+        run: |
+          set -e
+          echo "Installing Golem server"
+          sudo curl -L https://github.com/golemcloud/golem/releases/download/v1.3.0-rc9/golem-x86_64-unknown-linux-gnu -o ./golem
+          sudo chmod +x ./golem
+          sudo mv ./golem /usr/local/bin/golem
+          golem --version
+          golem profile switch local
+          nohup golem server run >golem-server.log 2>&1 &
+          echo "Golem server started."
+      - name: Build and test vector integration
+        run: |
+          set -eo pipefail
+          cargo make --cwd vector release-build-milvus
+          cargo make --cwd vector release-build-pgvector
+          cargo make --cwd vector release-build-qdrant
+          cd test/vector
 
-      #     echo "Testing milvus integration..."
-      #     golem app deploy -b milvus-release test:vector test:helper
-      #     golem agent new -e MILVUS_DATABASE=default test:vector/milvus-1
-      #     golem agent invoke test:vector/milvus-1 test1 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/milvus-1 test2 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/milvus-1 test3 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/milvus-1 test4 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/milvus-1 test5 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/milvus-1 test6 | grep -v "ERROR: "
-      #     golem agent invoke test:vector/milvus-1 test7 | grep -v "ERROR: "
-      #     echo "Milvus tests completed successfully"
-      #     golem app clean -b milvus-release
+          echo "Testing milvus integration..."
+          golem app deploy -b milvus-release test:vector test:helper
+          golem agent new -e MILVUS_DATABASE=default test:vector/milvus-1
+          golem agent invoke test:vector/milvus-1 test1 | grep -v "ERROR: "
+          golem agent invoke test:vector/milvus-1 test2 | grep -v "ERROR: "
+          golem agent invoke test:vector/milvus-1 test3 | grep -v "ERROR: "
+          golem agent invoke test:vector/milvus-1 test4 | grep -v "ERROR: "
+          golem agent invoke test:vector/milvus-1 test5 | grep -v "ERROR: "
+          golem agent invoke test:vector/milvus-1 test6 | grep -v "ERROR: "
+          golem agent invoke test:vector/milvus-1 test7 | grep -v "ERROR: "
+          echo "Milvus tests completed successfully"
+          golem app clean -b milvus-release
 
       #     echo "Testing pgvector integration..."
       #     golem app deploy -b pgvector-release test:vector test:helper
