@@ -46,7 +46,12 @@ members = [
     "tts/deepgram",
     "tts/elevenlabs",
     "tts/google",
-    ]
+    "vector/vector",
+    "vector/milvus",
+    "vector/pgvector",
+    "vector/pinecone",
+    "vector/qdrant",
+]
 
 [profile.release]
 debug = false
@@ -60,6 +65,7 @@ golem-graph = { path = "graph/graph", version = "0.0.0", default-features = fals
 golem-video = { path = "video/video", version = "0.0.0", default-features = false }
 golem-stt = { path = "stt/stt", version = "0.0.0", default-features = false }
 golem-tts = { path = "tts/tts" , version = "0.0.0" , default-features= false}
+golem-vector = { path = "vector/vector", version = "0.0.0", default-features = false}
 golem-embed = { path = "embed/embed", version = "0.0.0", default-features = false}
 futures = "0.3.31"
 golem-rust = "=1.8.1"
