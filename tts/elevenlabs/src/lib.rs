@@ -673,6 +673,7 @@ impl VoicesGuest for ElevenLabsComponent {
         search_filter.search_query = Some(query);
 
         let client = Self::create_client()?;
+        // elevenelabs provide ability to search by filtering based on gender (voice type), voice quality from their API
         let params = voice_filter_to_list_params(Some(search_filter));
 
         match client.list_voices(params) {

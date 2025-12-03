@@ -765,6 +765,7 @@ impl VoicesGuest for DeepgramComponent {
     ) -> Result<Vec<VoiceInfo>, TtsError> {
         let client = Self::create_client()?;
 
+        // deepgram does not have the native api for querying we are trying a simple search over all models
         let search_results = client.search_models(&query)?;
         let mut voice_infos: Vec<VoiceInfo> = search_results
             .into_iter()

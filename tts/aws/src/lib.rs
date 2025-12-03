@@ -133,14 +133,7 @@ impl GuestVoice for PollyVoiceImpl {
     }
 
     fn preview(&self, text: String) -> Result<Vec<u8>, TtsError> {
-        let preview_text = if text.len() > 100 {
-            format!("{}...", &text[..97])
-        } else {
-            text
-        };
-
-        let params =
-            synthesis_options_to_polly_params(None, self.voice_data.id.clone(), preview_text);
+        let params = synthesis_options_to_polly_params(None, self.voice_data.id.clone(), text);
 
         self.client.synthesize_speech(params)
     }
@@ -719,6 +712,7 @@ impl VoicesGuest for AwsPollyComponent {
         let params = voice_filter_to_describe_params(filter);
 
         let response = client.describe_voices(params)?;
+        // Filter voices based on the query matching name, language name, or language code.(returns as response)
         let voice_infos: Vec<VoiceInfo> = response
             .voices
             .into_iter()
@@ -1067,13 +1061,21 @@ impl AdvancedGuest for AwsPollyComponent {
         let voice_language = voice.get::<PollyVoiceImpl>().get_language();
 
         let bucket_name = if output_location.starts_with("s3://") {
-            output_location
-                .strip_prefix("s3://")
-                .and_then(|path| path.split('/').next())
-                .unwrap_or("default-bucket")
-                .to_string()
+            let path = output_location.strip_prefix("s3://").unwrap();
+            let bucket_name = path.split('/').next().unwrap_or("");
+
+            if bucket_name.is_empty() {
+                return Err(TtsError::InvalidConfiguration(
+                    "Invalid S3 output location: bucket name is missing. Expected format: s3://bucket-name/path".to_string(),
+                ));
+            }
+
+            bucket_name.to_string()
         } else {
-            "default-bucket".to_string()
+            return Err(TtsError::InvalidConfiguration(
+                "Invalid output location format. Expected S3 URL format: s3://bucket-name/path"
+                    .to_string(),
+            ));
         };
 
         let params = crate::client::StartSpeechSynthesisTaskParams {

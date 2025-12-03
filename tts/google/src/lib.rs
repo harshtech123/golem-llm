@@ -649,6 +649,7 @@ impl VoicesGuest for GoogleComponent {
         let response = client.list_voices(language_code.as_deref())?;
 
         let query_lower = query.to_lowercase();
+        // Filter voices based on the query matching voice name or language codes.
         let matching_voices: Vec<VoiceInfo> = response
             .voices
             .into_iter()
