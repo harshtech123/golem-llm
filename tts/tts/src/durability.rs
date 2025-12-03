@@ -375,6 +375,12 @@ mod durable_impl {
 
     #[allow(dead_code)]
     #[derive(Debug, Clone, PartialEq, FromValueAndType, IntoValue)]
+    struct PronunciationEntryListOutput {
+        entries: Vec<PronunciationEntry>,
+    }
+
+    #[allow(dead_code)]
+    #[derive(Debug, Clone, PartialEq, FromValueAndType, IntoValue)]
     struct LongFormResultOutput {
         result: String,
     }
@@ -435,6 +441,40 @@ mod durable_impl {
         audio: Vec<u8>,
     }
 
+    #[derive(Debug, Clone, PartialEq, FromValueAndType, IntoValue)]
+    struct VoiceResultsOutput {
+        voices: Vec<VoiceInfo>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, FromValueAndType, IntoValue)]
+    struct VoiceOutput {
+        id: String,
+        name: String,
+        provider_id: Option<String>,
+        language: String,
+        additional_languages: Vec<String>,
+        gender: VoiceGender,
+        quality: VoiceQuality,
+        description: Option<String>,
+        supports_ssml: bool,
+        sample_rates: Vec<u32>,
+        supported_formats: Vec<AudioFormat>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, FromValueAndType, IntoValue)]
+    struct PronunciationLexiconOutput {
+        name: String,
+        language: LanguageCode,
+        entries: Option<Vec<PronunciationEntry>>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, FromValueAndType, IntoValue)]
+    struct LongFormOperationOutput {
+        content: String,
+        output_location: String,
+        chapter_breaks: Option<Vec<u32>>,
+    }
+
     impl From<&TtsError> for TtsError {
         fn from(error: &TtsError) -> Self {
             error.clone()
@@ -448,13 +488,107 @@ mod durable_impl {
         fn list_voices(filter: Option<VoiceFilter>) -> Result<VoiceResults, TtsError> {
             init_logging();
 
-            Impl::list_voices(filter)
+            let durability = Durability::<VoiceResultsOutput, TtsError>::new(
+                "golem_tts",
+                "list_voices",
+                DurableFunctionType::WriteRemote,
+            );
+            if durability.is_live() {
+                let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
+                    Impl::list_voices(filter.clone())
+                });
+                let voices = match &result {
+                    Ok(voice_results) => {
+                        let guest = voice_results.get::<Impl::VoiceResults>();
+                        guest.get_next().unwrap_or_default()
+                    }
+                    Err(_) => Vec::new(),
+                };
+                durability.persist(
+                    ListVoicesInput { filter },
+                    result.map(|_| VoiceResultsOutput {
+                        voices: voices.clone(),
+                    }),
+                )?;
+
+                Ok(VoiceResults::new(
+                    DurableVoiceResults::<Impl>::new_with_voices(voices),
+                ))
+            } else {
+                let output = durability.replay::<VoiceResultsOutput, TtsError>()?;
+                Ok(VoiceResults::new(
+                    DurableVoiceResults::<Impl>::new_with_voices(output.voices),
+                ))
+            }
         }
 
         fn get_voice(voice_id: String) -> Result<Voice, TtsError> {
             init_logging();
 
-            Impl::get_voice(voice_id.clone())
+            let durability = Durability::<VoiceOutput, TtsError>::new(
+                "golem_tts",
+                "get_voice",
+                DurableFunctionType::WriteRemote,
+            );
+            if durability.is_live() {
+                let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
+                    Impl::get_voice(voice_id.clone())
+                });
+                let voice_data = match &result {
+                    Ok(voice) => {
+                        let guest = voice.get::<Impl::Voice>();
+                        VoiceOutput {
+                            id: guest.get_id(),
+                            name: guest.get_name(),
+                            provider_id: guest.get_provider_id(),
+                            language: guest.get_language(),
+                            additional_languages: guest.get_additional_languages(),
+                            gender: guest.get_gender(),
+                            quality: guest.get_quality(),
+                            description: guest.get_description(),
+                            supports_ssml: guest.supports_ssml(),
+                            sample_rates: guest.get_sample_rates(),
+                            supported_formats: guest.get_supported_formats(),
+                        }
+                    }
+                    Err(_) => {
+                        return result;
+                    }
+                };
+                durability.persist(
+                    GetVoiceInput { voice_id },
+                    result.map(|_| voice_data.clone()),
+                )?;
+
+                Ok(Voice::new(DurableVoice::<Impl>::new(
+                    voice_data.id,
+                    voice_data.name,
+                    voice_data.provider_id,
+                    voice_data.language,
+                    voice_data.additional_languages,
+                    voice_data.gender,
+                    voice_data.quality,
+                    voice_data.description,
+                    voice_data.supports_ssml,
+                    voice_data.sample_rates,
+                    voice_data.supported_formats,
+                )))
+            } else {
+                let voice_data = durability.replay::<VoiceOutput, TtsError>()?;
+                Ok(Voice::new(DurableVoice::<Impl>::new(
+                    voice_data.id,
+                    voice_data.name,
+                    voice_data.provider_id,
+                    voice_data.language,
+                    voice_data.additional_languages,
+                    voice_data.gender,
+                    voice_data.quality,
+                    voice_data.description,
+                    voice_data.supports_ssml,
+                    voice_data.sample_rates,
+                    voice_data.supported_formats,
+                )))
+            }
         }
 
         fn search_voices(
@@ -768,6 +902,7 @@ mod durable_impl {
 
     pub struct DurableVoiceResults<Impl: ExtendedGuest> {
         filter: Option<VoiceFilter>,
+        cached_voices: Option<Vec<VoiceInfo>>,
         _phantom: PhantomData<Impl>,
     }
 
@@ -776,6 +911,15 @@ mod durable_impl {
         fn new(filter: Option<VoiceFilter>) -> Self {
             Self {
                 filter,
+                cached_voices: None,
+                _phantom: PhantomData,
+            }
+        }
+
+        fn new_with_voices(voices: Vec<VoiceInfo>) -> Self {
+            Self {
+                filter: None,
+                cached_voices: Some(voices),
                 _phantom: PhantomData,
             }
         }
@@ -783,10 +927,14 @@ mod durable_impl {
 
     impl<Impl: ExtendedGuest> GuestVoiceResults for DurableVoiceResults<Impl> {
         fn has_more(&self) -> bool {
+            if self.cached_voices.is_some() {
+                return false;
+            }
+
             let durability = Durability::<bool, UnusedError>::new(
                 "golem_tts",
                 "voice_results_has_more",
-                DurableFunctionType::ReadRemote,
+                DurableFunctionType::WriteRemote,
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
@@ -803,10 +951,14 @@ mod durable_impl {
         }
 
         fn get_next(&self) -> Result<Vec<VoiceInfo>, TtsError> {
+            if let Some(ref cached_voices) = self.cached_voices {
+                return Ok(cached_voices.clone());
+            }
+
             let durability = Durability::<VoiceInfoListOutput, TtsError>::new(
                 "golem_tts",
                 "voice_results_get_next",
-                DurableFunctionType::ReadRemote,
+                DurableFunctionType::WriteRemote,
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
@@ -825,10 +977,14 @@ mod durable_impl {
         }
 
         fn get_total_count(&self) -> Option<u32> {
+            if let Some(ref cached_voices) = self.cached_voices {
+                return Some(cached_voices.len() as u32);
+            }
+
             let durability = Durability::<Option<u32>, UnusedError>::new(
                 "golem_tts",
                 "voice_results_get_total_count",
-                DurableFunctionType::ReadRemote,
+                DurableFunctionType::WriteRemote,
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
@@ -1016,14 +1172,22 @@ mod durable_impl {
             let durability = Durability::<AudioDataOutput, TtsError>::new(
                 "golem_tts",
                 "voice_preview",
-                DurableFunctionType::WriteRemote,
+                DurableFunctionType::ReadRemote,
             );
             if durability.is_live() {
-                let result = Ok(AudioDataOutput {
-                    audio: vec![0x52, 0x49, 0x46, 0x46, 0x24, 0x08, 0x00, 0x00],
+                let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
+                    let voice = Impl::get_voice(self.id.clone())?;
+                    let guest = voice.get::<Impl::Voice>();
+                    guest.preview(text.clone())
                 });
+
+                let audio_data = result?;
+                let output = AudioDataOutput {
+                    audio: audio_data.clone(),
+                };
+
                 durability
-                    .persist(PreviewVoiceInput { text }, result)
+                    .persist(PreviewVoiceInput { text }, Ok(output))
                     .map(|output| output.audio)
             } else {
                 durability
@@ -1087,7 +1251,16 @@ mod durable_impl {
                 DurableFunctionType::WriteRemote,
             );
             if durability.is_live() {
-                let result = Ok(NoOutput);
+                let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
+                    let lexicon = Impl::create_lexicon(
+                        self.name.clone(),
+                        self.language.clone(),
+                        self.entries.clone(),
+                    )?;
+                    let guest = lexicon.get::<Impl::PronunciationLexicon>();
+                    guest.add_entry(word.clone(), pronunciation.clone())
+                });
+                let result = result.map(|_| NoOutput);
                 durability
                     .persist(
                         PronunciationEntryInput {
@@ -1240,7 +1413,87 @@ mod durable_impl {
         ) -> Result<Voice, TtsError> {
             init_logging();
 
-            Impl::create_voice_clone(name, audio_samples, description)
+            let durability = Durability::<VoiceOutput, TtsError>::new(
+                "golem_tts",
+                "create_voice_clone",
+                DurableFunctionType::WriteRemote,
+            );
+
+            if durability.is_live() {
+                let result = Impl::create_voice_clone(
+                    name.clone(),
+                    audio_samples.clone(),
+                    description.clone(),
+                );
+                let voice_data = match &result {
+                    Ok(voice) => {
+                        let guest = voice.get::<Impl::Voice>();
+                        VoiceOutput {
+                            id: guest.get_id(),
+                            name: guest.get_name(),
+                            provider_id: guest.get_provider_id(),
+                            language: guest.get_language(),
+                            additional_languages: guest.get_additional_languages(),
+                            gender: guest.get_gender(),
+                            quality: guest.get_quality(),
+                            description: guest.get_description(),
+                            supports_ssml: guest.supports_ssml(),
+                            sample_rates: guest.get_sample_rates(),
+                            supported_formats: guest.get_supported_formats(),
+                        }
+                    }
+                    Err(_) => VoiceOutput {
+                        id: "error_voice".to_string(),
+                        name: name.clone(),
+                        provider_id: None,
+                        language: "en-US".to_string(),
+                        additional_languages: vec![],
+                        gender: VoiceGender::Neutral,
+                        quality: VoiceQuality::Standard,
+                        description: description.clone(),
+                        supports_ssml: false,
+                        sample_rates: vec![22050],
+                        supported_formats: vec![AudioFormat::Mp3],
+                    },
+                };
+                durability.persist(
+                    CreateVoiceCloneInput {
+                        name,
+                        audio_samples,
+                        description,
+                    },
+                    result.map(|_| voice_data.clone()),
+                )?;
+
+                Ok(Voice::new(DurableVoice::<Impl>::new(
+                    voice_data.id,
+                    voice_data.name,
+                    voice_data.provider_id,
+                    voice_data.language,
+                    voice_data.additional_languages,
+                    voice_data.gender,
+                    voice_data.quality,
+                    voice_data.description,
+                    voice_data.supports_ssml,
+                    voice_data.sample_rates,
+                    voice_data.supported_formats,
+                )))
+            } else {
+                let voice_data = durability.replay::<VoiceOutput, TtsError>()?;
+                Ok(Voice::new(DurableVoice::<Impl>::new(
+                    voice_data.id,
+                    voice_data.name,
+                    voice_data.provider_id,
+                    voice_data.language,
+                    voice_data.additional_languages,
+                    voice_data.gender,
+                    voice_data.quality,
+                    voice_data.description,
+                    voice_data.supports_ssml,
+                    voice_data.sample_rates,
+                    voice_data.supported_formats,
+                )))
+            }
         }
 
         fn design_voice(
@@ -1249,7 +1502,83 @@ mod durable_impl {
         ) -> Result<Voice, TtsError> {
             init_logging();
 
-            Impl::design_voice(name, characteristics)
+            let durability = Durability::<VoiceOutput, TtsError>::new(
+                "golem_tts",
+                "design_voice",
+                DurableFunctionType::WriteRemote,
+            );
+
+            if durability.is_live() {
+                let result = Impl::design_voice(name.clone(), characteristics.clone());
+                let voice_data = match &result {
+                    Ok(voice) => {
+                        let guest = voice.get::<Impl::Voice>();
+                        VoiceOutput {
+                            id: guest.get_id(),
+                            name: guest.get_name(),
+                            provider_id: guest.get_provider_id(),
+                            language: guest.get_language(),
+                            additional_languages: guest.get_additional_languages(),
+                            gender: guest.get_gender(),
+                            quality: guest.get_quality(),
+                            description: guest.get_description(),
+                            supports_ssml: guest.supports_ssml(),
+                            sample_rates: guest.get_sample_rates(),
+                            supported_formats: guest.get_supported_formats(),
+                        }
+                    }
+                    Err(_) => VoiceOutput {
+                        id: "error_voice".to_string(),
+                        name: name.clone(),
+                        provider_id: None,
+                        language: "en-US".to_string(),
+                        additional_languages: vec![],
+                        gender: VoiceGender::Neutral,
+                        quality: VoiceQuality::Standard,
+                        description: None,
+                        supports_ssml: false,
+                        sample_rates: vec![22050],
+                        supported_formats: vec![AudioFormat::Mp3],
+                    },
+                };
+
+                durability.persist(
+                    DesignVoiceInput {
+                        name,
+                        characteristics,
+                    },
+                    result.map(|_| voice_data.clone()),
+                )?;
+
+                Ok(Voice::new(DurableVoice::<Impl>::new(
+                    voice_data.id,
+                    voice_data.name,
+                    voice_data.provider_id,
+                    voice_data.language,
+                    voice_data.additional_languages,
+                    voice_data.gender,
+                    voice_data.quality,
+                    voice_data.description,
+                    voice_data.supports_ssml,
+                    voice_data.sample_rates,
+                    voice_data.supported_formats,
+                )))
+            } else {
+                let voice_data = durability.replay::<VoiceOutput, TtsError>()?;
+                Ok(Voice::new(DurableVoice::<Impl>::new(
+                    voice_data.id,
+                    voice_data.name,
+                    voice_data.provider_id,
+                    voice_data.language,
+                    voice_data.additional_languages,
+                    voice_data.gender,
+                    voice_data.quality,
+                    voice_data.description,
+                    voice_data.supports_ssml,
+                    voice_data.sample_rates,
+                    voice_data.supported_formats,
+                )))
+            }
         }
 
         fn convert_voice(
@@ -1327,32 +1656,42 @@ mod durable_impl {
         ) -> Result<PronunciationLexicon, TtsError> {
             init_logging();
 
-            let durability = Durability::<NoOutput, UnusedError>::new(
+            let durability = Durability::<PronunciationLexiconOutput, UnusedError>::new(
                 "golem_tts",
                 "create_lexicon",
-                DurableFunctionType::ReadRemote,
+                DurableFunctionType::WriteRemote,
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    PronunciationLexicon::new(DurablePronunciationLexicon::<Impl>::new(
-                        name.clone(),
-                        language.clone(),
-                        entries.clone(),
-                    ))
+                    PronunciationLexiconOutput {
+                        name: name.clone(),
+                        language: language.clone(),
+                        entries: entries.clone(),
+                    }
                 });
                 let _ = durability.persist_infallible(
                     CreateLexiconInput {
-                        name,
-                        language,
-                        entries,
+                        name: name.clone(),
+                        language: language.clone(),
+                        entries: entries.clone(),
                     },
-                    NoOutput,
+                    result.clone(),
                 );
-                Ok(result)
-            } else {
-                let _: NoOutput = durability.replay_infallible();
                 Ok(PronunciationLexicon::new(
-                    DurablePronunciationLexicon::<Impl>::new(name, language, entries),
+                    DurablePronunciationLexicon::<Impl>::new(
+                        result.name,
+                        result.language,
+                        result.entries,
+                    ),
+                ))
+            } else {
+                let lexicon_data: PronunciationLexiconOutput = durability.replay_infallible();
+                Ok(PronunciationLexicon::new(
+                    DurablePronunciationLexicon::<Impl>::new(
+                        lexicon_data.name,
+                        lexicon_data.language,
+                        lexicon_data.entries,
+                    ),
                 ))
             }
         }
@@ -1365,32 +1704,42 @@ mod durable_impl {
         ) -> Result<LongFormOperation, TtsError> {
             init_logging();
 
-            let durability = Durability::<NoOutput, UnusedError>::new(
+            let durability = Durability::<LongFormOperationOutput, UnusedError>::new(
                 "golem_tts",
                 "synthesize_long_form",
-                DurableFunctionType::ReadRemote,
+                DurableFunctionType::WriteRemote,
             );
             if durability.is_live() {
                 let result = with_persistence_level(PersistenceLevel::PersistNothing, || {
-                    LongFormOperation::new(DurableLongFormOperation::<Impl>::new(
-                        content.clone(),
-                        output_location.clone(),
-                        chapter_breaks.clone(),
-                    ))
+                    LongFormOperationOutput {
+                        content: content.clone(),
+                        output_location: output_location.clone(),
+                        chapter_breaks: chapter_breaks.clone(),
+                    }
                 });
                 let _ = durability.persist_infallible(
                     SynthesizeLongFormInput {
-                        content,
-                        output_location,
-                        chapter_breaks,
+                        content: content.clone(),
+                        output_location: output_location.clone(),
+                        chapter_breaks: chapter_breaks.clone(),
                     },
-                    NoOutput,
+                    result.clone(),
                 );
-                Ok(result)
-            } else {
-                let _: NoOutput = durability.replay_infallible();
                 Ok(LongFormOperation::new(
-                    DurableLongFormOperation::<Impl>::new(content, output_location, chapter_breaks),
+                    DurableLongFormOperation::<Impl>::new(
+                        result.content,
+                        result.output_location,
+                        result.chapter_breaks,
+                    ),
+                ))
+            } else {
+                let operation_data: LongFormOperationOutput = durability.replay_infallible();
+                Ok(LongFormOperation::new(
+                    DurableLongFormOperation::<Impl>::new(
+                        operation_data.content,
+                        operation_data.output_location,
+                        operation_data.chapter_breaks,
+                    ),
                 ))
             }
         }
