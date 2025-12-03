@@ -639,26 +639,29 @@ impl VoicesGuest for GoogleComponent {
         Ok(Voice::new(voice_impl))
     }
 
-    fn search_voices(
-        query: String,
-        filter: Option<VoiceFilter>,
-    ) -> Result<Vec<VoiceInfo>, TtsError> {
+    fn search_voices(filter: Option<VoiceFilter>) -> Result<Vec<VoiceInfo>, TtsError> {
         let client = Self::create_client()?;
-        let language_code = voice_filter_to_language_code(filter);
+        let language_code = voice_filter_to_language_code(filter.clone());
 
         let response = client.list_voices(language_code.as_deref())?;
 
-        let query_lower = query.to_lowercase();
         // Filter voices based on the query matching voice name or language codes.
+
+        let search_query = filter.as_ref().and_then(|f| f.search_query.as_ref());
+
         let matching_voices: Vec<VoiceInfo> = response
             .voices
             .into_iter()
-            .filter(|voice| {
-                voice.name.to_lowercase().contains(&query_lower)
-                    || voice
-                        .language_codes
-                        .iter()
-                        .any(|lang| lang.to_lowercase().contains(&query_lower))
+            .filter(|voice| match search_query {
+                Some(query) => {
+                    let query_lower = query.to_lowercase();
+                    voice.name.to_lowercase().contains(&query_lower)
+                        || voice
+                            .language_codes
+                            .iter()
+                            .any(|lang| lang.to_lowercase().contains(&query_lower))
+                }
+                None => true,
             })
             .map(google_voice_to_voice_info)
             .collect();

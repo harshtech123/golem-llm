@@ -85,12 +85,9 @@ mod passthrough_impl {
             Impl::get_voice(voice_id)
         }
 
-        fn search_voices(
-            query: String,
-            filter: Option<VoiceFilter>,
-        ) -> Result<Vec<VoiceInfo>, TtsError> {
+        fn search_voices(filter: Option<VoiceFilter>) -> Result<Vec<VoiceInfo>, TtsError> {
             init_logging();
-            Impl::search_voices(query, filter)
+            Impl::search_voices(filter)
         }
 
         fn list_languages() -> Result<Vec<LanguageInfo>, TtsError> {
@@ -274,7 +271,6 @@ mod durable_impl {
 
     #[derive(Debug, Clone, PartialEq, IntoValue, FromValueAndType)]
     struct SearchVoicesInput {
-        query: String,
         filter: Option<VoiceFilter>,
     }
 
@@ -591,10 +587,7 @@ mod durable_impl {
             }
         }
 
-        fn search_voices(
-            query: String,
-            filter: Option<VoiceFilter>,
-        ) -> Result<Vec<VoiceInfo>, TtsError> {
+        fn search_voices(filter: Option<VoiceFilter>) -> Result<Vec<VoiceInfo>, TtsError> {
             init_logging();
 
             let durability = Durability::<VoiceInfoListOutput, TtsError>::new(
@@ -603,10 +596,10 @@ mod durable_impl {
                 DurableFunctionType::WriteRemote,
             );
             if durability.is_live() {
-                let result = Impl::search_voices(query.clone(), filter.clone());
+                let result = Impl::search_voices(filter.clone());
                 let result = result.map(|v| VoiceInfoListOutput { voices: v });
                 durability
-                    .persist(SearchVoicesInput { query, filter }, result)
+                    .persist(SearchVoicesInput { filter }, result)
                     .map(|output| output.voices)
             } else {
                 durability
@@ -1831,7 +1824,6 @@ mod durable_impl {
         #[test]
         fn search_voices_input_roundtrip() {
             roundtrip_test(SearchVoicesInput {
-                query: "female voice".to_string(),
                 filter: Some(VoiceFilter {
                     language: Some("fr-FR".to_string()),
                     gender: Some(VoiceGender::Male),
@@ -1840,14 +1832,6 @@ mod durable_impl {
                     provider: Some("provider-test".to_string()),
                     search_query: Some("search test".to_string()),
                 }),
-            });
-        }
-
-        #[test]
-        fn search_voices_input_no_filter_roundtrip() {
-            roundtrip_test(SearchVoicesInput {
-                query: "any voice".to_string(),
-                filter: None,
             });
         }
 

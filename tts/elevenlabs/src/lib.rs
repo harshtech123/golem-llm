@@ -658,11 +658,8 @@ impl VoicesGuest for ElevenLabsComponent {
         }
     }
 
-    fn search_voices(
-        query: String,
-        filter: Option<VoiceFilter>,
-    ) -> Result<Vec<VoiceInfo>, TtsError> {
-        let mut search_filter = filter.unwrap_or(VoiceFilter {
+    fn search_voices(filter: Option<VoiceFilter>) -> Result<Vec<VoiceInfo>, TtsError> {
+        let search_filter = filter.unwrap_or(VoiceFilter {
             language: None,
             gender: None,
             quality: None,
@@ -670,10 +667,9 @@ impl VoicesGuest for ElevenLabsComponent {
             provider: None,
             search_query: None,
         });
-        search_filter.search_query = Some(query);
 
         let client = Self::create_client()?;
-        // elevenelabs provide ability to search by filtering based on gender (voice type), voice quality from their API
+        // ElevenLabs provides native API filtering based on gender, quality, and search query
         let params = voice_filter_to_list_params(Some(search_filter));
 
         match client.list_voices(params) {

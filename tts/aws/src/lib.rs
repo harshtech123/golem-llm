@@ -704,28 +704,25 @@ impl VoicesGuest for AwsPollyComponent {
         Ok(Voice::new(PollyVoiceImpl::new(voice_data, client)))
     }
 
-    fn search_voices(
-        query: String,
-        filter: Option<VoiceFilter>,
-    ) -> Result<Vec<VoiceInfo>, TtsError> {
+    fn search_voices(filter: Option<VoiceFilter>) -> Result<Vec<VoiceInfo>, TtsError> {
         let client = Self::create_client()?;
-        let params = voice_filter_to_describe_params(filter);
+        let params = voice_filter_to_describe_params(filter.clone());
 
         let response = client.describe_voices(params)?;
         // Filter voices based on the query matching name, language name, or language code.(returns as response)
+        let search_query = filter.as_ref().and_then(|f| f.search_query.as_ref());
+
         let voice_infos: Vec<VoiceInfo> = response
             .voices
             .into_iter()
-            .filter(|voice| {
-                voice.name.to_lowercase().contains(&query.to_lowercase())
-                    || voice
-                        .language_name
-                        .to_lowercase()
-                        .contains(&query.to_lowercase())
-                    || voice
-                        .language_code
-                        .to_lowercase()
-                        .contains(&query.to_lowercase())
+            .filter(|voice| match search_query {
+                Some(query) => {
+                    let query_lower = query.to_lowercase();
+                    voice.name.to_lowercase().contains(&query_lower)
+                        || voice.language_name.to_lowercase().contains(&query_lower)
+                        || voice.language_code.to_lowercase().contains(&query_lower)
+                }
+                None => true,
             })
             .map(aws_voice_to_voice_info)
             .collect();

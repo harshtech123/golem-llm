@@ -255,7 +255,6 @@ interface voices {
 
     /// Search voices by characteristics
     search-voices: func(
-        query: string,
         filter: option<voice-filter>
     ) -> result<list<voice-info>, tts-error>;
 

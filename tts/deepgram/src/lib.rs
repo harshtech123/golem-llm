@@ -759,18 +759,30 @@ impl VoicesGuest for DeepgramComponent {
         }
     }
 
-    fn search_voices(
-        query: String,
-        filter: Option<VoiceFilter>,
-    ) -> Result<Vec<VoiceInfo>, TtsError> {
+    fn search_voices(filter: Option<VoiceFilter>) -> Result<Vec<VoiceInfo>, TtsError> {
         let client = Self::create_client()?;
 
+        // Extract search query from filter
         // deepgram does not have the native api for querying we are trying a simple search over all models
-        let search_results = client.search_models(&query)?;
-        let mut voice_infos: Vec<VoiceInfo> = search_results
-            .into_iter()
-            .map(deepgram_model_to_voice_info)
-            .collect();
+        let search_query = filter
+            .as_ref()
+            .and_then(|f| f.search_query.as_ref())
+            .cloned()
+            .unwrap_or_else(String::new);
+
+        let mut voice_infos: Vec<VoiceInfo> = if !search_query.is_empty() {
+            let search_results = client.search_models(&search_query)?;
+            search_results
+                .into_iter()
+                .map(deepgram_model_to_voice_info)
+                .collect()
+        } else {
+            let all_models = get_available_models();
+            all_models
+                .into_iter()
+                .map(deepgram_model_to_voice_info)
+                .collect()
+        };
 
         if let Some(f) = filter {
             voice_infos.retain(|voice| {
